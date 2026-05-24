@@ -1,7 +1,7 @@
 site_name: zot — Zotero CLI for Claude Code
-site_url: https://agents365-ai.github.io/zotero-cli-agents
-repo_url: https://github.com/Agents365-ai/zotero-cli-agents
-repo_name: Agents365-ai/zotero-cli-agents
+site_url: https://liuchzzyy.github.io/zotero-cli-agent
+repo_url: https://github.com/liuchzzyy/zotero-cli-agent
+repo_name: liuchzzyy/zotero-cli-agent
 
 theme:
   name: material
@@ -83,3 +83,4 @@ nav:
     - Agent Interface: reference/agent-interface.md
   - Comparison: comparison.md
   - Changelog: changelog.md
+

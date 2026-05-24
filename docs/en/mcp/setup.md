@@ -1,11 +1,11 @@
 # MCP Server Setup
 
-zotero-cli-agents supports [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) and can be used in MCP-compatible AI clients.
+zotero-cli-agent supports [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) and can be used in MCP-compatible AI clients.
 
 ## Install MCP Support
 
 ```bash
-pip install zotero-cli-agents[mcp]
+pip install zotero-cli-agent[mcp]
 ```
 
 ## Start the Server
@@ -66,3 +66,4 @@ zot mcp serve
 After configuring, the AI client should show 45 available Zotero tools. Try asking:
 
 > "Search my Zotero library for papers about attention mechanisms"
+

@@ -8,10 +8,10 @@
 
 ## 安装 Skill
 
-复制 zotero-cli-agents skill，让 Claude Code 自动识别文献相关请求：
+复制 zotero-cli-agent skill，让 Claude Code 自动识别文献相关请求：
 
 ```bash
-cp -r skill/zotero-cli-agents ~/.claude/skills/
+cp -r skill/zotero-cli-agent ~/.claude/skills/
 ```
 
 ## 工作原理
@@ -73,3 +73,4 @@ Claude Code 的典型科研工作流：
     ```bash
     zot completions fish > ~/.config/fish/completions/zot.fish
     ```
+

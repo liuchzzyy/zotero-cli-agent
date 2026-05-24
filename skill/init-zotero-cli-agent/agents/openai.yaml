@@ -1,0 +1,5 @@
+interface:
+  display_name: "Init Zotero CLI Agents"
+  short_description: "Initialize and verify zot setup"
+  default_prompt: "Use $init-zotero-cli-agent to initialize and verify zotero-cli-agent in this repository or local environment."
+

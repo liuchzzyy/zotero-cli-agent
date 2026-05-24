@@ -10,19 +10,19 @@
 === "uv (recommended)"
 
     ```bash
-    uv tool install zotero-cli-agents
+    uv tool install zotero-cli-agent
     ```
 
 === "pipx"
 
     ```bash
-    pipx install zotero-cli-agents
+    pipx install zotero-cli-agent
     ```
 
 === "pip"
 
     ```bash
-    pip install zotero-cli-agents
+    pip install zotero-cli-agent
     ```
 
 ## Upgrade
@@ -30,27 +30,27 @@
 === "uv"
 
     ```bash
-    uv tool upgrade zotero-cli-agents
+    uv tool upgrade zotero-cli-agent
     ```
 
 === "pipx"
 
     ```bash
-    pipx upgrade zotero-cli-agents
+    pipx upgrade zotero-cli-agent
     ```
 
 === "pip"
 
     ```bash
-    pip install -U zotero-cli-agents
+    pip install -U zotero-cli-agent
     ```
 
 ## MCP Support
 
-To use zotero-cli-agents as an MCP server (for Claude Desktop, Cursor, LM Studio):
+To use zotero-cli-agent as an MCP server (for Claude Desktop, Cursor, LM Studio):
 
 ```bash
-pip install zotero-cli-agents[mcp]
+pip install zotero-cli-agent[mcp]
 ```
 
 ## Verify Installation
@@ -58,3 +58,4 @@ pip install zotero-cli-agents[mcp]
 ```bash
 zot --version
 ```
+

@@ -4,7 +4,7 @@ This file provides guidance to coding agents working with code in this repositor
 
 ## Project
 
-`zotero-cli-agents` (binary: `zot`) is a Zotero CLI built for Claude Code / agent use. It combines **direct local SQLite reads** with **Zotero Web API writes**, and exposes the same surface via an MCP server.
+`zotero-cli-agent` (binary: `zot`) is a Zotero CLI built for Claude Code / agent use. It combines **direct local SQLite reads** with **Zotero Web API writes**, and exposes the same surface via an MCP server.
 
 The CLI follows an agent-native contract documented in `docs/agent-interface.md`:
 
@@ -91,7 +91,7 @@ If a CLI command should also be available to MCP clients, mirror it here.
 
 - `docs/agent-interface.md` is the authoritative agent contract.
 - `docs/` is built with MkDocs Material.
-- `skill/zotero-cli-agents/` is the bundled Claude skill.
+- `skill/zotero-cli-agent/` is the bundled Claude skill.
 
 If the CLI surface changes, keep the docs and skill in sync.
 
@@ -170,3 +170,4 @@ uv run pytest -q
 ```
 
 and the full test suite passed during setup.
+

@@ -23,7 +23,7 @@ TTL_SECONDS = 24 * 60 * 60
 
 def _db_path() -> Path:
     override = os.environ.get("ZOT_CACHE_DIR")
-    base = Path(override) if override else Path.home() / ".cache" / "zotero-cli-agents"
+    base = Path(override) if override else Path.home() / ".cache" / "zotero-cli-agent"
     base.mkdir(parents=True, exist_ok=True)
     return base / "idempotency.db"
 
@@ -74,3 +74,4 @@ def clear() -> None:
     """Clear the entire cache. Exposed for tests."""
     with _connect() as conn:
         conn.execute("DELETE FROM cache")
+

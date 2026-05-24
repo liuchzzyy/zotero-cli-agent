@@ -43,7 +43,7 @@ zot --json search "single cell RNA"
 安装 zotero-cli skill，让 Claude Code 自动识别文献相关请求：
 
 ```bash
-cp -r skill/zotero-cli-agents ~/.claude/skills/
+cp -r skill/zotero-cli-agent ~/.claude/skills/
 ```
 
 然后在任何 Claude Code 会话中使用自然语言：
@@ -61,3 +61,4 @@ cp -r skill/zotero-cli-agents ~/.claude/skills/
 - [使用指南](../guide/search.md) — 完整命令参考
 - [MCP 服务器](../mcp/setup.md) — 搭配 Claude Desktop、Cursor、LM Studio 使用
 - [工作区](../guide/workspace.md) — 按主题组织论文，支持 RAG 检索
+

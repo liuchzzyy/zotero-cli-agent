@@ -1,5 +1,5 @@
 [project]
-name = "zotero-cli-agents"
+name = "zotero-cli-agent"
 version = "0.4.4"
 description = "Zotero CLI for Claude Code — SQLite reads + Web API writes"
 license = "CC-BY-NC-4.0"
@@ -69,3 +69,4 @@ warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
 ignore_missing_imports = true
+

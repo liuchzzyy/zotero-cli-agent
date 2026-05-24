@@ -22,7 +22,7 @@ import httpx
 
 CROSSREF_API_BASE = "https://api.crossref.org/works"
 REQUEST_TIMEOUT = 15.0
-USER_AGENT_BASE = "zotero-cli-agents (https://github.com/Agents365-ai/zotero-cli-agents)"
+USER_AGENT_BASE = "zotero-cli-agent (https://github.com/liuchzzyy/zotero-cli-agent)"
 
 
 class MetadataResolveError(Exception):
@@ -191,3 +191,4 @@ def resolve_doi(doi: str, *, timeout: float = REQUEST_TIMEOUT) -> dict[str, Any]
     if not isinstance(message, dict):
         raise MetadataResolveError("Crossref response missing 'message' object")
     return map_crossref_to_zotero(message)
+

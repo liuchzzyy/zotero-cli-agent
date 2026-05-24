@@ -1,26 +1,26 @@
 ---
-name: init-zotero-cli-agents
-description: "Guide agents through installing, configuring, and validating zotero-cli-agents after cloning or on a new machine. Use when users ask to initialize, set up, configure, verify, or troubleshoot zot/zotero-cli-agents, including Zotero data directory, API credentials, read/write checks, and MCP readiness."
+name: init-zotero-cli-agent
+description: "Guide agents through installing, configuring, and validating zotero-cli-agent after cloning or on a new machine. Use when users ask to initialize, set up, configure, verify, or troubleshoot zot/zotero-cli-agent, including Zotero data directory, API credentials, read/write checks, and MCP readiness."
 ---
 
-# Init zotero-cli-agents
+# Init zotero-cli-agent
 
 Use this skill as a guided setup wizard. Do not jump straight to commands without explaining what each stage checks and what the user must provide.
 
-The normal daily literature workflow uses the `zotero-cli-agents` skill. This skill is only for installation, configuration, and validation.
+The normal daily literature workflow uses the `zotero-cli-agent` skill. This skill is only for installation, configuration, and validation.
 
 ## First Step
 
 Run the bundled checker first when possible:
 
 ```powershell
-uv run python skill/init-zotero-cli-agents/scripts/check_init.py
+uv run python skill/init-zotero-cli-agent/scripts/check_init.py
 ```
 
 If `uv` is not available, try:
 
 ```powershell
-python skill/init-zotero-cli-agents/scripts/check_init.py
+python skill/init-zotero-cli-agent/scripts/check_init.py
 ```
 
 Use `--json` when another tool or agent needs to parse the result. The checker is read-only by default and prints next actions.
@@ -29,7 +29,7 @@ Use `--json` when another tool or agent needs to parse the result. The checker i
 
 ### 1. Identify execution mode
 
-If the current folder contains `pyproject.toml` for `zotero-cli-agents`, use source commands:
+If the current folder contains `pyproject.toml` for `zotero-cli-agent`, use source commands:
 
 ```powershell
 uv run zot ...
@@ -158,3 +158,4 @@ Include the exact commands already run and the next command the user should run.
 - Never echo a full API key.
 - Do not edit shell profiles or global environment variables unless the user explicitly asks.
 - If configuration already works, still check each stage and say it is already configured.
+

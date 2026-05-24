@@ -58,7 +58,7 @@ def find_repo_root(start: Path) -> Path | None:
             data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
         except Exception:
             continue
-        if data.get("project", {}).get("name") == "zotero-cli-agents":
+        if data.get("project", {}).get("name") == "zotero-cli-agent":
             return path
     return None
 
@@ -115,7 +115,7 @@ def mask_secret(value: str) -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Check zotero-cli-agents initialization status.")
+    parser = argparse.ArgumentParser(description="Check zotero-cli-agent initialization status.")
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
     parser.add_argument("--fix", action="store_true", help="Run low-risk setup steps such as uv sync in a source repo.")
     args = parser.parse_args()
@@ -130,7 +130,7 @@ def main() -> int:
     if repo_root:
         checks.append(Check("repository", "OK", f"source repo found at {repo_root}"))
     else:
-        checks.append(Check("repository", "INFO", "not running inside a zotero-cli-agents source repo"))
+        checks.append(Check("repository", "INFO", "not running inside a zotero-cli-agent source repo"))
 
     if uv:
         checks.append(Check("uv", "OK", uv))
@@ -283,3 +283,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

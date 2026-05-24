@@ -43,7 +43,7 @@ This is what Claude Code uses behind the scenes when you ask it about papers.
 Install the zotero-cli skill so Claude Code automatically recognizes literature-related requests:
 
 ```bash
-cp -r skill/zotero-cli-agents ~/.claude/skills/
+cp -r skill/zotero-cli-agent ~/.claude/skills/
 ```
 
 Then in any Claude Code session, use natural language:
@@ -61,3 +61,4 @@ Show me details of this paper
 - [User Guide](../guide/search.md) — Full command reference
 - [MCP Server](../mcp/setup.md) — Use with Claude Desktop, Cursor, LM Studio
 - [Workspaces](../guide/workspace.md) — Organize papers by topic with RAG search
+

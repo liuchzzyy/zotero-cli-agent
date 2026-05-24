@@ -182,7 +182,7 @@ zot add --doi "10.1/x" --idempotency-key "ingest-2026-04-15-001"
 # Safe to re-run; the second call returns the original envelope.
 ```
 
-- Storage: SQLite under `$ZOT_CACHE_DIR/idempotency.db` (default `~/.cache/zotero-cli-agents/`).
+- Storage: SQLite under `$ZOT_CACHE_DIR/idempotency.db` (default `~/.cache/zotero-cli-agent/`).
 - TTL: 24 hours.
 - Scope: keyed by (command_scope, user_key) — two different commands with the same user key never collide.
 - A cached response is an exact replay, including the original `request_id` and `meta`.
@@ -271,3 +271,4 @@ zot add --doi "10.1/x" --idempotency-key "k1"   # returns cached envelope
 zot read NOPE; echo $?           # 4
 zot delete XYZ; echo $?          # 3 (confirmation_required under non-tty)
 ```
+

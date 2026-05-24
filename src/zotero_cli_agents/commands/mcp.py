@@ -18,8 +18,9 @@ def serve_cmd() -> None:
         from zotero_cli_agents.mcp_server import mcp as mcp_server
     except ImportError:
         click.echo(
-            "Error: MCP support not installed.\nInstall with: pip install zotero-cli-agents[mcp]",
+            "Error: MCP support not installed.\nInstall with: pip install zotero-cli-agent[mcp]",
             err=True,
         )
         raise SystemExit(1)
     mcp_server.run(transport="stdio")
+

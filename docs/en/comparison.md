@@ -1,6 +1,6 @@
 # Comparison with Similar Tools
 
-| Feature | **zotero-cli-agents** | [pyzotero-cli](https://github.com/chriscarrollsmith/pyzotero-cli) | [zotero-cli](https://github.com/jbaiter/zotero-cli) | [zotero-cli-tool](https://github.com/dhondta/zotero-cli) | [zotero-mcp](https://github.com/54yyyu/zotero-mcp) | [cookjohn/zotero-mcp](https://github.com/cookjohn/zotero-mcp) | [ZoteroBridge](https://github.com/Combjellyshen/ZoteroBridge) |
+| Feature | **zotero-cli-agent** | [pyzotero-cli](https://github.com/chriscarrollsmith/pyzotero-cli) | [zotero-cli](https://github.com/jbaiter/zotero-cli) | [zotero-cli-tool](https://github.com/dhondta/zotero-cli) | [zotero-mcp](https://github.com/54yyyu/zotero-mcp) | [cookjohn/zotero-mcp](https://github.com/cookjohn/zotero-mcp) | [ZoteroBridge](https://github.com/Combjellyshen/ZoteroBridge) |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
 | **Direct SQLite Read** | **✅** | ❌ | ❌ (cache only) | ❌ | ❌ | ❌ (plugin) | ✅ |
 | **Offline Read** | **✅** | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
@@ -23,7 +23,7 @@
 | **Language** | Python | Python | Python | Python | Python | TypeScript | TypeScript |
 | **Active** | ✅ 2026 | ✅ 2025 | ❌ 2024 | ✅ 2026 | ✅ 2026 | ✅ 2026 | ✅ 2026 |
 
-## Why zotero-cli-agents?
+## Why zotero-cli-agent?
 
 > **The only actively maintained Python CLI that reads Zotero's local SQLite database directly.**
 
@@ -33,3 +33,4 @@
 - **AI-native** — built for Claude Code, automatic JSON envelope for AI consumption
 - **Safe** — read/write separation: writes go through the Web API to protect DB integrity
 - **Terminal-native** — the only CLI combining local SQLite reads with safe Web API writes; MCP-only tools require an AI client and aren't usable from a terminal
+

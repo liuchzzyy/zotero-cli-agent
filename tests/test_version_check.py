@@ -112,26 +112,27 @@ class TestCheckForUpdate:
 
 class TestUpgradeCommand:
     def test_uv_tool_install(self):
-        exe = "/Users/me/.local/share/uv/tools/zotero-cli-agents/bin/python"
-        assert upgrade_command(exe) == "uv tool upgrade zotero-cli-agents"
+        exe = "/Users/me/.local/share/uv/tools/zotero-cli-agent/bin/python"
+        assert upgrade_command(exe) == "uv tool upgrade zotero-cli-agent"
 
     def test_pipx_install(self):
-        exe = "/Users/me/.local/pipx/venvs/zotero-cli-agents/bin/python"
-        assert upgrade_command(exe) == "pipx upgrade zotero-cli-agents"
+        exe = "/Users/me/.local/pipx/venvs/zotero-cli-agent/bin/python"
+        assert upgrade_command(exe) == "pipx upgrade zotero-cli-agent"
 
     def test_conda_install_falls_back_to_pip(self):
         exe = "/Users/me/mambaforge/bin/python"
-        assert upgrade_command(exe) == "pip install -U zotero-cli-agents"
+        assert upgrade_command(exe) == "pip install -U zotero-cli-agent"
 
     def test_system_pip_falls_back_to_pip(self):
         exe = "/usr/bin/python3"
-        assert upgrade_command(exe) == "pip install -U zotero-cli-agents"
+        assert upgrade_command(exe) == "pip install -U zotero-cli-agent"
 
     def test_windows_uv_tool_path(self):
-        exe = r"C:\Users\me\AppData\Roaming\uv\tools\zotero-cli-agents\Scripts\python.exe"
-        assert upgrade_command(exe) == "uv tool upgrade zotero-cli-agents"
+        exe = r"C:\Users\me\AppData\Roaming\uv\tools\zotero-cli-agent\Scripts\python.exe"
+        assert upgrade_command(exe) == "uv tool upgrade zotero-cli-agent"
 
     def test_uses_sys_executable_by_default(self):
         with patch("zotero_cli_agents.core.version_check.sys") as mock_sys:
-            mock_sys.executable = "/opt/uv/tools/zotero-cli-agents/bin/python"
-            assert upgrade_command() == "uv tool upgrade zotero-cli-agents"
+            mock_sys.executable = "/opt/uv/tools/zotero-cli-agent/bin/python"
+            assert upgrade_command() == "uv tool upgrade zotero-cli-agent"
+

@@ -1,5 +1,5 @@
 ---
-name: zotero-cli-agents
+name: zotero-cli-agent
 description: "Use when user mentions papers, references, citations, Zotero, literature, bibliography, workspaces, or needs to search/read/export documents in zotero. Uses zot CLI for all operations including workspace-based RAG."
 version: 0.5.3
 ---
@@ -324,3 +324,4 @@ zot --json workspace query "AlphaFold architecture" --workspace protein-folding 
 - **Group libraries** — use `--library group:<id>` with any command
 - **Workspaces** — pure local TOML files, no API needed for basic operations; `workspace index` reads PDFs from Zotero storage
 - **Workspace RAG** — BM25 always available (zero new deps); optional semantic search via embedding endpoint (`ZOT_EMBEDDING_URL` + `ZOT_EMBEDDING_KEY`
+

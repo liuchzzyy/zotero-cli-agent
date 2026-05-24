@@ -9,10 +9,10 @@
 
 ## Install the Skill
 
-Copy the zotero-cli-agents skill so Claude Code automatically recognizes literature-related requests:
+Copy the zotero-cli-agent skill so Claude Code automatically recognizes literature-related requests:
 
 ```bash
-cp -r skill/zotero-cli-agents ~/.claude/skills/
+cp -r skill/zotero-cli-agent ~/.claude/skills/
 ```
 
 ## How It Works
@@ -74,3 +74,4 @@ Enable tab completions for faster CLI use:
     ```bash
     zot completions fish > ~/.config/fish/completions/zot.fish
     ```
+

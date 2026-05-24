@@ -2103,7 +2103,7 @@ wheels = [
 ]
 
 [[package]]
-name = "zotero-cli-agents"
+name = "zotero-cli-agent"
 version = "0.4.4"
 source = { editable = "." }
 dependencies = [
@@ -2159,3 +2159,4 @@ dev = [
     { name = "pytest-cov", specifier = ">=7.0.0" },
     { name = "ruff", specifier = ">=0.9" },
 ]
+
