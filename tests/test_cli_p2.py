@@ -2,7 +2,7 @@ import json
 
 from click.testing import CliRunner
 
-from zotero_cli_cc.cli import main
+from zotero_cli_agents.cli import main
 
 
 def test_summarize(test_db_path):

@@ -9,9 +9,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
-from zotero_cli_cc.cli import main
-from zotero_cli_cc.core.pdf_extractor import PdfExtractionError, extract_text_from_pdf
-from zotero_cli_cc.core.writer import SYNC_REMINDER, ZoteroWriteError, ZoteroWriter
+from zotero_cli_agents.cli import main
+from zotero_cli_agents.core.pdf_extractor import PdfExtractionError, PyMuPdfExtractor
+from zotero_cli_agents.core.writer import SYNC_REMINDER, ZoteroWriteError, ZoteroWriter
 
 WRITE_ENV = {"ZOT_LIBRARY_ID": "123", "ZOT_API_KEY": "abc"}
 
@@ -121,7 +121,7 @@ class TestCompletions:
 
 class TestOffset:
     def test_search_with_offset(self, test_db_path):
-        from zotero_cli_cc.core.reader import ZoteroReader
+        from zotero_cli_agents.core.reader import ZoteroReader
 
         reader = ZoteroReader(test_db_path)
         all_results = reader.search("", limit=100)
@@ -130,7 +130,7 @@ class TestOffset:
         assert len(offset_results.items) == len(all_results.items) - 1
 
     def test_search_offset_beyond_total(self, test_db_path):
-        from zotero_cli_cc.core.reader import ZoteroReader
+        from zotero_cli_agents.core.reader import ZoteroReader
 
         reader = ZoteroReader(test_db_path)
         result = reader.search("", limit=100, offset=99999)
@@ -162,7 +162,7 @@ class TestPdfExtractionError:
         bad_pdf = tmp_path / "bad.pdf"
         bad_pdf.write_bytes(b"not a real pdf file")
         with pytest.raises(PdfExtractionError, match="Cannot open PDF"):
-            extract_text_from_pdf(bad_pdf)
+            PyMuPdfExtractor().extract_text(bad_pdf)
 
     def test_page_range_exceeds_length(self):
         fixtures = Path(__file__).parent / "fixtures"
@@ -170,7 +170,7 @@ class TestPdfExtractionError:
         if not pdf.exists():
             pytest.skip("test.pdf fixture not found")
         with pytest.raises(PdfExtractionError, match="exceeds document length"):
-            extract_text_from_pdf(pdf, pages=(9999, 10000))
+            PyMuPdfExtractor().extract_text(pdf, pages=(9999, 10000))
 
     def test_pdf_extraction_error_is_catchable(self):
         """Verify PdfExtractionError can be caught as expected in commands."""
@@ -186,7 +186,7 @@ class TestPdfExtractionError:
 
 
 class TestBatchDelete:
-    @patch("zotero_cli_cc.commands.delete.ZoteroWriter")
+    @patch("zotero_cli_agents.commands.delete.ZoteroWriter")
     def test_delete_multiple_keys(self, mock_writer_cls):
         mock_writer = MagicMock()
         mock_writer_cls.return_value = mock_writer
@@ -211,7 +211,7 @@ class TestBatchDelete:
         assert "K1" in result.output
         assert "K2" in result.output
 
-    @patch("zotero_cli_cc.commands.delete.ZoteroWriter")
+    @patch("zotero_cli_agents.commands.delete.ZoteroWriter")
     def test_delete_partial_failure(self, mock_writer_cls):
         mock_writer = MagicMock()
         mock_writer_cls.return_value = mock_writer
@@ -232,7 +232,7 @@ class TestBatchDelete:
 
 
 class TestBatchTag:
-    @patch("zotero_cli_cc.commands.tag.ZoteroWriter")
+    @patch("zotero_cli_agents.commands.tag.ZoteroWriter")
     def test_tag_add_multiple_keys(self, mock_writer_cls):
         mock_writer = MagicMock()
         mock_writer_cls.return_value = mock_writer
@@ -249,7 +249,7 @@ class TestBatchTag:
         assert "K2" in result.output
         assert "K3" in result.output
 
-    @patch("zotero_cli_cc.commands.tag.ZoteroWriter")
+    @patch("zotero_cli_agents.commands.tag.ZoteroWriter")
     def test_tag_remove_multiple_keys(self, mock_writer_cls):
         mock_writer = MagicMock()
         mock_writer_cls.return_value = mock_writer
@@ -288,7 +288,7 @@ class TestBatchTag:
 
 
 class TestTimeout:
-    @patch("zotero_cli_cc.core.writer.zotero.Zotero")
+    @patch("zotero_cli_agents.core.writer.zotero.Zotero")
     def test_writer_sets_timeout(self, mock_zotero_cls):
         mock_zot = MagicMock()
         mock_zotero_cls.return_value = mock_zot
@@ -298,7 +298,7 @@ class TestTimeout:
         # Verify timeout was set on the client
         mock_zot.client.timeout = mock_zot.client.timeout  # just verify no error
 
-    @patch("zotero_cli_cc.core.writer.zotero.Zotero")
+    @patch("zotero_cli_agents.core.writer.zotero.Zotero")
     def test_timeout_raises_write_error(self, mock_zotero_cls):
         from httpx import ReadTimeout
 
@@ -317,7 +317,7 @@ class TestTimeout:
 
 
 class TestWriteErrorInCommands:
-    @patch("zotero_cli_cc.commands.add.ZoteroWriter")
+    @patch("zotero_cli_agents.commands.add.ZoteroWriter")
     def test_add_write_error(self, mock_writer_cls):
         mock_writer = MagicMock()
         mock_writer_cls.return_value = mock_writer
@@ -328,7 +328,7 @@ class TestWriteErrorInCommands:
         assert result.exit_code != 0
         assert "Bad request" in result.output
 
-    @patch("zotero_cli_cc.commands.delete.ZoteroWriter")
+    @patch("zotero_cli_agents.commands.delete.ZoteroWriter")
     def test_delete_write_error(self, mock_writer_cls):
         mock_writer = MagicMock()
         mock_writer_cls.return_value = mock_writer
@@ -339,7 +339,7 @@ class TestWriteErrorInCommands:
         assert result.exit_code != 0
         assert "not found" in result.output
 
-    @patch("zotero_cli_cc.commands.tag.ZoteroWriter")
+    @patch("zotero_cli_agents.commands.tag.ZoteroWriter")
     def test_tag_add_write_error(self, mock_writer_cls):
         mock_writer = MagicMock()
         mock_writer_cls.return_value = mock_writer
@@ -350,7 +350,7 @@ class TestWriteErrorInCommands:
         assert result.exit_code != 0
         assert "not found" in result.output
 
-    @patch("zotero_cli_cc.commands.note.ZoteroWriter")
+    @patch("zotero_cli_agents.commands.note.ZoteroWriter")
     def test_note_write_error(self, mock_writer_cls):
         mock_writer = MagicMock()
         mock_writer_cls.return_value = mock_writer
@@ -361,7 +361,7 @@ class TestWriteErrorInCommands:
         assert result.exit_code != 0
         assert "timeout" in result.output
 
-    @patch("zotero_cli_cc.commands.collection.ZoteroWriter")
+    @patch("zotero_cli_agents.commands.collection.ZoteroWriter")
     def test_collection_create_write_error(self, mock_writer_cls):
         mock_writer = MagicMock()
         mock_writer_cls.return_value = mock_writer

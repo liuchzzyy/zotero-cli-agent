@@ -1,7 +1,7 @@
 from click.testing import CliRunner
 
-from zotero_cli_cc import __version__
-from zotero_cli_cc.cli import main
+from zotero_cli_agents import __version__
+from zotero_cli_agents.cli import main
 
 
 def test_cli_version():
@@ -43,7 +43,7 @@ def test_config_show(tmp_path):
 
 
 def test_cache_list_empty(tmp_path):
-    from zotero_cli_cc.core import pdf_cache as pdf_cache_module
+    from zotero_cli_agents.core import pdf_cache as pdf_cache_module
 
     old_default = pdf_cache_module.DEFAULT_CACHE_PATH
     try:
@@ -57,8 +57,8 @@ def test_cache_list_empty(tmp_path):
 
 
 def test_cache_list_populated(tmp_path):
-    from zotero_cli_cc.core import pdf_cache as pdf_cache_module
-    from zotero_cli_cc.core.pdf_cache import PdfCache
+    from zotero_cli_agents.core import pdf_cache as pdf_cache_module
+    from zotero_cli_agents.core.pdf_cache import PdfCache
 
     old_default = pdf_cache_module.DEFAULT_CACHE_PATH
     try:
@@ -83,8 +83,8 @@ def test_cache_list_populated(tmp_path):
 def test_cache_list_json(tmp_path):
     import json
 
-    from zotero_cli_cc.core import pdf_cache as pdf_cache_module
-    from zotero_cli_cc.core.pdf_cache import PdfCache
+    from zotero_cli_agents.core import pdf_cache as pdf_cache_module
+    from zotero_cli_agents.core.pdf_cache import PdfCache
 
     old_default = pdf_cache_module.DEFAULT_CACHE_PATH
     try:

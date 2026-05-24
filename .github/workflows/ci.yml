@@ -20,5 +20,5 @@ jobs:
       - run: uv sync --group dev --extra mcp
       - run: uv run ruff check src/ tests/
       - run: uv run ruff format --check src/ tests/
-      - run: uv run mypy src/zotero_cli_cc/
+      - run: uv run mypy src/zotero_cli_agents/
       - run: uv run pytest tests/ -v

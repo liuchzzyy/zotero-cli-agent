@@ -2,16 +2,16 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from zotero_cli_cc.core.writer import ZoteroWriteError, ZoteroWriter
+from zotero_cli_agents.core.writer import ZoteroWriteError, ZoteroWriter
 
 
-@patch("zotero_cli_cc.core.writer.zotero.Zotero")
+@patch("zotero_cli_agents.core.writer.zotero.Zotero")
 def test_writer_init(mock_zotero_cls):
     ZoteroWriter(library_id="123", api_key="abc")
     mock_zotero_cls.assert_called_once_with("123", "user", "abc")
 
 
-@patch("zotero_cli_cc.core.writer.zotero.Zotero")
+@patch("zotero_cli_agents.core.writer.zotero.Zotero")
 def test_add_note(mock_zotero_cls):
     mock_zot = MagicMock()
     mock_zotero_cls.return_value = mock_zot
@@ -24,7 +24,7 @@ def test_add_note(mock_zotero_cls):
     mock_zot.create_items.assert_called_once()
 
 
-@patch("zotero_cli_cc.core.writer.zotero.Zotero")
+@patch("zotero_cli_agents.core.writer.zotero.Zotero")
 def test_add_tags(mock_zotero_cls):
     mock_zot = MagicMock()
     mock_zotero_cls.return_value = mock_zot
@@ -35,7 +35,7 @@ def test_add_tags(mock_zotero_cls):
     mock_zot.update_item.assert_called_once()
 
 
-@patch("zotero_cli_cc.core.writer.zotero.Zotero")
+@patch("zotero_cli_agents.core.writer.zotero.Zotero")
 def test_delete_item(mock_zotero_cls):
     mock_zot = MagicMock()
     mock_zotero_cls.return_value = mock_zot
@@ -49,7 +49,7 @@ def test_delete_item(mock_zotero_cls):
 # --- Error-path tests ---
 
 
-@patch("zotero_cli_cc.core.writer.zotero.Zotero")
+@patch("zotero_cli_agents.core.writer.zotero.Zotero")
 def test_add_note_network_error(mock_zotero_cls):
     mock_zot = MagicMock()
     mock_zotero_cls.return_value = mock_zot
@@ -63,7 +63,7 @@ def test_add_note_network_error(mock_zotero_cls):
         writer.add_note("P1", "content")
 
 
-@patch("zotero_cli_cc.core.writer.zotero.Zotero")
+@patch("zotero_cli_agents.core.writer.zotero.Zotero")
 def test_add_note_api_failure(mock_zotero_cls):
     mock_zot = MagicMock()
     mock_zotero_cls.return_value = mock_zot
@@ -75,7 +75,7 @@ def test_add_note_api_failure(mock_zotero_cls):
         writer.add_note("P1", "content")
 
 
-@patch("zotero_cli_cc.core.writer.zotero.Zotero")
+@patch("zotero_cli_agents.core.writer.zotero.Zotero")
 def test_delete_item_not_found(mock_zotero_cls):
     from pyzotero.zotero_errors import ResourceNotFoundError
 
@@ -91,7 +91,7 @@ def test_delete_item_not_found(mock_zotero_cls):
 # --- Collection management tests ---
 
 
-@patch("zotero_cli_cc.core.writer.zotero.Zotero")
+@patch("zotero_cli_agents.core.writer.zotero.Zotero")
 def test_delete_collection(mock_zotero_cls):
     mock_zot = MagicMock()
     mock_zotero_cls.return_value = mock_zot
@@ -103,7 +103,7 @@ def test_delete_collection(mock_zotero_cls):
     mock_zot.delete_collection.assert_called_once()
 
 
-@patch("zotero_cli_cc.core.writer.zotero.Zotero")
+@patch("zotero_cli_agents.core.writer.zotero.Zotero")
 def test_delete_collection_not_found(mock_zotero_cls):
     from pyzotero.zotero_errors import ResourceNotFoundError
 
@@ -116,7 +116,7 @@ def test_delete_collection_not_found(mock_zotero_cls):
         writer.delete_collection("NONEXIST")
 
 
-@patch("zotero_cli_cc.core.writer.zotero.Zotero")
+@patch("zotero_cli_agents.core.writer.zotero.Zotero")
 def test_rename_collection(mock_zotero_cls):
     mock_zot = MagicMock()
     mock_zotero_cls.return_value = mock_zot
@@ -131,7 +131,7 @@ def test_rename_collection(mock_zotero_cls):
     assert call_args["data"]["name"] == "New Name"
 
 
-@patch("zotero_cli_cc.core.writer.zotero.Zotero")
+@patch("zotero_cli_agents.core.writer.zotero.Zotero")
 def test_rename_collection_not_found(mock_zotero_cls):
     from pyzotero.zotero_errors import ResourceNotFoundError
 

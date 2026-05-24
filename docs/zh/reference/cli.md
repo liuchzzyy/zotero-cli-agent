@@ -3,7 +3,7 @@
 从源代码自动生成。
 
 ::: mkdocs-click
-    :module: zotero_cli_cc.cli
+    :module: zotero_cli_agents.cli
     :command: main
     :prog_name: zot
     :style: table

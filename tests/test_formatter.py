@@ -1,7 +1,7 @@
 import json
 
-from zotero_cli_cc.formatter import format_collections, format_error, format_item_detail, format_items, format_notes
-from zotero_cli_cc.models import Collection, Creator, Item, Note
+from zotero_cli_agents.formatter import format_collections, format_error, format_item_detail, format_items, format_notes
+from zotero_cli_agents.models import Collection, Creator, Item, Note
 
 
 def _make_item(key="K1", title="Test") -> Item:
@@ -66,7 +66,7 @@ def test_format_notes_json():
 
 
 def test_format_error_json_with_hint():
-    from zotero_cli_cc.models import ErrorInfo
+    from zotero_cli_agents.models import ErrorInfo
 
     err = ErrorInfo(message="Item 'XYZ' not found", context="read", hint="Run 'zot search' to find valid keys")
     result = format_error(err, output_json=True)
@@ -80,7 +80,7 @@ def test_format_error_json_with_hint():
 
 
 def test_format_error_text_with_hint():
-    from zotero_cli_cc.models import ErrorInfo
+    from zotero_cli_agents.models import ErrorInfo
 
     err = ErrorInfo(message="Item 'XYZ' not found", hint="Run 'zot search' to find valid keys")
     result = format_error(err, output_json=False)

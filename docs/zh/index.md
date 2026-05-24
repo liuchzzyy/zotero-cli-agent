@@ -4,12 +4,12 @@ hide:
 ---
 
 <p align="center">
-  <img src="../assets/banner_official.png" alt="zotero-cli-cc banner" width="720">
+  <img src="../assets/banner_official.png" alt="zotero-cli-agents banner" width="720">
 </p>
 
 # zot — 让 Zotero 在终端中起飞
 
-`zotero-cli-cc` 是一个专为 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) 设计的 Zotero CLI 工具。
+`zotero-cli-agents` 是一个专为 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) 设计的 Zotero CLI 工具。
 
 **核心特性：**
 

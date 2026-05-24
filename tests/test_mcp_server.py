@@ -9,7 +9,7 @@ import pytest
 
 mcp = pytest.importorskip("mcp", reason="mcp not installed")
 
-from zotero_cli_cc.models import (  # noqa: E402
+from zotero_cli_agents.models import (  # noqa: E402
     Attachment,
     Collection,
     Creator,
@@ -51,7 +51,7 @@ def _make_collection(key: str = "COL1", name: str = "My Collection") -> Collecti
 
 class TestItemToDict:
     def test_standard(self):
-        from zotero_cli_cc.mcp_server import _item_to_dict
+        from zotero_cli_agents.mcp_server import _item_to_dict
 
         item = _make_item()
         d = _item_to_dict(item)
@@ -62,7 +62,7 @@ class TestItemToDict:
         assert d["doi"] == "10.1234/test"
 
     def test_minimal(self):
-        from zotero_cli_cc.mcp_server import _item_to_dict
+        from zotero_cli_agents.mcp_server import _item_to_dict
 
         item = _make_item()
         d = _item_to_dict(item, detail="minimal")
@@ -73,7 +73,7 @@ class TestItemToDict:
         assert "doi" not in d
 
     def test_full(self):
-        from zotero_cli_cc.mcp_server import _item_to_dict
+        from zotero_cli_agents.mcp_server import _item_to_dict
 
         item = _make_item()
         item.extra = {"publication": "Nature"}
@@ -84,7 +84,7 @@ class TestItemToDict:
 
 class TestNoteToDict:
     def test_basic(self):
-        from zotero_cli_cc.mcp_server import _note_to_dict
+        from zotero_cli_agents.mcp_server import _note_to_dict
 
         note = _make_note()
         d = _note_to_dict(note)
@@ -96,7 +96,7 @@ class TestNoteToDict:
 
 class TestCollectionToDict:
     def test_basic(self):
-        from zotero_cli_cc.mcp_server import _collection_to_dict
+        from zotero_cli_agents.mcp_server import _collection_to_dict
 
         child = Collection(key="CHILD1", name="Sub", parent_key="COL1", children=[])
         coll = Collection(key="COL1", name="My Collection", parent_key=None, children=[child])
@@ -113,9 +113,9 @@ class TestCollectionToDict:
 
 
 class TestHandleSearch:
-    @patch("zotero_cli_cc.mcp_server._get_reader")
+    @patch("zotero_cli_agents.mcp_server._get_reader")
     def test_returns_results(self, mock_get_reader):
-        from zotero_cli_cc.mcp_server import _handle_search
+        from zotero_cli_agents.mcp_server import _handle_search
 
         reader = MagicMock()
         item = _make_item()
@@ -128,9 +128,9 @@ class TestHandleSearch:
         assert len(result["items"]) == 1
         assert result["items"][0]["key"] == "ABC123"
 
-    @patch("zotero_cli_cc.mcp_server._get_reader")
+    @patch("zotero_cli_agents.mcp_server._get_reader")
     def test_empty_results(self, mock_get_reader):
-        from zotero_cli_cc.mcp_server import _handle_search
+        from zotero_cli_agents.mcp_server import _handle_search
 
         reader = MagicMock()
         reader.search.return_value = SearchResult(items=[], total=0, query="nothing")
@@ -140,9 +140,9 @@ class TestHandleSearch:
         assert result["total"] == 0
         assert result["items"] == []
 
-    @patch("zotero_cli_cc.mcp_server._get_reader")
+    @patch("zotero_cli_agents.mcp_server._get_reader")
     def test_with_collection_filter(self, mock_get_reader):
-        from zotero_cli_cc.mcp_server import _handle_search
+        from zotero_cli_agents.mcp_server import _handle_search
 
         reader = MagicMock()
         reader.search.return_value = SearchResult(items=[], total=0, query="q")
@@ -155,9 +155,9 @@ class TestHandleSearch:
 
 
 class TestHandleListItems:
-    @patch("zotero_cli_cc.mcp_server._get_reader")
+    @patch("zotero_cli_agents.mcp_server._get_reader")
     def test_returns_items(self, mock_get_reader):
-        from zotero_cli_cc.mcp_server import _handle_list_items
+        from zotero_cli_agents.mcp_server import _handle_list_items
 
         reader = MagicMock()
         item = _make_item()
@@ -173,9 +173,9 @@ class TestHandleListItems:
 
 
 class TestHandleRead:
-    @patch("zotero_cli_cc.mcp_server._get_reader")
+    @patch("zotero_cli_agents.mcp_server._get_reader")
     def test_found(self, mock_get_reader):
-        from zotero_cli_cc.mcp_server import _handle_read
+        from zotero_cli_agents.mcp_server import _handle_read
 
         reader = MagicMock()
         item = _make_item()
@@ -187,9 +187,9 @@ class TestHandleRead:
         assert result["item"]["key"] == "ABC123"
         assert len(result["notes"]) == 1
 
-    @patch("zotero_cli_cc.mcp_server._get_reader")
+    @patch("zotero_cli_agents.mcp_server._get_reader")
     def test_not_found_raises(self, mock_get_reader):
-        from zotero_cli_cc.mcp_server import _handle_read
+        from zotero_cli_agents.mcp_server import _handle_read
 
         reader = MagicMock()
         reader.get_item.return_value = None
@@ -200,16 +200,16 @@ class TestHandleRead:
 
 
 class TestHandlePdf:
-    @patch("zotero_cli_cc.mcp_server.PdfCache")
-    @patch("zotero_cli_cc.mcp_server.get_extractor")
-    @patch("zotero_cli_cc.mcp_server.load_pdf_config")
-    @patch("zotero_cli_cc.mcp_server._get_reader")
-    @patch("zotero_cli_cc.mcp_server.load_config")
-    @patch("zotero_cli_cc.mcp_server.get_data_dir")
+    @patch("zotero_cli_agents.mcp_server.PdfCache")
+    @patch("zotero_cli_agents.mcp_server.get_extractor")
+    @patch("zotero_cli_agents.mcp_server.load_pdf_config")
+    @patch("zotero_cli_agents.mcp_server._get_reader")
+    @patch("zotero_cli_agents.mcp_server.load_config")
+    @patch("zotero_cli_agents.mcp_server.get_data_dir")
     def test_extracts_text(
         self, mock_data_dir, mock_config, mock_get_reader, mock_load_pdf, mock_get_extractor, mock_cache_cls
     ):
-        from zotero_cli_cc.mcp_server import _handle_pdf
+        from zotero_cli_agents.mcp_server import _handle_pdf
 
         data_dir = Path("/fake/zotero")
         mock_data_dir.return_value = data_dir
@@ -235,11 +235,11 @@ class TestHandlePdf:
             result = _handle_pdf("ABC123", None)
         assert result["text"] == "PDF text content"
 
-    @patch("zotero_cli_cc.mcp_server._get_reader")
-    @patch("zotero_cli_cc.mcp_server.load_config")
-    @patch("zotero_cli_cc.mcp_server.get_data_dir")
+    @patch("zotero_cli_agents.mcp_server._get_reader")
+    @patch("zotero_cli_agents.mcp_server.load_config")
+    @patch("zotero_cli_agents.mcp_server.get_data_dir")
     def test_no_pdf_raises(self, mock_data_dir, mock_config, mock_get_reader):
-        from zotero_cli_cc.mcp_server import _handle_pdf
+        from zotero_cli_agents.mcp_server import _handle_pdf
 
         mock_data_dir.return_value = Path("/fake/zotero")
         reader = MagicMock()
@@ -251,9 +251,9 @@ class TestHandlePdf:
 
 
 class TestHandleSummarize:
-    @patch("zotero_cli_cc.mcp_server._get_reader")
+    @patch("zotero_cli_agents.mcp_server._get_reader")
     def test_returns_summary(self, mock_get_reader):
-        from zotero_cli_cc.mcp_server import _handle_summarize
+        from zotero_cli_agents.mcp_server import _handle_summarize
 
         reader = MagicMock()
         item = _make_item()
@@ -269,9 +269,9 @@ class TestHandleSummarize:
         assert result["abstract"] == "An abstract."
         assert len(result["notes"]) == 1
 
-    @patch("zotero_cli_cc.mcp_server._get_reader")
+    @patch("zotero_cli_agents.mcp_server._get_reader")
     def test_not_found_raises(self, mock_get_reader):
-        from zotero_cli_cc.mcp_server import _handle_summarize
+        from zotero_cli_agents.mcp_server import _handle_summarize
 
         reader = MagicMock()
         reader.get_item.return_value = None
@@ -282,9 +282,9 @@ class TestHandleSummarize:
 
 
 class TestHandleSummarizeAll:
-    @patch("zotero_cli_cc.mcp_server._get_reader")
+    @patch("zotero_cli_agents.mcp_server._get_reader")
     def test_returns_all_items(self, mock_get_reader):
-        from zotero_cli_cc.mcp_server import _handle_summarize_all
+        from zotero_cli_agents.mcp_server import _handle_summarize_all
 
         reader = MagicMock()
         items = [_make_item("K1", "Paper 1"), _make_item("K2", "Paper 2")]
@@ -299,9 +299,9 @@ class TestHandleSummarizeAll:
 
 
 class TestHandleExport:
-    @patch("zotero_cli_cc.mcp_server._get_reader")
+    @patch("zotero_cli_agents.mcp_server._get_reader")
     def test_returns_citation(self, mock_get_reader):
-        from zotero_cli_cc.mcp_server import _handle_export
+        from zotero_cli_agents.mcp_server import _handle_export
 
         reader = MagicMock()
         reader.export_citation.return_value = "@article{abc, title={Test}}"
@@ -311,9 +311,9 @@ class TestHandleExport:
         assert result["citation"] == "@article{abc, title={Test}}"
         assert result["format"] == "bibtex"
 
-    @patch("zotero_cli_cc.mcp_server._get_reader")
+    @patch("zotero_cli_agents.mcp_server._get_reader")
     def test_not_found_raises(self, mock_get_reader):
-        from zotero_cli_cc.mcp_server import _handle_export
+        from zotero_cli_agents.mcp_server import _handle_export
 
         reader = MagicMock()
         reader.export_citation.return_value = None
@@ -324,9 +324,9 @@ class TestHandleExport:
 
 
 class TestHandleRelate:
-    @patch("zotero_cli_cc.mcp_server._get_reader")
+    @patch("zotero_cli_agents.mcp_server._get_reader")
     def test_returns_related(self, mock_get_reader):
-        from zotero_cli_cc.mcp_server import _handle_relate
+        from zotero_cli_agents.mcp_server import _handle_relate
 
         reader = MagicMock()
         related = [_make_item("REL1", "Related Paper")]
@@ -338,9 +338,9 @@ class TestHandleRelate:
         assert result["items"][0]["key"] == "REL1"
         assert result["source_key"] == "ABC123"
 
-    @patch("zotero_cli_cc.mcp_server._get_reader")
+    @patch("zotero_cli_agents.mcp_server._get_reader")
     def test_empty_related(self, mock_get_reader):
-        from zotero_cli_cc.mcp_server import _handle_relate
+        from zotero_cli_agents.mcp_server import _handle_relate
 
         reader = MagicMock()
         reader.get_related_items.return_value = []
@@ -351,9 +351,9 @@ class TestHandleRelate:
 
 
 class TestHandleNoteView:
-    @patch("zotero_cli_cc.mcp_server._get_reader")
+    @patch("zotero_cli_agents.mcp_server._get_reader")
     def test_returns_notes(self, mock_get_reader):
-        from zotero_cli_cc.mcp_server import _handle_note_view
+        from zotero_cli_agents.mcp_server import _handle_note_view
 
         reader = MagicMock()
         reader.get_notes.return_value = [_make_note()]
@@ -364,9 +364,9 @@ class TestHandleNoteView:
         assert result["notes"][0]["content"] == "Some note content."
         assert result["parent_key"] == "ABC123"
 
-    @patch("zotero_cli_cc.mcp_server._get_reader")
+    @patch("zotero_cli_agents.mcp_server._get_reader")
     def test_empty_notes(self, mock_get_reader):
-        from zotero_cli_cc.mcp_server import _handle_note_view
+        from zotero_cli_agents.mcp_server import _handle_note_view
 
         reader = MagicMock()
         reader.get_notes.return_value = []
@@ -377,9 +377,9 @@ class TestHandleNoteView:
 
 
 class TestHandleTagView:
-    @patch("zotero_cli_cc.mcp_server._get_reader")
+    @patch("zotero_cli_agents.mcp_server._get_reader")
     def test_returns_tags(self, mock_get_reader):
-        from zotero_cli_cc.mcp_server import _handle_tag_view
+        from zotero_cli_agents.mcp_server import _handle_tag_view
 
         reader = MagicMock()
         item = _make_item()
@@ -390,9 +390,9 @@ class TestHandleTagView:
         assert result["tags"] == ["ML", "AI"]
         assert result["key"] == "ABC123"
 
-    @patch("zotero_cli_cc.mcp_server._get_reader")
+    @patch("zotero_cli_agents.mcp_server._get_reader")
     def test_not_found_raises(self, mock_get_reader):
-        from zotero_cli_cc.mcp_server import _handle_tag_view
+        from zotero_cli_agents.mcp_server import _handle_tag_view
 
         reader = MagicMock()
         reader.get_item.return_value = None
@@ -403,9 +403,9 @@ class TestHandleTagView:
 
 
 class TestHandleCollectionList:
-    @patch("zotero_cli_cc.mcp_server._get_reader")
+    @patch("zotero_cli_agents.mcp_server._get_reader")
     def test_returns_collections(self, mock_get_reader):
-        from zotero_cli_cc.mcp_server import _handle_collection_list
+        from zotero_cli_agents.mcp_server import _handle_collection_list
 
         reader = MagicMock()
         reader.get_collections.return_value = [_make_collection()]
@@ -417,9 +417,9 @@ class TestHandleCollectionList:
 
 
 class TestHandleCollectionItems:
-    @patch("zotero_cli_cc.mcp_server._get_reader")
+    @patch("zotero_cli_agents.mcp_server._get_reader")
     def test_returns_items(self, mock_get_reader):
-        from zotero_cli_cc.mcp_server import _handle_collection_items
+        from zotero_cli_agents.mcp_server import _handle_collection_items
 
         reader = MagicMock()
         reader.get_collection_items.return_value = [_make_item()]
@@ -429,9 +429,9 @@ class TestHandleCollectionItems:
         assert len(result["items"]) == 1
         assert result["collection_key"] == "COL1"
 
-    @patch("zotero_cli_cc.mcp_server._get_reader")
+    @patch("zotero_cli_agents.mcp_server._get_reader")
     def test_empty_collection(self, mock_get_reader):
-        from zotero_cli_cc.mcp_server import _handle_collection_items
+        from zotero_cli_agents.mcp_server import _handle_collection_items
 
         reader = MagicMock()
         reader.get_collection_items.return_value = []
@@ -449,9 +449,9 @@ class TestHandleCollectionItems:
 class TestErrorPropagation:
     """Ensure errors from reader methods propagate to callers."""
 
-    @patch("zotero_cli_cc.mcp_server._get_reader")
+    @patch("zotero_cli_agents.mcp_server._get_reader")
     def test_read_propagates_error(self, mock_get_reader):
-        from zotero_cli_cc.mcp_server import _handle_read
+        from zotero_cli_agents.mcp_server import _handle_read
 
         reader = MagicMock()
         reader.get_item.side_effect = RuntimeError("db error")
@@ -460,9 +460,9 @@ class TestErrorPropagation:
         with pytest.raises(RuntimeError):
             _handle_read("ABC123")
 
-    @patch("zotero_cli_cc.mcp_server._get_reader")
+    @patch("zotero_cli_agents.mcp_server._get_reader")
     def test_search_propagates_error(self, mock_get_reader):
-        from zotero_cli_cc.mcp_server import _handle_search
+        from zotero_cli_agents.mcp_server import _handle_search
 
         reader = MagicMock()
         reader.search.side_effect = RuntimeError("db error")
@@ -478,9 +478,9 @@ class TestErrorPropagation:
 
 
 class TestGetWriter:
-    @patch("zotero_cli_cc.mcp_server.load_config")
+    @patch("zotero_cli_agents.mcp_server.load_config")
     def test_returns_writer_when_credentials(self, mock_config):
-        from zotero_cli_cc.mcp_server import _get_writer
+        from zotero_cli_agents.mcp_server import _get_writer
 
         cfg = MagicMock()
         cfg.has_write_credentials = True
@@ -488,14 +488,14 @@ class TestGetWriter:
         cfg.api_key = "secret"
         mock_config.return_value = cfg
 
-        with patch("zotero_cli_cc.mcp_server.ZoteroWriter") as mock_writer_cls:
+        with patch("zotero_cli_agents.mcp_server.ZoteroWriter") as mock_writer_cls:
             mock_writer_cls.return_value = MagicMock()
             _get_writer()
             mock_writer_cls.assert_called_once_with("12345", "secret", library_type="user")
 
-    @patch("zotero_cli_cc.mcp_server.load_config")
+    @patch("zotero_cli_agents.mcp_server.load_config")
     def test_raises_without_credentials(self, mock_config):
-        from zotero_cli_cc.mcp_server import _get_writer
+        from zotero_cli_agents.mcp_server import _get_writer
 
         cfg = MagicMock()
         cfg.has_write_credentials = False
@@ -506,9 +506,9 @@ class TestGetWriter:
 
 
 class TestHandleNoteAdd:
-    @patch("zotero_cli_cc.mcp_server._get_writer")
+    @patch("zotero_cli_agents.mcp_server._get_writer")
     def test_adds_note(self, mock_get_writer):
-        from zotero_cli_cc.mcp_server import _handle_note_add
+        from zotero_cli_agents.mcp_server import _handle_note_add
 
         writer = MagicMock()
         writer.add_note.return_value = "NOTE2"
@@ -520,9 +520,9 @@ class TestHandleNoteAdd:
 
 
 class TestHandleNoteUpdate:
-    @patch("zotero_cli_cc.mcp_server._get_writer")
+    @patch("zotero_cli_agents.mcp_server._get_writer")
     def test_updates_note(self, mock_get_writer):
-        from zotero_cli_cc.mcp_server import _handle_note_update
+        from zotero_cli_agents.mcp_server import _handle_note_update
 
         writer = MagicMock()
         mock_get_writer.return_value = writer
@@ -534,9 +534,9 @@ class TestHandleNoteUpdate:
 
 
 class TestHandleTagAdd:
-    @patch("zotero_cli_cc.mcp_server._get_writer")
+    @patch("zotero_cli_agents.mcp_server._get_writer")
     def test_adds_tags(self, mock_get_writer):
-        from zotero_cli_cc.mcp_server import _handle_tag_add
+        from zotero_cli_agents.mcp_server import _handle_tag_add
 
         writer = MagicMock()
         mock_get_writer.return_value = writer
@@ -546,9 +546,9 @@ class TestHandleTagAdd:
         assert result["results"][0]["tags_added"] == ["ML", "NLP"]
         writer.add_tags.assert_called_once_with("ABC123", ["ML", "NLP"])
 
-    @patch("zotero_cli_cc.mcp_server._get_writer")
+    @patch("zotero_cli_agents.mcp_server._get_writer")
     def test_adds_tags_batch(self, mock_get_writer):
-        from zotero_cli_cc.mcp_server import _handle_tag_add
+        from zotero_cli_agents.mcp_server import _handle_tag_add
 
         writer = MagicMock()
         mock_get_writer.return_value = writer
@@ -559,9 +559,9 @@ class TestHandleTagAdd:
 
 
 class TestHandleTagRemove:
-    @patch("zotero_cli_cc.mcp_server._get_writer")
+    @patch("zotero_cli_agents.mcp_server._get_writer")
     def test_removes_tags(self, mock_get_writer):
-        from zotero_cli_cc.mcp_server import _handle_tag_remove
+        from zotero_cli_agents.mcp_server import _handle_tag_remove
 
         writer = MagicMock()
         mock_get_writer.return_value = writer
@@ -573,10 +573,10 @@ class TestHandleTagRemove:
 
 
 class TestHandleAdd:
-    @patch("zotero_cli_cc.core.metadata_resolver.resolve_doi")
-    @patch("zotero_cli_cc.mcp_server._get_writer")
+    @patch("zotero_cli_agents.core.metadata_resolver.resolve_doi")
+    @patch("zotero_cli_agents.mcp_server._get_writer")
     def test_add_by_doi(self, mock_get_writer, mock_resolve):
-        from zotero_cli_cc.mcp_server import _handle_add
+        from zotero_cli_agents.mcp_server import _handle_add
 
         mock_resolve.return_value = {"title": "Resolved", "publicationTitle": "Journal"}
         writer = MagicMock()
@@ -590,9 +590,9 @@ class TestHandleAdd:
             doi="10.1234/test", url=None, extra_fields={"title": "Resolved", "publicationTitle": "Journal"}
         )
 
-    @patch("zotero_cli_cc.mcp_server._get_writer")
+    @patch("zotero_cli_agents.mcp_server._get_writer")
     def test_add_by_url(self, mock_get_writer):
-        from zotero_cli_cc.mcp_server import _handle_add
+        from zotero_cli_agents.mcp_server import _handle_add
 
         writer = MagicMock()
         writer.add_item.return_value = "NEW2"
@@ -603,16 +603,16 @@ class TestHandleAdd:
         writer.add_item.assert_called_once_with(doi=None, url="https://example.com/paper", extra_fields=None)
 
     def test_raises_without_doi_or_url(self):
-        from zotero_cli_cc.mcp_server import _handle_add
+        from zotero_cli_agents.mcp_server import _handle_add
 
         with pytest.raises(ValueError, match="Either doi or url"):
             _handle_add(None, None)
 
 
 class TestHandleDelete:
-    @patch("zotero_cli_cc.mcp_server._get_writer")
+    @patch("zotero_cli_agents.mcp_server._get_writer")
     def test_deletes_item(self, mock_get_writer):
-        from zotero_cli_cc.mcp_server import _handle_delete
+        from zotero_cli_agents.mcp_server import _handle_delete
 
         writer = MagicMock()
         mock_get_writer.return_value = writer
@@ -622,9 +622,9 @@ class TestHandleDelete:
         assert result["results"][0]["key"] == "ABC123"
         writer.delete_item.assert_called_once_with("ABC123")
 
-    @patch("zotero_cli_cc.mcp_server._get_writer")
+    @patch("zotero_cli_agents.mcp_server._get_writer")
     def test_deletes_batch(self, mock_get_writer):
-        from zotero_cli_cc.mcp_server import _handle_delete
+        from zotero_cli_agents.mcp_server import _handle_delete
 
         writer = MagicMock()
         mock_get_writer.return_value = writer
@@ -635,9 +635,9 @@ class TestHandleDelete:
 
 
 class TestHandleCollectionCreate:
-    @patch("zotero_cli_cc.mcp_server._get_writer")
+    @patch("zotero_cli_agents.mcp_server._get_writer")
     def test_creates_collection(self, mock_get_writer):
-        from zotero_cli_cc.mcp_server import _handle_collection_create
+        from zotero_cli_agents.mcp_server import _handle_collection_create
 
         writer = MagicMock()
         writer.create_collection.return_value = "COL2"
@@ -647,9 +647,9 @@ class TestHandleCollectionCreate:
         assert result["collection_key"] == "COL2"
         writer.create_collection.assert_called_once_with("New Collection", parent_key=None)
 
-    @patch("zotero_cli_cc.mcp_server._get_writer")
+    @patch("zotero_cli_agents.mcp_server._get_writer")
     def test_creates_subcollection(self, mock_get_writer):
-        from zotero_cli_cc.mcp_server import _handle_collection_create
+        from zotero_cli_agents.mcp_server import _handle_collection_create
 
         writer = MagicMock()
         writer.create_collection.return_value = "COL3"
@@ -661,9 +661,9 @@ class TestHandleCollectionCreate:
 
 
 class TestHandleCollectionMove:
-    @patch("zotero_cli_cc.mcp_server._get_writer")
+    @patch("zotero_cli_agents.mcp_server._get_writer")
     def test_moves_item(self, mock_get_writer):
-        from zotero_cli_cc.mcp_server import _handle_collection_move
+        from zotero_cli_agents.mcp_server import _handle_collection_move
 
         writer = MagicMock()
         mock_get_writer.return_value = writer
@@ -675,9 +675,9 @@ class TestHandleCollectionMove:
 
 
 class TestHandleCollectionDelete:
-    @patch("zotero_cli_cc.mcp_server._get_writer")
+    @patch("zotero_cli_agents.mcp_server._get_writer")
     def test_deletes_collection(self, mock_get_writer):
-        from zotero_cli_cc.mcp_server import _handle_collection_delete
+        from zotero_cli_agents.mcp_server import _handle_collection_delete
 
         writer = MagicMock()
         mock_get_writer.return_value = writer
@@ -689,9 +689,9 @@ class TestHandleCollectionDelete:
 
 
 class TestHandleCollectionRename:
-    @patch("zotero_cli_cc.mcp_server._get_writer")
+    @patch("zotero_cli_agents.mcp_server._get_writer")
     def test_renames_collection(self, mock_get_writer):
-        from zotero_cli_cc.mcp_server import _handle_collection_rename
+        from zotero_cli_agents.mcp_server import _handle_collection_rename
 
         writer = MagicMock()
         mock_get_writer.return_value = writer
@@ -703,9 +703,9 @@ class TestHandleCollectionRename:
 
 
 class TestHandleCollectionReorganize:
-    @patch("zotero_cli_cc.mcp_server._get_writer")
+    @patch("zotero_cli_agents.mcp_server._get_writer")
     def test_creates_collections_and_moves_items(self, mock_get_writer):
-        from zotero_cli_cc.mcp_server import _handle_collection_reorganize
+        from zotero_cli_agents.mcp_server import _handle_collection_reorganize
 
         writer = MagicMock()
         writer.create_collection.side_effect = ["COL_A", "COL_B"]
@@ -725,9 +725,9 @@ class TestHandleCollectionReorganize:
         assert writer.create_collection.call_count == 2
         assert writer.move_to_collection.call_count == 3
 
-    @patch("zotero_cli_cc.mcp_server._get_writer")
+    @patch("zotero_cli_agents.mcp_server._get_writer")
     def test_with_parent_collections(self, mock_get_writer):
-        from zotero_cli_cc.mcp_server import _handle_collection_reorganize
+        from zotero_cli_agents.mcp_server import _handle_collection_reorganize
 
         writer = MagicMock()
         writer.create_collection.side_effect = ["PARENT1", "CHILD1"]
@@ -745,9 +745,9 @@ class TestHandleCollectionReorganize:
         calls = writer.create_collection.call_args_list
         assert calls[1] == (("RL",), {"parent_key": "PARENT1"})
 
-    @patch("zotero_cli_cc.mcp_server._get_writer")
+    @patch("zotero_cli_agents.mcp_server._get_writer")
     def test_empty_plan_raises(self, mock_get_writer):
-        from zotero_cli_cc.mcp_server import _handle_collection_reorganize
+        from zotero_cli_agents.mcp_server import _handle_collection_reorganize
 
         mock_get_writer.return_value = MagicMock()
         with pytest.raises(ValueError, match="No collections"):
@@ -764,16 +764,16 @@ class TestMcpWriteErrorHandling:
 
     @pytest.fixture(autouse=True)
     def mock_get_writer(self):
-        from zotero_cli_cc.core.writer import ZoteroWriteError
+        from zotero_cli_agents.core.writer import ZoteroWriteError
 
         writer = MagicMock()
-        with patch("zotero_cli_cc.mcp_server._get_writer", return_value=writer):
+        with patch("zotero_cli_agents.mcp_server._get_writer", return_value=writer):
             self.writer = writer
             self.ZoteroWriteError = ZoteroWriteError
             yield
 
     def test_note_add_error(self):
-        from zotero_cli_cc.mcp_server import _handle_note_add
+        from zotero_cli_agents.mcp_server import _handle_note_add
 
         self.writer.add_note.side_effect = self.ZoteroWriteError("Item not found")
         result = _handle_note_add("K1", "text")
@@ -781,7 +781,7 @@ class TestMcpWriteErrorHandling:
         assert result["context"] == "note_add"
 
     def test_note_update_error(self):
-        from zotero_cli_cc.mcp_server import _handle_note_update
+        from zotero_cli_agents.mcp_server import _handle_note_update
 
         self.writer.update_note.side_effect = self.ZoteroWriteError("Note not found")
         result = _handle_note_update("N1", "text")
@@ -789,21 +789,21 @@ class TestMcpWriteErrorHandling:
         assert result["context"] == "note_update"
 
     def test_tag_add_error(self):
-        from zotero_cli_cc.mcp_server import _handle_tag_add
+        from zotero_cli_agents.mcp_server import _handle_tag_add
 
         self.writer.add_tags.side_effect = self.ZoteroWriteError("Network error")
         result = _handle_tag_add(["K1"], ["t1"])
         assert result["results"][0]["error"] == "Network error"
 
     def test_tag_remove_error(self):
-        from zotero_cli_cc.mcp_server import _handle_tag_remove
+        from zotero_cli_agents.mcp_server import _handle_tag_remove
 
         self.writer.remove_tags.side_effect = self.ZoteroWriteError("Item not found")
         result = _handle_tag_remove(["K1"], ["t1"])
         assert result["results"][0]["error"] == "Item not found"
 
     def test_add_error(self):
-        from zotero_cli_cc.mcp_server import _handle_add
+        from zotero_cli_agents.mcp_server import _handle_add
 
         self.writer.add_item.side_effect = self.ZoteroWriteError("API error: Bad request")
         result = _handle_add(doi="10.1234/test", url=None)
@@ -811,7 +811,7 @@ class TestMcpWriteErrorHandling:
         assert result["context"] == "add"
 
     def test_delete_error(self):
-        from zotero_cli_cc.mcp_server import _handle_delete
+        from zotero_cli_agents.mcp_server import _handle_delete
 
         self.writer.delete_item.side_effect = self.ZoteroWriteError("Item 'K1' not found")
         result = _handle_delete(["K1"])
@@ -819,28 +819,28 @@ class TestMcpWriteErrorHandling:
         assert result["results"][0]["deleted"] is False
 
     def test_collection_create_error(self):
-        from zotero_cli_cc.mcp_server import _handle_collection_create
+        from zotero_cli_agents.mcp_server import _handle_collection_create
 
         self.writer.create_collection.side_effect = self.ZoteroWriteError("Network error")
         result = _handle_collection_create("Test", None)
         assert result["error"] == "Network error"
 
     def test_collection_move_error(self):
-        from zotero_cli_cc.mcp_server import _handle_collection_move
+        from zotero_cli_agents.mcp_server import _handle_collection_move
 
         self.writer.move_to_collection.side_effect = self.ZoteroWriteError("Not found")
         result = _handle_collection_move("K1", "COL1")
         assert result["error"] == "Not found"
 
     def test_collection_delete_error(self):
-        from zotero_cli_cc.mcp_server import _handle_collection_delete
+        from zotero_cli_agents.mcp_server import _handle_collection_delete
 
         self.writer.delete_collection.side_effect = self.ZoteroWriteError("Not found")
         result = _handle_collection_delete("COL1")
         assert result["error"] == "Not found"
 
     def test_collection_rename_error(self):
-        from zotero_cli_cc.mcp_server import _handle_collection_rename
+        from zotero_cli_agents.mcp_server import _handle_collection_rename
 
         self.writer.rename_collection.side_effect = self.ZoteroWriteError("Not found")
         result = _handle_collection_rename("COL1", "New")
@@ -853,10 +853,10 @@ class TestMcpWriteErrorHandling:
 
 
 class TestHandleWorkspaceNew:
-    @patch("zotero_cli_cc.mcp_server.save_workspace")
-    @patch("zotero_cli_cc.mcp_server.workspace_exists", return_value=False)
+    @patch("zotero_cli_agents.mcp_server.save_workspace")
+    @patch("zotero_cli_agents.mcp_server.workspace_exists", return_value=False)
     def test_creates_workspace(self, mock_exists, mock_save):
-        from zotero_cli_cc.mcp_server import _handle_workspace_new
+        from zotero_cli_agents.mcp_server import _handle_workspace_new
 
         result = _handle_workspace_new("my-ws", "test workspace")
         assert result["name"] == "my-ws"
@@ -864,14 +864,14 @@ class TestHandleWorkspaceNew:
         mock_save.assert_called_once()
 
     def test_invalid_name(self):
-        from zotero_cli_cc.mcp_server import _handle_workspace_new
+        from zotero_cli_agents.mcp_server import _handle_workspace_new
 
         result = _handle_workspace_new("BAD NAME!")
         assert "error" in result
 
-    @patch("zotero_cli_cc.mcp_server.workspace_exists", return_value=True)
+    @patch("zotero_cli_agents.mcp_server.workspace_exists", return_value=True)
     def test_already_exists(self, mock_exists):
-        from zotero_cli_cc.mcp_server import _handle_workspace_new
+        from zotero_cli_agents.mcp_server import _handle_workspace_new
 
         result = _handle_workspace_new("my-ws")
         assert "error" in result
@@ -879,31 +879,31 @@ class TestHandleWorkspaceNew:
 
 
 class TestHandleWorkspaceDelete:
-    @patch("zotero_cli_cc.mcp_server.delete_workspace")
-    @patch("zotero_cli_cc.mcp_server.workspace_exists", return_value=True)
+    @patch("zotero_cli_agents.mcp_server.delete_workspace")
+    @patch("zotero_cli_agents.mcp_server.workspace_exists", return_value=True)
     def test_deletes(self, mock_exists, mock_delete):
-        from zotero_cli_cc.mcp_server import _handle_workspace_delete
+        from zotero_cli_agents.mcp_server import _handle_workspace_delete
 
         result = _handle_workspace_delete("my-ws")
         assert result["deleted"] is True
         mock_delete.assert_called_once_with("my-ws")
 
-    @patch("zotero_cli_cc.mcp_server.workspace_exists", return_value=False)
+    @patch("zotero_cli_agents.mcp_server.workspace_exists", return_value=False)
     def test_not_found(self, mock_exists):
-        from zotero_cli_cc.mcp_server import _handle_workspace_delete
+        from zotero_cli_agents.mcp_server import _handle_workspace_delete
 
         result = _handle_workspace_delete("missing")
         assert "error" in result
 
 
 class TestHandleWorkspaceAdd:
-    @patch("zotero_cli_cc.mcp_server.save_workspace")
-    @patch("zotero_cli_cc.mcp_server.load_workspace")
-    @patch("zotero_cli_cc.mcp_server.workspace_exists", return_value=True)
-    @patch("zotero_cli_cc.mcp_server._get_reader")
+    @patch("zotero_cli_agents.mcp_server.save_workspace")
+    @patch("zotero_cli_agents.mcp_server.load_workspace")
+    @patch("zotero_cli_agents.mcp_server.workspace_exists", return_value=True)
+    @patch("zotero_cli_agents.mcp_server._get_reader")
     def test_adds_items(self, mock_reader, mock_exists, mock_load, mock_save):
-        from zotero_cli_cc.core.workspace import Workspace
-        from zotero_cli_cc.mcp_server import _handle_workspace_add
+        from zotero_cli_agents.core.workspace import Workspace
+        from zotero_cli_agents.mcp_server import _handle_workspace_add
 
         ws = Workspace(name="ws", created="2024-01-01")
         mock_load.return_value = ws
@@ -915,21 +915,21 @@ class TestHandleWorkspaceAdd:
         assert "ABC123" in result["added"]
         mock_save.assert_called_once()
 
-    @patch("zotero_cli_cc.mcp_server.workspace_exists", return_value=False)
+    @patch("zotero_cli_agents.mcp_server.workspace_exists", return_value=False)
     def test_not_found(self, mock_exists):
-        from zotero_cli_cc.mcp_server import _handle_workspace_add
+        from zotero_cli_agents.mcp_server import _handle_workspace_add
 
         result = _handle_workspace_add("missing", ["K1"])
         assert "error" in result
 
 
 class TestHandleWorkspaceRemove:
-    @patch("zotero_cli_cc.mcp_server.save_workspace")
-    @patch("zotero_cli_cc.mcp_server.load_workspace")
-    @patch("zotero_cli_cc.mcp_server.workspace_exists", return_value=True)
+    @patch("zotero_cli_agents.mcp_server.save_workspace")
+    @patch("zotero_cli_agents.mcp_server.load_workspace")
+    @patch("zotero_cli_agents.mcp_server.workspace_exists", return_value=True)
     def test_removes_items(self, mock_exists, mock_load, mock_save):
-        from zotero_cli_cc.core.workspace import Workspace, WorkspaceItem
-        from zotero_cli_cc.mcp_server import _handle_workspace_remove
+        from zotero_cli_agents.core.workspace import Workspace, WorkspaceItem
+        from zotero_cli_agents.mcp_server import _handle_workspace_remove
 
         ws = Workspace(
             name="ws", created="2024-01-01", items=[WorkspaceItem(key="ABC123", title="Paper", added="2024-01-01")]
@@ -942,10 +942,10 @@ class TestHandleWorkspaceRemove:
 
 
 class TestHandleWorkspaceList:
-    @patch("zotero_cli_cc.mcp_server.list_workspaces")
+    @patch("zotero_cli_agents.mcp_server.list_workspaces")
     def test_lists(self, mock_list):
-        from zotero_cli_cc.core.workspace import Workspace
-        from zotero_cli_cc.mcp_server import _handle_workspace_list
+        from zotero_cli_agents.core.workspace import Workspace
+        from zotero_cli_agents.mcp_server import _handle_workspace_list
 
         mock_list.return_value = [
             Workspace(name="ws1", created="2024-01-01", description="Test"),
@@ -954,9 +954,9 @@ class TestHandleWorkspaceList:
         assert len(result["workspaces"]) == 1
         assert result["workspaces"][0]["name"] == "ws1"
 
-    @patch("zotero_cli_cc.mcp_server.list_workspaces")
+    @patch("zotero_cli_agents.mcp_server.list_workspaces")
     def test_empty(self, mock_list):
-        from zotero_cli_cc.mcp_server import _handle_workspace_list
+        from zotero_cli_agents.mcp_server import _handle_workspace_list
 
         mock_list.return_value = []
         result = _handle_workspace_list()
@@ -964,12 +964,12 @@ class TestHandleWorkspaceList:
 
 
 class TestHandleWorkspaceShow:
-    @patch("zotero_cli_cc.mcp_server._get_reader")
-    @patch("zotero_cli_cc.mcp_server.load_workspace")
-    @patch("zotero_cli_cc.mcp_server.workspace_exists", return_value=True)
+    @patch("zotero_cli_agents.mcp_server._get_reader")
+    @patch("zotero_cli_agents.mcp_server.load_workspace")
+    @patch("zotero_cli_agents.mcp_server.workspace_exists", return_value=True)
     def test_shows_items(self, mock_exists, mock_load, mock_reader):
-        from zotero_cli_cc.core.workspace import Workspace, WorkspaceItem
-        from zotero_cli_cc.mcp_server import _handle_workspace_show
+        from zotero_cli_agents.core.workspace import Workspace, WorkspaceItem
+        from zotero_cli_agents.mcp_server import _handle_workspace_show
 
         ws = Workspace(
             name="ws", created="2024-01-01", items=[WorkspaceItem(key="ABC123", title="Paper", added="2024-01-01")]
@@ -986,12 +986,12 @@ class TestHandleWorkspaceShow:
 
 
 class TestHandleWorkspaceExport:
-    @patch("zotero_cli_cc.mcp_server._get_reader")
-    @patch("zotero_cli_cc.mcp_server.load_workspace")
-    @patch("zotero_cli_cc.mcp_server.workspace_exists", return_value=True)
+    @patch("zotero_cli_agents.mcp_server._get_reader")
+    @patch("zotero_cli_agents.mcp_server.load_workspace")
+    @patch("zotero_cli_agents.mcp_server.workspace_exists", return_value=True)
     def test_export_markdown(self, mock_exists, mock_load, mock_reader):
-        from zotero_cli_cc.core.workspace import Workspace, WorkspaceItem
-        from zotero_cli_cc.mcp_server import _handle_workspace_export
+        from zotero_cli_agents.core.workspace import Workspace, WorkspaceItem
+        from zotero_cli_agents.mcp_server import _handle_workspace_export
 
         ws = Workspace(
             name="ws",
@@ -1008,12 +1008,12 @@ class TestHandleWorkspaceExport:
         assert result["format"] == "markdown"
         assert "# Workspace: ws" in result["content"]
 
-    @patch("zotero_cli_cc.mcp_server._get_reader")
-    @patch("zotero_cli_cc.mcp_server.load_workspace")
-    @patch("zotero_cli_cc.mcp_server.workspace_exists", return_value=True)
+    @patch("zotero_cli_agents.mcp_server._get_reader")
+    @patch("zotero_cli_agents.mcp_server.load_workspace")
+    @patch("zotero_cli_agents.mcp_server.workspace_exists", return_value=True)
     def test_export_json(self, mock_exists, mock_load, mock_reader):
-        from zotero_cli_cc.core.workspace import Workspace, WorkspaceItem
-        from zotero_cli_cc.mcp_server import _handle_workspace_export
+        from zotero_cli_agents.core.workspace import Workspace, WorkspaceItem
+        from zotero_cli_agents.mcp_server import _handle_workspace_export
 
         ws = Workspace(
             name="ws", created="2024-01-01", items=[WorkspaceItem(key="ABC123", title="Paper", added="2024-01-01")]
@@ -1029,13 +1029,13 @@ class TestHandleWorkspaceExport:
 
 
 class TestHandleWorkspaceImport:
-    @patch("zotero_cli_cc.mcp_server.save_workspace")
-    @patch("zotero_cli_cc.mcp_server.load_workspace")
-    @patch("zotero_cli_cc.mcp_server.workspace_exists", return_value=True)
-    @patch("zotero_cli_cc.mcp_server._get_reader")
+    @patch("zotero_cli_agents.mcp_server.save_workspace")
+    @patch("zotero_cli_agents.mcp_server.load_workspace")
+    @patch("zotero_cli_agents.mcp_server.workspace_exists", return_value=True)
+    @patch("zotero_cli_agents.mcp_server._get_reader")
     def test_import_by_search(self, mock_reader, mock_exists, mock_load, mock_save):
-        from zotero_cli_cc.core.workspace import Workspace
-        from zotero_cli_cc.mcp_server import _handle_workspace_import
+        from zotero_cli_agents.core.workspace import Workspace
+        from zotero_cli_agents.mcp_server import _handle_workspace_import
 
         ws = Workspace(name="ws", created="2024-01-01")
         mock_load.return_value = ws
@@ -1047,21 +1047,21 @@ class TestHandleWorkspaceImport:
         assert result["added"] == 1
         mock_save.assert_called_once()
 
-    @patch("zotero_cli_cc.mcp_server.workspace_exists", return_value=True)
+    @patch("zotero_cli_agents.mcp_server.workspace_exists", return_value=True)
     def test_no_filter_error(self, mock_exists):
-        from zotero_cli_cc.mcp_server import _handle_workspace_import
+        from zotero_cli_agents.mcp_server import _handle_workspace_import
 
         result = _handle_workspace_import("ws")
         assert "error" in result
 
 
 class TestHandleWorkspaceSearch:
-    @patch("zotero_cli_cc.mcp_server._get_reader")
-    @patch("zotero_cli_cc.mcp_server.load_workspace")
-    @patch("zotero_cli_cc.mcp_server.workspace_exists", return_value=True)
+    @patch("zotero_cli_agents.mcp_server._get_reader")
+    @patch("zotero_cli_agents.mcp_server.load_workspace")
+    @patch("zotero_cli_agents.mcp_server.workspace_exists", return_value=True)
     def test_searches(self, mock_exists, mock_load, mock_reader):
-        from zotero_cli_cc.core.workspace import Workspace, WorkspaceItem
-        from zotero_cli_cc.mcp_server import _handle_workspace_search
+        from zotero_cli_agents.core.workspace import Workspace, WorkspaceItem
+        from zotero_cli_agents.mcp_server import _handle_workspace_search
 
         ws = Workspace(
             name="ws", created="2024-01-01", items=[WorkspaceItem(key="ABC123", title="Test Paper", added="2024-01-01")]
@@ -1075,12 +1075,12 @@ class TestHandleWorkspaceSearch:
         assert result["total"] == 1
         assert result["items"][0]["key"] == "ABC123"
 
-    @patch("zotero_cli_cc.mcp_server._get_reader")
-    @patch("zotero_cli_cc.mcp_server.load_workspace")
-    @patch("zotero_cli_cc.mcp_server.workspace_exists", return_value=True)
+    @patch("zotero_cli_agents.mcp_server._get_reader")
+    @patch("zotero_cli_agents.mcp_server.load_workspace")
+    @patch("zotero_cli_agents.mcp_server.workspace_exists", return_value=True)
     def test_no_match(self, mock_exists, mock_load, mock_reader):
-        from zotero_cli_cc.core.workspace import Workspace, WorkspaceItem
-        from zotero_cli_cc.mcp_server import _handle_workspace_search
+        from zotero_cli_agents.core.workspace import Workspace, WorkspaceItem
+        from zotero_cli_agents.mcp_server import _handle_workspace_search
 
         ws = Workspace(
             name="ws", created="2024-01-01", items=[WorkspaceItem(key="ABC123", title="Paper", added="2024-01-01")]
@@ -1101,9 +1101,9 @@ class TestHandleWorkspaceSearch:
 
 
 class TestHandleCite:
-    @patch("zotero_cli_cc.mcp_server._get_reader")
+    @patch("zotero_cli_agents.mcp_server._get_reader")
     def test_apa_citation(self, mock_reader):
-        from zotero_cli_cc.mcp_server import _handle_cite
+        from zotero_cli_agents.mcp_server import _handle_cite
 
         reader = MagicMock()
         item = _make_item()
@@ -1116,9 +1116,9 @@ class TestHandleCite:
         assert "Doe" in result["citation"]
         assert result["key"] == "ABC123"
 
-    @patch("zotero_cli_cc.mcp_server._get_reader")
+    @patch("zotero_cli_agents.mcp_server._get_reader")
     def test_nature_citation(self, mock_reader):
-        from zotero_cli_cc.mcp_server import _handle_cite
+        from zotero_cli_agents.mcp_server import _handle_cite
 
         reader = MagicMock()
         item = _make_item()
@@ -1130,9 +1130,9 @@ class TestHandleCite:
         assert result["style"] == "nature"
         assert "Test Paper" in result["citation"]
 
-    @patch("zotero_cli_cc.mcp_server._get_reader")
+    @patch("zotero_cli_agents.mcp_server._get_reader")
     def test_not_found(self, mock_reader):
-        from zotero_cli_cc.mcp_server import _handle_cite
+        from zotero_cli_agents.mcp_server import _handle_cite
 
         reader = MagicMock()
         reader.get_item.return_value = None
@@ -1141,9 +1141,9 @@ class TestHandleCite:
         result = _handle_cite("MISSING", "apa")
         assert "error" in result
 
-    @patch("zotero_cli_cc.mcp_server._get_reader")
+    @patch("zotero_cli_agents.mcp_server._get_reader")
     def test_invalid_style(self, mock_reader):
-        from zotero_cli_cc.mcp_server import _handle_cite
+        from zotero_cli_agents.mcp_server import _handle_cite
 
         reader = MagicMock()
         reader.get_item.return_value = _make_item()
@@ -1154,9 +1154,9 @@ class TestHandleCite:
 
 
 class TestHandleStats:
-    @patch("zotero_cli_cc.mcp_server._get_reader")
+    @patch("zotero_cli_agents.mcp_server._get_reader")
     def test_returns_stats(self, mock_reader):
-        from zotero_cli_cc.mcp_server import _handle_stats
+        from zotero_cli_agents.mcp_server import _handle_stats
 
         reader = MagicMock()
         reader.get_stats.return_value = {
@@ -1175,17 +1175,17 @@ class TestHandleStats:
 
 
 class TestHandleUpdateStatus:
-    @patch("zotero_cli_cc.mcp_server._get_reader")
+    @patch("zotero_cli_agents.mcp_server._get_reader")
     def test_no_items(self, mock_reader):
-        from zotero_cli_cc.mcp_server import _handle_update_status
+        from zotero_cli_agents.mcp_server import _handle_update_status
 
         reader = MagicMock()
         reader.get_arxiv_preprints.return_value = []
         mock_reader.return_value = reader
 
         with (
-            patch("zotero_cli_cc.mcp_server.load_config") as mock_cfg,
-            patch("zotero_cli_cc.mcp_server.get_data_dir") as mock_dir,
+            patch("zotero_cli_agents.mcp_server.load_config") as mock_cfg,
+            patch("zotero_cli_agents.mcp_server.get_data_dir") as mock_dir,
         ):
             mock_cfg.return_value = MagicMock(semantic_scholar_api_key="")
             mock_dir.return_value = Path("/fake")
@@ -1194,17 +1194,17 @@ class TestHandleUpdateStatus:
         assert result["checked"] == 0
         assert result["published"] == 0
 
-    @patch("zotero_cli_cc.mcp_server._get_reader")
+    @patch("zotero_cli_agents.mcp_server._get_reader")
     def test_single_item_not_found(self, mock_reader):
-        from zotero_cli_cc.mcp_server import _handle_update_status
+        from zotero_cli_agents.mcp_server import _handle_update_status
 
         reader = MagicMock()
         reader.get_item.return_value = None
         mock_reader.return_value = reader
 
         with (
-            patch("zotero_cli_cc.mcp_server.load_config") as mock_cfg,
-            patch("zotero_cli_cc.mcp_server.get_data_dir") as mock_dir,
+            patch("zotero_cli_agents.mcp_server.load_config") as mock_cfg,
+            patch("zotero_cli_agents.mcp_server.get_data_dir") as mock_dir,
         ):
             mock_cfg.return_value = MagicMock(semantic_scholar_api_key="")
             mock_dir.return_value = Path("/fake")

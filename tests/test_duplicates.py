@@ -8,8 +8,8 @@ from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
-from zotero_cli_cc.cli import main
-from zotero_cli_cc.core.reader import ZoteroReader
+from zotero_cli_agents.cli import main
+from zotero_cli_agents.core.reader import ZoteroReader
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -97,9 +97,9 @@ class TestDuplicatesCLI:
 
 class TestDuplicatesMCP:
     def test_handle_duplicates(self):
-        from zotero_cli_cc.mcp_server import _handle_duplicates
+        from zotero_cli_agents.mcp_server import _handle_duplicates
 
-        with patch("zotero_cli_cc.mcp_server._get_reader") as mock_get:
+        with patch("zotero_cli_agents.mcp_server._get_reader") as mock_get:
             mock_reader = MagicMock()
             mock_get.return_value = mock_reader
             mock_reader.find_duplicates.return_value = []

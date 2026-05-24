@@ -5,6 +5,8 @@ __pycache__/
 dist/
 build/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .coverage
 # Docs build output
 site/
@@ -17,3 +19,4 @@ logs/
 my-docs/
 .sisyphus/
 .claude/
+.agents/skills/

@@ -4,12 +4,12 @@ hide:
 ---
 
 <p align="center">
-  <img src="assets/banner_official.png" alt="zotero-cli-cc banner" width="720">
+  <img src="assets/banner_official.png" alt="zotero-cli-agents banner" width="720">
 </p>
 
 # zot — Let Zotero Fly in Your Terminal
 
-`zotero-cli-cc` is a Zotero CLI designed for [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
+`zotero-cli-agents` is a Zotero CLI designed for [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
 
 **Core Features:**
 

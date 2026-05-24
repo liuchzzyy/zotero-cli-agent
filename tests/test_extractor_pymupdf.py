@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from zotero_cli_cc.core.pdf_extractor import PyMuPdfExtractor
+from zotero_cli_agents.core.pdf_extractor import PyMuPdfExtractor
 
 FIXTURES = Path(__file__).parent / "fixtures"
 

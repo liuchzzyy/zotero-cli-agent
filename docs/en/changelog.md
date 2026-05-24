@@ -19,7 +19,7 @@ for the full contract.
 - `zot schema [command...]` — machine-readable introspection for the full CLI tree. Each entry carries `name`, `params` (typed), `safety_tier`, `since`, `deprecated`, and nested `subcommands`. Agents can discover every command without a README.
 - **Safety tiers in `--help`**: top-level help groups commands into Read / Write (MUTATES LIBRARY) / Destructive sections. Destructive command help carries a "MUTATES LIBRARY" warning.
 - **`--dry-run`** on all mutating commands: `add`, `update`, `note --add`, `attach`, `delete`, `trash restore`. Preview shape: `{"ok": true, "dry_run": true, "data": {"would": ...}}`.
-- **`--idempotency-key`** on `add`, `update`, `note --add`, `attach`, `delete`. SQLite-backed cache at `$ZOT_CACHE_DIR/idempotency.db` (default `~/.cache/zotero-cli-cc`) with 24h TTL. Retried calls carrying the same key return the original envelope and never duplicate the upstream mutation.
+- **`--idempotency-key`** on `add`, `update`, `note --add`, `attach`, `delete`. SQLite-backed cache at `$ZOT_CACHE_DIR/idempotency.db` (default `~/.cache/zotero-cli-agents`) with 24h TTL. Retried calls carrying the same key return the original envelope and never duplicate the upstream mutation.
 - **`meta` slot** on every envelope: `request_id` (uuid), `latency_ms`, `schema_version`, `cli_version`. Mutating commands also set `sync_required: true`.
 - **`next` hints** in success envelopes: `add`, `update`, `delete`, `note --add`, `attach` suggest plausible follow-up commands so the agent saves a planning turn.
 - **`retryable` field on every error**: network / 5xx / rate-limit → `retryable: true`; not-found / validation / 4xx → `retryable: false`. `ZoteroWriteError` carries `code`, `retryable`, `retry_after_seconds`.

@@ -7,14 +7,14 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
-from zotero_cli_cc.cli import main
-from zotero_cli_cc.exit_codes import (
+from zotero_cli_agents.cli import main
+from zotero_cli_agents.exit_codes import (
     EXIT_AUTH,
     EXIT_NOT_FOUND,
     EXIT_OK,
     EXIT_VALIDATION,
 )
-from zotero_cli_cc.formatter import envelope_error, envelope_ok, envelope_partial
+from zotero_cli_agents.formatter import envelope_error, envelope_ok, envelope_partial
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 

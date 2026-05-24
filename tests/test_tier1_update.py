@@ -9,8 +9,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
-from zotero_cli_cc.cli import main
-from zotero_cli_cc.core.writer import ZoteroWriteError, ZoteroWriter
+from zotero_cli_agents.cli import main
+from zotero_cli_agents.core.writer import ZoteroWriteError, ZoteroWriter
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -28,7 +28,7 @@ def _invoke(args: list[str], json_output: bool = False):
 
 
 class TestUpdateCommand:
-    @patch("zotero_cli_cc.commands.update.ZoteroWriter")
+    @patch("zotero_cli_agents.commands.update.ZoteroWriter")
     def test_update_title(self, mock_writer_cls):
         mock_writer = MagicMock()
         mock_writer_cls.return_value = mock_writer
@@ -37,7 +37,7 @@ class TestUpdateCommand:
         mock_writer.update_item.assert_called_once_with("ATTN001", {"title": "New Title"})
         assert "Updated" in result.output
 
-    @patch("zotero_cli_cc.commands.update.ZoteroWriter")
+    @patch("zotero_cli_agents.commands.update.ZoteroWriter")
     def test_update_date(self, mock_writer_cls):
         mock_writer = MagicMock()
         mock_writer_cls.return_value = mock_writer
@@ -45,7 +45,7 @@ class TestUpdateCommand:
         assert result.exit_code == 0
         mock_writer.update_item.assert_called_once_with("ATTN001", {"date": "2025-01-01"})
 
-    @patch("zotero_cli_cc.commands.update.ZoteroWriter")
+    @patch("zotero_cli_agents.commands.update.ZoteroWriter")
     def test_update_multiple_fields(self, mock_writer_cls):
         mock_writer = MagicMock()
         mock_writer_cls.return_value = mock_writer
@@ -67,7 +67,7 @@ class TestUpdateCommand:
             {"title": "New Title", "date": "2025-01-01", "abstractNote": "New abstract"},
         )
 
-    @patch("zotero_cli_cc.commands.update.ZoteroWriter")
+    @patch("zotero_cli_agents.commands.update.ZoteroWriter")
     def test_update_field_option(self, mock_writer_cls):
         mock_writer = MagicMock()
         mock_writer_cls.return_value = mock_writer
@@ -92,7 +92,7 @@ class TestUpdateCommand:
         assert result.exit_code != 0
         assert "Invalid" in result.output or "key=value" in result.output
 
-    @patch("zotero_cli_cc.commands.update.ZoteroWriter")
+    @patch("zotero_cli_agents.commands.update.ZoteroWriter")
     def test_update_json_output(self, mock_writer_cls):
         mock_writer = MagicMock()
         mock_writer_cls.return_value = mock_writer
@@ -103,7 +103,7 @@ class TestUpdateCommand:
         assert "fields" in data
         assert data["sync_required"] is True
 
-    @patch("zotero_cli_cc.commands.update.ZoteroWriter")
+    @patch("zotero_cli_agents.commands.update.ZoteroWriter")
     def test_update_api_error(self, mock_writer_cls):
         mock_writer = MagicMock()
         mock_writer_cls.return_value = mock_writer
@@ -114,7 +114,7 @@ class TestUpdateCommand:
 
 
 class TestWriterUpdateItem:
-    @patch("zotero_cli_cc.core.writer.zotero.Zotero")
+    @patch("zotero_cli_agents.core.writer.zotero.Zotero")
     def test_update_item_calls_api(self, mock_zotero_cls):
         mock_zot = MagicMock()
         mock_zotero_cls.return_value = mock_zot
@@ -129,7 +129,7 @@ class TestWriterUpdateItem:
         call_arg = mock_zot.update_item.call_args[0][0]
         assert call_arg["data"]["title"] == "New Title"
 
-    @patch("zotero_cli_cc.core.writer.zotero.Zotero")
+    @patch("zotero_cli_agents.core.writer.zotero.Zotero")
     def test_update_item_not_found(self, mock_zotero_cls):
         from pyzotero.zotero_errors import ResourceNotFoundError
 

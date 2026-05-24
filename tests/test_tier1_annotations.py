@@ -7,7 +7,7 @@ from pathlib import Path
 import pymupdf
 import pytest
 
-from zotero_cli_cc.core.pdf_extractor import extract_annotations
+from zotero_cli_agents.core.pdf_extractor import PyMuPdfExtractor
 
 
 @pytest.fixture
@@ -46,31 +46,31 @@ def no_annotation_pdf(tmp_path) -> Path:
 
 class TestExtractAnnotations:
     def test_extract_highlights(self, annotated_pdf):
-        annotations = extract_annotations(annotated_pdf)
+        annotations = PyMuPdfExtractor().extract_annotations(annotated_pdf)
         assert len(annotations) >= 1
         highlight = [a for a in annotations if a["type"] == "Highlight"]
         assert len(highlight) >= 1
 
     def test_extract_text_annotations(self, annotated_pdf):
-        annotations = extract_annotations(annotated_pdf)
+        annotations = PyMuPdfExtractor().extract_annotations(annotated_pdf)
         text_annots = [a for a in annotations if a["type"] == "Text"]
         assert len(text_annots) >= 1
         assert "sticky note" in text_annots[0]["content"]
 
     def test_annotations_have_page_number(self, annotated_pdf):
-        annotations = extract_annotations(annotated_pdf)
+        annotations = PyMuPdfExtractor().extract_annotations(annotated_pdf)
         assert all("page" in a for a in annotations)
         assert all(a["page"] >= 1 for a in annotations)
 
     def test_no_annotations(self, no_annotation_pdf):
-        annotations = extract_annotations(no_annotation_pdf)
+        annotations = PyMuPdfExtractor().extract_annotations(no_annotation_pdf)
         assert annotations == []
 
     def test_file_not_found(self):
         with pytest.raises(FileNotFoundError):
-            extract_annotations(Path("/nonexistent.pdf"))
+            PyMuPdfExtractor().extract_annotations(Path("/nonexistent.pdf"))
 
     def test_highlight_has_content(self, annotated_pdf):
-        annotations = extract_annotations(annotated_pdf)
+        annotations = PyMuPdfExtractor().extract_annotations(annotated_pdf)
         highlight = [a for a in annotations if a["type"] == "Highlight"]
         assert highlight[0]["content"] == "Important highlight"

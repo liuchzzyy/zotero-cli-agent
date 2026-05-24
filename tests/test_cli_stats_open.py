@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from click.testing import CliRunner
 
-from zotero_cli_cc.cli import main
+from zotero_cli_agents.cli import main
 
 
 class TestStatsCmd:
@@ -54,7 +54,7 @@ class TestOpenCmd:
         assert result.exit_code != 0
         assert "No PDF" in result.output
 
-    @patch("zotero_cli_cc.commands.open_cmd._open_path")
+    @patch("zotero_cli_agents.commands.open_cmd._open_path")
     def test_open_url(self, mock_open, test_db_path: Path):
         runner = CliRunner()
         result = runner.invoke(
@@ -75,7 +75,7 @@ class TestOpenCmd:
 
 class TestGetStats:
     def test_get_stats(self, test_db_path: Path):
-        from zotero_cli_cc.core.reader import ZoteroReader
+        from zotero_cli_agents.core.reader import ZoteroReader
 
         reader = ZoteroReader(test_db_path)
         try:

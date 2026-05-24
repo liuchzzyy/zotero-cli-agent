@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from click.testing import CliRunner
 
-from zotero_cli_cc.cli import main
+from zotero_cli_agents.cli import main
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -24,8 +24,8 @@ def _invoke(args: list[str], json_output: bool = False):
 def _patch_ws_dir(tmp_path):
     """Patch workspaces_dir in both the core module and the commands module."""
     stack = ExitStack()
-    stack.enter_context(patch("zotero_cli_cc.core.workspace.workspaces_dir", return_value=tmp_path))
-    stack.enter_context(patch("zotero_cli_cc.commands.workspace.workspaces_dir", return_value=tmp_path))
+    stack.enter_context(patch("zotero_cli_agents.core.workspace.workspaces_dir", return_value=tmp_path))
+    stack.enter_context(patch("zotero_cli_agents.commands.workspace.workspaces_dir", return_value=tmp_path))
     return stack
 
 

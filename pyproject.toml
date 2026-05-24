@@ -1,5 +1,5 @@
 [project]
-name = "zotero-cli-cc"
+name = "zotero-cli-agents"
 version = "0.4.4"
 description = "Zotero CLI for Claude Code — SQLite reads + Web API writes"
 license = "CC-BY-NC-4.0"
@@ -31,14 +31,14 @@ docs = [
 ]
 
 [project.scripts]
-zot = "zotero_cli_cc.cli:main"
+zot = "zotero_cli_agents.cli:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/zotero_cli_cc"]
+packages = ["src/zotero_cli_agents"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -61,7 +61,7 @@ select = ["E", "F", "W", "I", "UP"]
 ignore = ["E501"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["zotero_cli_cc"]
+known-first-party = ["zotero_cli_agents"]
 
 [tool.mypy]
 python_version = "3.10"

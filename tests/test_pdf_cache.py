@@ -2,7 +2,7 @@ import time
 
 import pytest
 
-from zotero_cli_cc.core.pdf_cache import PdfCache
+from zotero_cli_agents.core.pdf_cache import PdfCache
 
 
 @pytest.fixture

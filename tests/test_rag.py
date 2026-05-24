@@ -7,8 +7,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from zotero_cli_cc.config import EmbeddingConfig
-from zotero_cli_cc.core.rag import (
+from zotero_cli_agents.config import EmbeddingConfig
+from zotero_cli_agents.core.rag import (
     bm25_score_chunks,
     build_metadata_chunk,
     chunk_text,
@@ -18,7 +18,7 @@ from zotero_cli_cc.core.rag import (
     reciprocal_rank_fusion,
     tokenize,
 )
-from zotero_cli_cc.core.rag_index import RagIndex
+from zotero_cli_agents.core.rag_index import RagIndex
 
 
 class TestRagIndex:
@@ -204,7 +204,7 @@ class TestEmbedding:
     def test_embed_texts_surfaces_provider_error(self, capsys):
         cfg = EmbeddingConfig(url="http://test/v1/embeddings", api_key="key", model="model", provider="aliyun")
         with patch(
-            "zotero_cli_cc.core.embedding_router.EmbeddingRouter.embed",
+            "zotero_cli_agents.core.embedding_router.EmbeddingRouter.embed",
             side_effect=RuntimeError("boom"),
         ):
             result = embed_texts(["hello"], cfg)

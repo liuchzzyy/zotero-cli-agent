@@ -1,6 +1,6 @@
 from click.testing import CliRunner
 
-from zotero_cli_cc.cli import main
+from zotero_cli_agents.cli import main
 
 
 def test_no_interaction_flag_exists():
@@ -67,7 +67,7 @@ def test_profile_flag():
 
 
 def test_cache_clear_command(tmp_path):
-    from zotero_cli_cc.core import pdf_cache as pdf_cache_module
+    from zotero_cli_agents.core import pdf_cache as pdf_cache_module
 
     old_default = pdf_cache_module.DEFAULT_CACHE_PATH
     try:
@@ -80,7 +80,7 @@ def test_cache_clear_command(tmp_path):
 
 
 def test_cache_stats_command(tmp_path):
-    from zotero_cli_cc.core import pdf_cache as pdf_cache_module
+    from zotero_cli_agents.core import pdf_cache as pdf_cache_module
 
     old_default = pdf_cache_module.DEFAULT_CACHE_PATH
     try:

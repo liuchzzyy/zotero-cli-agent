@@ -7,7 +7,7 @@ on:
       - "docs/**"
       - "mkdocs.yml"
       - "CHANGELOG.md"
-      - "src/zotero_cli_cc/**"
+      - "src/zotero_cli_agents/**"
   workflow_dispatch:
 
 permissions:
