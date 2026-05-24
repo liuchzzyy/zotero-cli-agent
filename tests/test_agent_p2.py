@@ -68,6 +68,22 @@ class TestSchemaMetadata:
         env = json.loads(_run(["schema", "add"]).output)
         assert env["data"]["safety_tier"] == "write"
 
+    def test_schema_nested_collection_create_is_write(self):
+        env = json.loads(_run(["schema", "collection", "create"]).output)
+        assert env["data"]["safety_tier"] == "write"
+
+    def test_schema_nested_collection_delete_is_destructive(self):
+        env = json.loads(_run(["schema", "collection", "delete"]).output)
+        assert env["data"]["safety_tier"] == "destructive"
+
+    def test_schema_nested_trash_restore_is_write(self):
+        env = json.loads(_run(["schema", "trash", "restore"]).output)
+        assert env["data"]["safety_tier"] == "write"
+
+    def test_schema_nested_collection_list_stays_read(self):
+        env = json.loads(_run(["schema", "collection", "list"]).output)
+        assert env["data"]["safety_tier"] == "read"
+
     def test_schema_since_and_deprecated_fields(self):
         env = json.loads(_run(["schema", "search"]).output)
         assert "since" in env["data"]

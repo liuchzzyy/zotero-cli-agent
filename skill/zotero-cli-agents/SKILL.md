@@ -23,6 +23,7 @@ For exhaustive flags / types / safety tier of any command, run `zot schema <cmd>
 | Batch import DOIs/URLs | `zot add --from-file file.txt` | One per line |
 | Add/delete/tag/note | `zot ...` | All write ops |
 | Update item metadata | `zot update KEY --title/--field` | Web API write |
+| AI metadata cleanup loop | `zot --json --detail full summarize-all --exclude-tag update/metadata` + `zot update --from-jsonl updates.jsonl --add-tag update/metadata` | Export only unprocessed items, clean externally, batch write back and mark processed |
 | Upload attachment | `zot attach KEY --file paper.pdf` | Web API write |
 | Check preprint pub status | `zot update-status --limit 20` | Semantic Scholar API |
 | Find duplicates | `zot --json duplicates` | Local SQLite |
@@ -90,7 +91,15 @@ zot add --pdf paper.pdf                   # Add from local PDF (auto-extract DOI
 zot --no-interaction delete ITEMKEY
 zot update ITEMKEY --title "New Title"
 zot update ITEMKEY --field volume=42 --field pages=1-10
+zot --json --detail full summarize-all --exclude-tag update/metadata --limit 100
+zot update --from-jsonl cleaned-metadata.jsonl --add-tag update/metadata
 zot attach ITEMKEY --file supplement.pdf
+```
+
+Batch metadata write-back format:
+
+```json
+{"key":"ABC123","fields":{"title":"Clean title","abstractNote":"Clean abstract"}}
 ```
 
 **Agent-safety flags on every mutating command:**

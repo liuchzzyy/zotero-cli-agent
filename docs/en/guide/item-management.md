@@ -34,6 +34,14 @@ The file should contain one DOI or URL per line.
 zot update ABC123 --title "Corrected Title"
 zot update ABC123 --date "2024-01-15"
 zot update ABC123 --field publicationTitle="Nature"
+zot --detail full summarize-all --exclude-tag update/metadata --limit 100
+zot update --from-jsonl cleaned-metadata.jsonl --add-tag update/metadata
+```
+
+For AI-assisted metadata cleanup, first export writable metadata with `zot --detail full summarize-all`, then write back one JSON object per line:
+
+```json
+{"key":"ABC123","fields":{"title":"Clean title","abstractNote":"Clean abstract"}}
 ```
 
 ## Delete Items

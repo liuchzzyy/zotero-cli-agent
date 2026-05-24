@@ -16,6 +16,11 @@ from zotero_cli_agents.core.writer import SYNC_REMINDER, ZoteroWriteError, Zoter
 WRITE_ENV = {"ZOT_LIBRARY_ID": "123", "ZOT_API_KEY": "abc"}
 
 
+def _parse_json_output(output: str) -> dict:
+    cleaned = "\n".join(line for line in output.splitlines() if not line.lstrip().startswith('{"event"'))
+    return json.loads(cleaned)
+
+
 # --- Dry-run tests ---
 
 
@@ -152,6 +157,51 @@ class TestOffset:
         envelope_text = result.output[last_envelope_start + 1 :] if last_envelope_start >= 0 else result.output
         data = json.loads(envelope_text)["data"]
         assert isinstance(data, list)
+
+    def test_summarize_all_full_includes_writable_fields(self, test_db_path):
+        runner = CliRunner()
+        result = runner.invoke(
+            main,
+            ["--json", "--detail", "full", "summarize-all", "--limit", "1"],
+            env={"ZOT_DATA_DIR": str(test_db_path.parent), "ZOT_FORMAT": "table"},
+        )
+        assert result.exit_code == 0
+        env = _parse_json_output(result.output)
+        assert env["meta"]["detail"] == "full"
+        assert len(env["data"]) == 1
+        item = env["data"][0]
+        assert "writable_fields" in item
+        assert item["writable_fields"]["title"] == item["title"]
+        assert "DOI" not in item["writable_fields"]
+        assert "pages" not in item["writable_fields"]
+        assert "ISSN" not in item["writable_fields"]
+        assert "extra" not in item["writable_fields"]
+
+    def test_summarize_all_minimal_omits_extra_fields(self, test_db_path):
+        runner = CliRunner()
+        result = runner.invoke(
+            main,
+            ["--json", "--detail", "minimal", "summarize-all", "--limit", "1"],
+            env={"ZOT_DATA_DIR": str(test_db_path.parent), "ZOT_FORMAT": "table"},
+        )
+        assert result.exit_code == 0
+        env = _parse_json_output(result.output)
+        assert env["meta"]["detail"] == "minimal"
+        item = env["data"][0]
+        assert set(item.keys()) == {"key", "title", "authors", "date"}
+
+    def test_summarize_all_exclude_tag_filters_results(self, test_db_path):
+        runner = CliRunner()
+        result = runner.invoke(
+            main,
+            ["--json", "summarize-all", "--exclude-tag", "transformer", "--limit", "100"],
+            env={"ZOT_DATA_DIR": str(test_db_path.parent), "ZOT_FORMAT": "table"},
+        )
+        assert result.exit_code == 0
+        env = _parse_json_output(result.output)
+        assert env["meta"]["excluded_tags"] == ["transformer"]
+        assert env["meta"]["filtered_total"] >= env["meta"]["count"]
+        assert all("transformer" not in item.get("tags", []) for item in env["data"])
 
 
 # --- PdfExtractionError tests ---

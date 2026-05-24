@@ -63,16 +63,34 @@ def _param_to_dict(param: click.Parameter) -> dict:
     return d
 
 
-_SAFETY_TIER: dict[str, str] = {
-    # write
-    "add": "write",
-    "update": "write",
-    "note": "write",
-    "attach": "write",
-    # destructive
-    "delete": "destructive",
-    "update-status": "destructive",
+_SAFETY_TIER: dict[tuple[str, ...], str] = {
+    # top-level write
+    ("add",): "write",
+    ("update",): "write",
+    ("note",): "write",
+    ("attach",): "write",
+    # top-level destructive
+    ("delete",): "destructive",
+    ("update-status",): "destructive",
+    # nested library-mutating collection commands
+    ("collection", "create"): "write",
+    ("collection", "move"): "write",
+    ("collection", "rename"): "write",
+    ("collection", "reorganize"): "write",
+    ("collection", "delete"): "destructive",
+    # nested library-mutating trash commands
+    ("trash", "restore"): "write",
 }
+
+
+def _safety_tier_for_path(path: list[str]) -> str:
+    if not path:
+        return "read"
+    full_path = tuple(path)
+    if full_path in _SAFETY_TIER:
+        return _SAFETY_TIER[full_path]
+    top_level = (path[0],)
+    return _SAFETY_TIER.get(top_level, "read")
 
 
 def _command_to_dict(cmd: click.Command, path: list[str]) -> dict:
@@ -80,7 +98,7 @@ def _command_to_dict(cmd: click.Command, path: list[str]) -> dict:
     data: dict[str, Any] = {
         "name": name,
         "help": (cmd.help or "").strip().splitlines()[0] if cmd.help else "",
-        "safety_tier": _SAFETY_TIER.get(path[0] if path else "", "read"),
+        "safety_tier": _safety_tier_for_path(path),
         "since": "0.3.0",
         "deprecated": False,
     }

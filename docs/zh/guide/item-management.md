@@ -34,6 +34,14 @@ zot add --from-file dois.txt
 zot update ABC123 --title "Corrected Title"
 zot update ABC123 --date "2024-01-15"
 zot update ABC123 --field publicationTitle="Nature"
+zot --detail full summarize-all --exclude-tag update/metadata --limit 100
+zot update --from-jsonl cleaned-metadata.jsonl --add-tag update/metadata
+```
+
+如果要做 AI 辅助的元数据清洗，先用 `zot --detail full summarize-all` 导出可写字段，再按 JSONL 一行一个对象回写：
+
+```json
+{"key":"ABC123","fields":{"title":"清洗后的标题","abstractNote":"清洗后的摘要"}}
 ```
 
 ## 删除条目
