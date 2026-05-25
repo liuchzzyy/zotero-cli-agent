@@ -58,7 +58,7 @@ uv run zot --help
 uv run zot schema
 ```
 
-Only run `uv sync --dev --extra mcp` after telling the user it installs development, test, docs-adjacent, and MCP dependencies into the local environment.
+Only run `uv sync --dev --extra mcp` after telling the user it installs development, test, and MCP dependencies into the local environment.
 
 ### 3. Configure Zotero data directory
 
@@ -137,7 +137,7 @@ Do not start a long-running MCP server just to validate setup. Check the entry p
 uv run zot mcp serve --help
 ```
 
-Then point the user to `docs/en/mcp/setup.md` or `docs/zh/mcp/setup.md` for client-specific JSON snippets.
+For MCP client configuration, use `uv run zot mcp serve` inside the repo or `zot mcp serve` when the CLI is installed.
 
 ### 7. Final report
 

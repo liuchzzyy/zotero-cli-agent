@@ -1,7 +1,6 @@
 ---
 name: zotero-cli-agent
 description: "Use when user mentions papers, references, citations, Zotero, literature, bibliography, workspaces, or needs to search/read/export documents in zotero. Uses zot CLI for all operations including workspace-based RAG."
-version: 0.5.3
 ---
 
 # Zotero CLI Agents Skill
@@ -117,7 +116,7 @@ zot attach ITEMKEY --file x.pdf --idempotency-key abc-125
 zot delete ITEMKEY --yes --idempotency-key abc-126
 ```
 
-> Use `--dry-run` before any unfamiliar write, and pass a unique `--idempotency-key` whenever you might retry on failure — agent-native contract documented in `docs/agent-interface.md`.
+> Use `--dry-run` before any unfamiliar write, and pass a unique `--idempotency-key` whenever you might retry on failure; inspect the live agent-native contract with `zot schema`.
 
 ### Collections
 
