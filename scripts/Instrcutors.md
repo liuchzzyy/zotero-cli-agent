@@ -117,3 +117,62 @@ Remove-Item metadata-export.json, cleaned-metadata.jsonl
 只输出实际发生变更的条目，生成 cleaned-metadata.jsonl。
 先执行 `uv run zot --json update --from-jsonl cleaned-metadata.jsonl --dry-run`，不要正式写入，等我确认。
 ```
+
+## Daily RSS DOI Import
+这是当前推荐的日常 RSS 文献导入入口，直接调用现成脚本，不要手动拆开执行两个 Python 脚本，除非是在排错。
+
+### 目标
+从 `E:\Desktop\CodingDaily\rss-cli-agent\storage\daily\当天.selected.json` 开始：
+
+- 先生成 DOI 路由计划。
+- 再把 DOI 导入 Zotero。
+- 含作者告警的条目路由到 `00_INBOX_AA/<Author>`。
+- 其他条目路由到 `00_INBOX_AA`。
+
+### 标准入口
+在 `E:\Desktop\CodingDaily\zotero-cli-agents` 下执行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run-rss-daily-doi-import.ps1
+```
+
+如果要指定日期：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run-rss-daily-doi-import.ps1 -Date 2026-05-25
+```
+
+如果想让进度刷新更频繁：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run-rss-daily-doi-import.ps1 -ProgressIntervalSeconds 5
+```
+
+### 运行特征
+- 脚本内部会按顺序调用：
+  - `scripts\clean_rss_selected_for_inbox.py`
+  - `scripts\import_rss_inbox_plan.py`
+- 导入过程中会持续显示进度：
+  - `已处理/总数`
+  - `new/reused/routed/failed`
+  - `elapsed/eta`
+- 如果检测到已有 `import_rss_inbox_plan.py` 进程在运行，脚本会直接报错退出，避免双进程同时写库。
+
+### 收尾规则
+- 如果有失败 DOI，会在仓库根目录导出：
+
+```text
+rss_failed_dois_YYYY-MM-DD.txt
+```
+
+- 如果全部成功，脚本会自动删除 `E:\Desktop\CodingDaily\zotero-cli-agents\tmp`。
+- 如果导入失败，保留 `tmp` 现场用于排错，不要立即手动删除。
+
+### 推荐给代理的直接提示词
+```text
+不要手动拆开执行 RSS DOI 导入流程。
+直接在 E:\Desktop\CodingDaily\zotero-cli-agents 下调用 scripts\run-rss-daily-doi-import.ps1 做日常导入。
+默认读取 rss-cli-agent\storage\daily\当天.selected.json。
+如果需要，使用 -Date 指定日期，使用 -ProgressIntervalSeconds 调整进度刷新频率。
+导入完成后检查根目录的 rss_failed_dois_YYYY-MM-DD.txt；如果没有失败且脚本成功结束，tmp 应该被自动删除。
+```
