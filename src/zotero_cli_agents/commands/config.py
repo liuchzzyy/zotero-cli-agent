@@ -6,8 +6,8 @@ from pathlib import Path
 import click
 
 from zotero_cli_agents.config import (
-    CONFIG_FILE,
     AppConfig,
+    config_file_path,
     detect_zotero_data_dir,
     get_default_profile,
     list_profiles,
@@ -37,7 +37,7 @@ def config_init(
     api_key: str | None,
 ) -> None:
     """Initialize configuration interactively."""
-    path = Path(config_path) if config_path else CONFIG_FILE
+    path = Path(config_path) if config_path else config_file_path()
     no_interaction = ctx.obj.get("no_interaction", False) if ctx.obj else False
 
     detected_dir = detect_zotero_data_dir(AppConfig())
@@ -83,8 +83,9 @@ def config_show(config_path: str | None) -> None:
     """Show current configuration."""
     from zotero_cli_agents.config import get_data_dir
 
-    path = Path(config_path) if config_path else CONFIG_FILE
+    path = Path(config_path) if config_path else config_file_path()
     cfg = load_config(path)
+    click.echo(f"Config:     {path}")
     click.echo(f"Library ID: {cfg.library_id}")
     click.echo(f"API Key:    {'***' + cfg.api_key[-4:] if len(cfg.api_key) > 4 else '(not set)'}")
     click.echo(f"Data Dir:   {cfg.data_dir or '(auto-detect)'}")
@@ -113,7 +114,7 @@ def profile_group() -> None:
 @click.option("--config-path", type=click.Path(), default=None)
 def profile_list(config_path: str | None) -> None:
     """List all profiles."""
-    path = Path(config_path) if config_path else CONFIG_FILE
+    path = Path(config_path) if config_path else config_file_path()
     profiles = list_profiles(path)
     default = get_default_profile(path)
     if not profiles:
@@ -201,7 +202,7 @@ def cache_list(ctx: click.Context) -> None:
 @click.option("--config-path", type=click.Path(), default=None)
 def profile_set(name: str, config_path: str | None) -> None:
     """Set the default profile."""
-    path = Path(config_path) if config_path else CONFIG_FILE
+    path = Path(config_path) if config_path else config_file_path()
     from zotero_cli_agents.exit_codes import emit_error
 
     profiles = list_profiles(path)

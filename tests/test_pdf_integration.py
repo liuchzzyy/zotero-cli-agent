@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -133,7 +134,9 @@ class TestPdfCmdWithExtractors:
 
 class TestWorkspaceIndexWithExtractor:
     def test_workspace_index_with_pymupdf_extractor(self, tmp_path):
-        with patch("zotero_cli_agents.commands.workspace.workspaces_dir", return_value=tmp_path):
+        with ExitStack() as stack:
+            stack.enter_context(patch("zotero_cli_agents.core.workspace.workspaces_dir", return_value=tmp_path))
+            stack.enter_context(patch("zotero_cli_agents.commands.workspace.workspaces_dir", return_value=tmp_path))
             _invoke(["workspace", "new", "test-ext"])
             _invoke(["workspace", "add", "test-ext", "ATTN001"])
 
@@ -149,7 +152,9 @@ class TestWorkspaceIndexWithExtractor:
         )
 
     def test_workspace_index_with_mineru_extractor(self, tmp_path):
-        with patch("zotero_cli_agents.commands.workspace.workspaces_dir", return_value=tmp_path):
+        with ExitStack() as stack:
+            stack.enter_context(patch("zotero_cli_agents.core.workspace.workspaces_dir", return_value=tmp_path))
+            stack.enter_context(patch("zotero_cli_agents.commands.workspace.workspaces_dir", return_value=tmp_path))
             _invoke(["workspace", "new", "test-ext-m"])
             _invoke(["workspace", "add", "test-ext-m", "ATTN001"])
 

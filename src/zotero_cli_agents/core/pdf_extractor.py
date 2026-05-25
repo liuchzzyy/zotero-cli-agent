@@ -691,15 +691,9 @@ class _RateLimiter:
 
 
 def _load_token(config_token: str | None = None) -> str:
-    token = os.environ.get("MINERU_TOKEN")
-    if token:
-        return token
-    token_path = Path.home() / ".config" / "mineru" / "token"
-    if token_path.exists():
-        return token_path.read_text().strip()
     if config_token:
         return config_token
-    raise PdfExtractionError("MINERU_TOKEN not set and ~/.config/mineru/token not found")
+    raise PdfExtractionError("MinerU token not configured. Set [pdf].mineru_token in .zot/config.toml.")
 
 
 def _retry_with_backoff(func: Any, *args: Any, **kwargs: Any) -> Any:
@@ -749,7 +743,10 @@ def _find_image_paths(output_dir: Path) -> list[Path]:
 # ---------------------------------------------------------------------------
 
 
-_EXTRACTORS: dict[str, type[BasePdfExtractor]] = {"mineru": MinerUExtractor}
+_EXTRACTORS: dict[str, type[BasePdfExtractor]] = {
+    "pymupdf": PyMuPdfExtractor,
+    "mineru": MinerUExtractor,
+}
 
 
 def get_extractor(name: str | None = None) -> BasePdfExtractor:

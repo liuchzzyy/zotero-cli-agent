@@ -13,17 +13,17 @@ user-supplied key don't collide.
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
 import time
 from pathlib import Path
+
+from zotero_cli_agents.config import state_dir
 
 TTL_SECONDS = 24 * 60 * 60
 
 
 def _db_path() -> Path:
-    override = os.environ.get("ZOT_CACHE_DIR")
-    base = Path(override) if override else Path.home() / ".cache" / "zotero-cli-agent"
+    base = state_dir()
     base.mkdir(parents=True, exist_ok=True)
     return base / "idempotency.db"
 

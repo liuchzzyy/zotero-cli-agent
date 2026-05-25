@@ -2,7 +2,7 @@
 param(
     [string]$Date = (Get-Date).ToString("yyyy-MM-dd"),
     [string]$RssRepoRoot = "E:\Desktop\CodingDaily\rss-cli-agent",
-    [string]$ZoteroRepoRoot = $PSScriptRoot,
+    [string]$ZoteroRepoRoot = "",
     [string]$Library = "user",
     [string]$Profile = "",
     [string]$RecentCutoffUtc = "",
@@ -11,6 +11,18 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+function Get-RepoRoot {
+    $scriptDir = Split-Path -Parent $PSCommandPath
+    return (Resolve-Path (Join-Path $scriptDir "..")).Path
+}
+
+if ($ZoteroRepoRoot) {
+    $ZoteroRepoRoot = (Resolve-Path $ZoteroRepoRoot).Path
+}
+else {
+    $ZoteroRepoRoot = Get-RepoRoot
+}
 
 function Get-ImportProcesses {
     Get-CimInstance Win32_Process |

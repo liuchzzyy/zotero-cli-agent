@@ -8,7 +8,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-
 ROOT_COLLECTION_NAME = "00_INBOX_AA"
 
 

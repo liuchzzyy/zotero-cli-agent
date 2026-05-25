@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import os
-
 import click
 
-from zotero_cli_agents.config import get_data_dir, load_config, resolve_library_id
+from zotero_cli_agents.config import get_data_dir, load_config, resolve_library_id, resolve_write_credentials
 from zotero_cli_agents.core.reader import ZoteroReader
 from zotero_cli_agents.core.writer import SYNC_REMINDER, ZoteroWriteError, ZoteroWriter
 from zotero_cli_agents.exit_codes import EXIT_RUNTIME, emit_error
@@ -59,11 +57,9 @@ def collection_create(ctx: click.Context, name: str, parent: str | None) -> None
     """Create a new collection."""
     cfg = load_config(profile=ctx.obj.get("profile"))
     json_out = ctx.obj.get("json", False)
-    library_id = os.environ.get("ZOT_LIBRARY_ID", cfg.library_id)
-    api_key = os.environ.get("ZOT_API_KEY", cfg.api_key)
     library_type = ctx.obj.get("library_type", "user")
-    if library_type == "group" and ctx.obj.get("group_id"):
-        library_id = ctx.obj["group_id"]
+    group_id = ctx.obj.get("group_id")
+    library_id, api_key = resolve_write_credentials(cfg, library_type=library_type, group_id=group_id)
     if not library_id or not api_key:
         emit_error(
             "auth_missing",
@@ -93,11 +89,9 @@ def collection_move(ctx: click.Context, item_key: str, collection_key: str) -> N
     """Move an item to a collection."""
     cfg = load_config(profile=ctx.obj.get("profile"))
     json_out = ctx.obj.get("json", False)
-    library_id = os.environ.get("ZOT_LIBRARY_ID", cfg.library_id)
-    api_key = os.environ.get("ZOT_API_KEY", cfg.api_key)
     library_type = ctx.obj.get("library_type", "user")
-    if library_type == "group" and ctx.obj.get("group_id"):
-        library_id = ctx.obj["group_id"]
+    group_id = ctx.obj.get("group_id")
+    library_id, api_key = resolve_write_credentials(cfg, library_type=library_type, group_id=group_id)
     if not library_id or not api_key:
         emit_error(
             "auth_missing",
@@ -130,11 +124,9 @@ def collection_delete(ctx: click.Context, key: str, dry_run: bool) -> None:
     if dry_run:
         click.echo(f"[dry-run] Would delete collection '{key}'")
         return
-    library_id = os.environ.get("ZOT_LIBRARY_ID", cfg.library_id)
-    api_key = os.environ.get("ZOT_API_KEY", cfg.api_key)
     library_type = ctx.obj.get("library_type", "user")
-    if library_type == "group" and ctx.obj.get("group_id"):
-        library_id = ctx.obj["group_id"]
+    group_id = ctx.obj.get("group_id")
+    library_id, api_key = resolve_write_credentials(cfg, library_type=library_type, group_id=group_id)
     if not library_id or not api_key:
         emit_error(
             "auth_missing",
@@ -194,11 +186,9 @@ def collection_reorganize(ctx: click.Context, plan_file: str, dry_run: bool) -> 
         click.echo(f"\n[dry-run] Total: {len(collections)} collections to create")
         return
 
-    library_id = os.environ.get("ZOT_LIBRARY_ID", cfg.library_id)
-    api_key = os.environ.get("ZOT_API_KEY", cfg.api_key)
     library_type = ctx.obj.get("library_type", "user")
-    if library_type == "group" and ctx.obj.get("group_id"):
-        library_id = ctx.obj["group_id"]
+    group_id = ctx.obj.get("group_id")
+    library_id, api_key = resolve_write_credentials(cfg, library_type=library_type, group_id=group_id)
     if not library_id or not api_key:
         emit_error(
             "auth_missing",
@@ -243,11 +233,9 @@ def collection_rename(ctx: click.Context, key: str, new_name: str) -> None:
     """Rename a collection."""
     cfg = load_config(profile=ctx.obj.get("profile"))
     json_out = ctx.obj.get("json", False)
-    library_id = os.environ.get("ZOT_LIBRARY_ID", cfg.library_id)
-    api_key = os.environ.get("ZOT_API_KEY", cfg.api_key)
     library_type = ctx.obj.get("library_type", "user")
-    if library_type == "group" and ctx.obj.get("group_id"):
-        library_id = ctx.obj["group_id"]
+    group_id = ctx.obj.get("group_id")
+    library_id, api_key = resolve_write_credentials(cfg, library_type=library_type, group_id=group_id)
     if not library_id or not api_key:
         emit_error(
             "auth_missing",

@@ -1,0 +1,43 @@
+# Copy this file to `.zot/config.toml` and fill in the values you actually use.
+
+[default]
+profile = "zotero-cil"
+
+[profile.zotero-cil]
+data_dir = "C:/Users/chengliu/Zotero"
+library_id = ""
+api_key = ""
+semantic_scholar_api_key = ""
+prefs_js_path = ""
+
+[integrations]
+crossref_mailto = ""
+
+[output]
+default_format = "table"
+limit = 50
+
+[export]
+default_style = "bibtex"
+
+[pdf]
+extractor = "mineru"
+mineru_token = ""
+
+[embedding]
+url = "https://api.jina.ai/v1/embeddings"
+api_key = ""
+model = "jina-embeddings-v3"
+provider = "jina"
+
+[ai_notes]
+api_key = ""
+base_url = ""
+model = "gpt-5.5"
+reasoning_effort = ""
+pdf_input_mode = ""
+api_mode = "auto"
+chat_token_param = "auto"
+max_extracted_chars = 180000
+max_images = 24
+max_image_mb = 8

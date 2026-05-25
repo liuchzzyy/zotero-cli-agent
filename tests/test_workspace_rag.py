@@ -37,7 +37,7 @@ class TestWorkspaceIndex:
             result = _invoke(["workspace", "index", "test-idx"])
         assert result.exit_code == 0
         assert "Indexed" in result.output
-        idx_path = tmp_path / "test-idx.idx.sqlite"
+        idx_path = tmp_path / "test-idx" / "rag.idx.sqlite"
         assert idx_path.exists()
 
     def test_index_nonexistent_workspace(self, tmp_path):

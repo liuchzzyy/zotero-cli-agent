@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -153,9 +154,11 @@ class TestResolveDoi:
         with pytest.raises(MetadataResolveError, match="Empty DOI"):
             resolve_doi("  ")
 
-    @patch.dict("os.environ", {"ZOT_CROSSREF_MAILTO": "test@example.com"})
     @patch("zotero_cli_agents.core.metadata_resolver.httpx.get")
-    def test_mailto_added_to_user_agent(self, mock_get: MagicMock) -> None:
+    def test_mailto_added_to_user_agent(self, mock_get: MagicMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        config_path = tmp_path / "config.toml"
+        config_path.write_text('[integrations]\ncrossref_mailto = "test@example.com"\n', encoding="utf-8")
+        monkeypatch.setenv("ZOT_CONFIG_PATH", str(config_path))
         mock_get.return_value = _mock_response(200, {"message": {"title": ["x"]}})
         resolve_doi("10.1/x")
         ua = mock_get.call_args.kwargs["headers"]["User-Agent"]

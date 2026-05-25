@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -12,7 +11,7 @@ import httpx
 from pyzotero import zotero
 
 from zotero_cli_agents.commands.add import _resolve_metadata, _resolved_summary
-from zotero_cli_agents.config import get_data_dir, load_config, resolve_library_id
+from zotero_cli_agents.config import get_data_dir, load_config, resolve_library_id, resolve_write_credentials
 from zotero_cli_agents.core.reader import ZoteroReader
 from zotero_cli_agents.core.writer import SYNC_REMINDER, ZoteroWriteError, ZoteroWriter
 from zotero_cli_agents.models import Collection
@@ -121,25 +120,27 @@ def _load_local_collection_paths(profile: str | None, library_ctx: dict[str, Any
 
 def _build_writer(profile: str | None, library_ctx: dict[str, Any]) -> ZoteroWriter:
     cfg = load_config(profile=profile)
-    library_id = os.environ.get("ZOT_LIBRARY_ID", cfg.library_id)
-    api_key = os.environ.get("ZOT_API_KEY", cfg.api_key)
     library_type = library_ctx["library_type"]
-    if library_type == "group" and library_ctx.get("group_id"):
-        library_id = library_ctx["group_id"]
+    library_id, api_key = resolve_write_credentials(
+        cfg,
+        library_type=library_type,
+        group_id=library_ctx.get("group_id"),
+    )
     if not library_id or not api_key:
-        raise RuntimeError("Write credentials are missing. Run 'zot config init' or export ZOT_API_KEY / ZOT_LIBRARY_ID.")
+        raise RuntimeError("Write credentials are missing. Run 'zot config init' or fill in .zot/config.toml.")
     return ZoteroWriter(library_id=library_id, api_key=api_key, library_type=library_type)
 
 
 def _build_client(profile: str | None, library_ctx: dict[str, Any]) -> zotero.Zotero:
     cfg = load_config(profile=profile)
-    library_id = os.environ.get("ZOT_LIBRARY_ID", cfg.library_id)
-    api_key = os.environ.get("ZOT_API_KEY", cfg.api_key)
     library_type = library_ctx["library_type"]
-    if library_type == "group" and library_ctx.get("group_id"):
-        library_id = library_ctx["group_id"]
+    library_id, api_key = resolve_write_credentials(
+        cfg,
+        library_type=library_type,
+        group_id=library_ctx.get("group_id"),
+    )
     if not library_id:
-        raise RuntimeError("Read credentials are missing. Run 'zot config init' or export ZOT_LIBRARY_ID.")
+        raise RuntimeError("Read credentials are missing. Run 'zot config init' or fill in .zot/config.toml.")
     client = zotero.Zotero(library_id, library_type, api_key)
     if client.client is not None:
         client.client.timeout = httpx.Timeout(300.0)
@@ -526,6 +527,47 @@ def run_import_plan(
     checkpoint_path = output_dir / "checkpoint.json"
     checkpoint = _load_checkpoint(checkpoint_path)
 
+    processed_results: list[dict[str, Any]] = []
+    failed_results: list[dict[str, Any]] = []
+    counts = {
+        "created_new": 0,
+        "reused_existing": 0,
+        "already_routed": 0,
+        "collection_repairs": 0,
+        "failed": 0,
+    }
+
+    def _current_summary() -> dict[str, Any]:
+        return {
+            "route_plan": str(route_plan),
+            "apply": bool(apply),
+            "total_entries_considered": len(all_entries),
+            "created_new": counts["created_new"],
+            "reused_existing": counts["reused_existing"],
+            "already_routed": counts["already_routed"],
+            "collection_repairs": counts["collection_repairs"],
+            "failed": counts["failed"],
+            "created_collections": [],
+            "checkpoint_path": str(checkpoint_path),
+            "sync_reminder": "",
+            "phase": "preflight",
+            "output_files": {
+                "preview": str(output_dir / "import_plan_preview.json"),
+                "resume_state": str(output_dir / "resume_state.json"),
+                "checkpoint": str(checkpoint_path),
+                "imported_results": str(output_dir / "imported_results.json"),
+                "failed_results": str(output_dir / "failed_results.json"),
+                "summary": str(output_dir / "import_summary.json"),
+            },
+        }
+
+    _write_progress_files(
+        output_dir=output_dir,
+        processed_results=processed_results,
+        failed_results=failed_results,
+        summary=_current_summary(),
+    )
+
     client = _build_client(profile, library_ctx)
     local_collection_paths = _load_local_collection_paths(profile, library_ctx)
     server_path_to_key, server_key_to_path = _build_server_collection_maps(client)
@@ -620,16 +662,6 @@ def run_import_plan(
     for path in sorted(needed_paths, key=lambda value: (value.count("/"), value)):
         _ensure_collection_path(writer, mutable_server_paths, path, apply=True, created_paths=created_paths)
 
-    processed_results: list[dict[str, Any]] = []
-    failed_results: list[dict[str, Any]] = []
-    counts = {
-        "created_new": 0,
-        "reused_existing": 0,
-        "already_routed": 0,
-        "collection_repairs": 0,
-        "failed": 0,
-    }
-
     def _current_summary() -> dict[str, Any]:
         return {
             "route_plan": str(route_plan),
@@ -643,6 +675,7 @@ def run_import_plan(
             "created_collections": created_paths,
             "checkpoint_path": str(checkpoint_path),
             "sync_reminder": SYNC_REMINDER if counts["created_new"] or counts["collection_repairs"] else "",
+            "phase": "apply",
             "output_files": {
                 "preview": str(output_dir / "import_plan_preview.json"),
                 "resume_state": str(output_dir / "resume_state.json"),

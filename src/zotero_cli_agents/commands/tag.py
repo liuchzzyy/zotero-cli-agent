@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import json
-import os
 
 import click
 
-from zotero_cli_agents.config import get_data_dir, load_config, resolve_library_id
+from zotero_cli_agents.config import get_data_dir, load_config, resolve_library_id, resolve_write_credentials
 from zotero_cli_agents.core.reader import ZoteroReader
 from zotero_cli_agents.core.writer import SYNC_REMINDER, ZoteroWriteError, ZoteroWriter
 from zotero_cli_agents.exit_codes import EXIT_RUNTIME, emit_error
@@ -40,12 +39,10 @@ def tag_cmd(
         return
 
     if add_tag or remove_tag:
-        library_id: str | int | None = os.environ.get("ZOT_LIBRARY_ID", cfg.library_id)
-        api_key = os.environ.get("ZOT_API_KEY", cfg.api_key)
         library_type = ctx.obj.get("library_type", "user")
-        if library_type == "group" and ctx.obj.get("group_id"):
-            library_id = ctx.obj["group_id"]
-        if not library_id or not api_key:
+        group_id = ctx.obj.get("group_id")
+        write_library_id, api_key = resolve_write_credentials(cfg, library_type=library_type, group_id=group_id)
+        if not write_library_id or not api_key:
             emit_error(
                 "auth_missing",
                 "Write credentials not configured",
@@ -53,7 +50,7 @@ def tag_cmd(
                 hint="Run 'zot config init' to set up API credentials",
                 context="tag",
             )
-        writer = ZoteroWriter(library_id=str(library_id), api_key=api_key, library_type=library_type)
+        writer = ZoteroWriter(library_id=str(write_library_id), api_key=api_key, library_type=library_type)
         failed = []
         for key in keys:
             try:

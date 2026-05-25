@@ -5,11 +5,12 @@ from __future__ import annotations
 import json
 import sys
 import time
-from pathlib import Path
 from urllib.request import urlopen
 
-_CACHE_DIR = Path.home() / ".config" / "zot"
-_CACHE_FILE = _CACHE_DIR / ".version_check"
+from zotero_cli_agents.config import state_dir
+
+_CACHE_DIR = state_dir()
+_CACHE_FILE = _CACHE_DIR / "version-check.json"
 _CHECK_INTERVAL = 86400  # 24 hours
 _PYPI_URL = "https://pypi.org/pypi/zotero-cli-agent/json"
 _TIMEOUT = 3  # seconds

@@ -18,6 +18,7 @@ from zotero_cli_agents.core.workspace import (
     load_workspace,
     save_workspace,
     validate_name,
+    workspace_cache_path,
     workspace_exists,
 )
 
@@ -102,6 +103,10 @@ class TestWorkspaceModel:
 
 
 class TestWorkspaceIO:
+    def test_workspace_cache_path_uses_repo_state_dir(self, tmp_path):
+        with patch("zotero_cli_agents.core.workspace.project_root", return_value=tmp_path):
+            assert workspace_cache_path() == tmp_path / ".zot" / "state" / "pdf_cache.sqlite"
+
     def test_save_and_load(self, tmp_path):
         with patch("zotero_cli_agents.core.workspace.workspaces_dir", return_value=tmp_path):
             ws = Workspace(

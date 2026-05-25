@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 import json
-import os
 
 import click
 
-from zotero_cli_agents.config import get_data_dir, load_config, resolve_library_id
+from zotero_cli_agents.config import (
+    get_data_dir,
+    load_config,
+    resolve_library_id,
+    resolve_semantic_scholar_api_key,
+    resolve_write_credentials,
+)
 from zotero_cli_agents.core.reader import ZoteroReader
 from zotero_cli_agents.core.semantic_scholar import PreprintInfo, SemanticScholarClient, extract_preprint_info
 from zotero_cli_agents.core.writer import SYNC_REMINDER, ZoteroWriteError, ZoteroWriter
@@ -20,7 +25,7 @@ from zotero_cli_agents.core.writer import SYNC_REMINDER, ZoteroWriteError, Zoter
     "--api-key",
     "ss_api_key",
     default=None,
-    help="Semantic Scholar API key (or set S2_API_KEY env var)",
+    help="Semantic Scholar API key (defaults to the value in .zot/config.toml)",
 )
 @click.option("--collection", default=None, help="Only check items in this collection")
 @click.option("--limit", default=None, type=int, help="Max items to check")
@@ -41,9 +46,7 @@ def update_status_cmd(
     \b
     API key (optional, increases rate limit):
       --api-key KEY                                Pass directly
-      export S2_API_KEY=KEY                        Official Semantic Scholar env var
-      export SEMANTIC_SCHOLAR_API_KEY=KEY           Alternative env var
-      config.toml: semantic_scholar_api_key         Set in zot config
+      .zot/config.toml: semantic_scholar_api_key    Set in repo-local zot config
     Apply at https://www.semanticscholar.org/product/api#api-key-form
 
     \b
@@ -58,15 +61,9 @@ def update_status_cmd(
     json_out = ctx.obj.get("json", False)
     limit = limit if limit is not None else ctx.obj.get("limit", 50)
 
-    # Resolve Semantic Scholar API key: flag > env (S2_API_KEY or SEMANTIC_SCHOLAR_API_KEY) > config
-    api_key = (
-        ss_api_key
-        or os.environ.get("S2_API_KEY", "")
-        or os.environ.get("SEMANTIC_SCHOLAR_API_KEY", "")
-        or cfg.semantic_scholar_api_key
-    )
+    api_key = resolve_semantic_scholar_api_key(cfg, explicit=ss_api_key)
     if not api_key:
-        rate_msg = "No API key — rate limited to ~1 request/3s. Set S2_API_KEY for faster queries."
+        rate_msg = "No API key — rate limited to ~1 request/3s. Set semantic_scholar_api_key in .zot/config.toml."
         if not json_out:
             click.echo(rate_msg, err=True)
 
@@ -196,11 +193,9 @@ def update_status_cmd(
         return
 
     # Apply updates via Zotero Web API
-    zot_library_id = os.environ.get("ZOT_LIBRARY_ID", cfg.library_id)
-    zot_api_key = os.environ.get("ZOT_API_KEY", cfg.api_key)
     library_type = ctx.obj.get("library_type", "user")
-    if library_type == "group" and ctx.obj.get("group_id"):
-        zot_library_id = ctx.obj["group_id"]
+    group_id = ctx.obj.get("group_id")
+    zot_library_id, zot_api_key = resolve_write_credentials(cfg, library_type=library_type, group_id=group_id)
 
     if not zot_library_id or not zot_api_key:
         click.echo(

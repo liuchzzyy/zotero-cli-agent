@@ -14,11 +14,12 @@ your environment to be routed into the polite pool.
 
 from __future__ import annotations
 
-import os
 import re
 from typing import Any
 
 import httpx
+
+from zotero_cli_agents.config import load_config, resolve_crossref_mailto
 
 CROSSREF_API_BASE = "https://api.crossref.org/works"
 REQUEST_TIMEOUT = 15.0
@@ -33,7 +34,7 @@ class MetadataResolveError(Exception):
 
 
 def _user_agent() -> str:
-    mailto = os.environ.get("ZOT_CROSSREF_MAILTO", "").strip()
+    mailto = resolve_crossref_mailto(load_config())
     if mailto:
         return f"{USER_AGENT_BASE} (mailto:{mailto})"
     return USER_AGENT_BASE

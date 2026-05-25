@@ -282,4 +282,4 @@ finally {
 Write-Host ""
 Write-Host "RAG full-library run complete."
 Write-Host "Workspace and index are under .workspace\$WorkspaceName."
-Write-Host "PDF text cache is under .workspace\_cache and is intentionally kept for incremental reuse."
+Write-Host "PDF text cache is under .zot\state\pdf_cache.sqlite and is intentionally kept for incremental reuse."

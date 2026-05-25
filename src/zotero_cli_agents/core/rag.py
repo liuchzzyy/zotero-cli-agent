@@ -9,7 +9,7 @@ from pathlib import Path
 
 from zotero_cli_agents.config import EmbeddingConfig
 from zotero_cli_agents.core.embedding_router import EmbeddingRouter
-from zotero_cli_agents.core.pdf_cache import PdfCache
+from zotero_cli_agents.core.pdf_errors import PdfExtractionError
 from zotero_cli_agents.core.pdf_extractor import get_extractor
 from zotero_cli_agents.core.rag_index import RagIndex
 
@@ -277,13 +277,27 @@ def convert_pdf_to_text(
     extractor_name: str = "pymupdf",
     progress_callback: Callable[[str, int, int, int], None] | None = None,
 ) -> str:
+    from zotero_cli_agents.core.pdf_cache import PdfCache
+
     cache = PdfCache()
     cached = cache.get(pdf_path, extractor_name)
     if cached is not None:
         return cached
     extractor = get_extractor(extractor_name)
-    text = extractor.extract_text(pdf_path, progress_callback=progress_callback)  # type: ignore[call-arg]
-    cache.put(pdf_path, extractor_name, text)
+    try:
+        text = extractor.extract_text(pdf_path, progress_callback=progress_callback)  # type: ignore[call-arg]
+        cache.put(pdf_path, extractor_name, text)
+        return text
+    except PdfExtractionError:
+        if extractor_name != "mineru":
+            raise
+    fallback_name = "pymupdf"
+    cached_fallback = cache.get(pdf_path, fallback_name)
+    if cached_fallback is not None:
+        return cached_fallback
+    fallback = get_extractor(fallback_name)
+    text = fallback.extract_text(pdf_path, progress_callback=progress_callback)  # type: ignore[call-arg]
+    cache.put(pdf_path, fallback_name, text)
     return text
 
 
@@ -292,6 +306,8 @@ def convert_pdfs_to_text(
     extractor_name: str = "pymupdf",
     progress_callback: Callable[[str, int, int, int], None] | None = None,
 ) -> dict[Path, str | Exception]:
+    from zotero_cli_agents.core.pdf_cache import PdfCache
+
     cache = PdfCache()
     results: dict[Path, str | Exception] = {}
     uncached: list[Path] = []

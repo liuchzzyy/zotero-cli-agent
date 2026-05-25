@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 import click
 
@@ -10,6 +12,9 @@ from zotero_cli_agents.core.pdf_extractor import PdfExtractionError, get_extract
 from zotero_cli_agents.core.reader import ZoteroReader
 from zotero_cli_agents.exit_codes import emit_error
 from zotero_cli_agents.formatter import format_pdf_annotations, format_pdf_text
+
+if TYPE_CHECKING:
+    from zotero_cli_agents.core.pdf_cache import PdfCache
 
 
 def _parse_outline(markdown: str) -> list[tuple[int, str, int]]:
@@ -60,6 +65,40 @@ def _extract_section(markdown: str, section_num: int) -> str:
             break
 
     return markdown[target_start:end_pos].strip()
+
+
+def _extract_text_with_fallback(
+    pdf_path: Path,
+    extractor_name: str,
+    cache: PdfCache,
+    page_range: tuple[int, int] | None,
+) -> str:
+    cached = cache.get(pdf_path, extractor_name) if page_range is None else None
+    if cached is not None:
+        return cached
+
+    pdf_extractor = get_extractor(extractor_name)
+    try:
+        if page_range is None:
+            text = pdf_extractor.extract_text(pdf_path)
+            cache.put(pdf_path, extractor_name, text)
+            return text
+        return pdf_extractor.extract_text(pdf_path, pages=page_range)
+    except PdfExtractionError:
+        if extractor_name != "mineru":
+            raise
+
+    fallback_name = "pymupdf"
+    cached_fallback = cache.get(pdf_path, fallback_name) if page_range is None else None
+    if cached_fallback is not None:
+        return cached_fallback
+
+    fallback_extractor = get_extractor(fallback_name)
+    if page_range is None:
+        text = fallback_extractor.extract_text(pdf_path)
+        cache.put(pdf_path, fallback_name, text)
+        return text
+    return fallback_extractor.extract_text(pdf_path, pages=page_range)
 
 
 @click.command("pdf")
@@ -155,17 +194,7 @@ def pdf_cmd(
 
         cache = PdfCache()
         try:
-            if page_range is None:
-                cached = cache.get(pdf_path, extractor)
-                if cached is not None:
-                    text = cached
-                else:
-                    pdf_extractor = get_extractor(extractor)
-                    text = pdf_extractor.extract_text(pdf_path)
-                    cache.put(pdf_path, extractor, text)
-            else:
-                pdf_extractor = get_extractor(extractor)
-                text = pdf_extractor.extract_text(pdf_path, pages=page_range)
+            text = _extract_text_with_fallback(pdf_path, extractor, cache, page_range)
         except PdfExtractionError as e:
             cache.close()
             emit_error(

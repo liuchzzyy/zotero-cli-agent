@@ -168,7 +168,7 @@ zot --library group:12345 list              # List group library items
 
 ### Workspaces (Topic-Based Paper Organization + RAG)
 
-Workspaces are local collections of paper references for organizing research by topic. Each workspace stores item keys in a TOML file (`~/.config/zot/workspaces/<name>.toml`) — no Zotero API needed.
+Workspaces are local collections of paper references for organizing research by topic. Each workspace stores item keys in `.workspace/<name>/workspace.toml` inside the repository — no Zotero API needed.
 
 ```bash
 # Create and manage workspaces
@@ -317,10 +317,10 @@ zot --json workspace query "AlphaFold architecture" --workspace protein-folding 
 
 - **`zot` read operations** work offline with zero config
 - **`zot` write operations** need API credentials via `zot config init`
-- **`zot update-status`** uses Semantic Scholar API; set `S2_API_KEY` env var for faster rate limits
+- **`zot update-status`** uses Semantic Scholar API; set `semantic_scholar_api_key` in `.zot/config.toml` for faster rate limits
 - **PDF cache** — `zot` caches PDF extractions automatically
 - **Item keys** are 8-character alphanumeric strings like `K853PGUG`
 - **Group libraries** — use `--library group:<id>` with any command
 - **Workspaces** — pure local TOML files, no API needed for basic operations; `workspace index` reads PDFs from Zotero storage
-- **Workspace RAG** — BM25 always available (zero new deps); optional semantic search via embedding endpoint (`ZOT_EMBEDDING_URL` + `ZOT_EMBEDDING_KEY`
+- **Workspace RAG** — BM25 always available (zero new deps); optional semantic search via the `[embedding]` section in `.zot/config.toml`
 

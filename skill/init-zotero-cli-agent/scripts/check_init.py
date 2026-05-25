@@ -63,8 +63,8 @@ def find_repo_root(start: Path) -> Path | None:
     return None
 
 
-def load_config() -> dict[str, Any]:
-    path = Path.home() / ".config" / "zot" / "config.toml"
+def load_config(root: Path) -> dict[str, Any]:
+    path = root / ".zot" / "config.toml"
     if not path.exists():
         return {"path": str(path), "exists": False}
     try:
@@ -183,7 +183,8 @@ def main() -> int:
         checks.append(Check("cli", "FAILED", "No source CLI or installed zot executable found"))
         next_actions.append("From the repo, run: uv sync --dev --extra mcp")
 
-    config = load_config()
+    config_root = repo_root or cwd
+    config = load_config(config_root)
     if config.get("exists"):
         checks.append(Check("config-file", "OK", str(config["path"])))
     else:

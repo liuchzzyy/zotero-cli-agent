@@ -74,7 +74,7 @@ When adding a command, register it in `cli.py` and place it in the correct safet
 - `src/zotero_cli_agents/core/reader.py`: SQLite read layer.
 - `src/zotero_cli_agents/core/writer.py`: Web API write layer.
 - `src/zotero_cli_agents/core/pdf_extractor.py` and `pdf_cache.py`: PDF extraction and caching.
-- `src/zotero_cli_agents/core/workspace.py`: local workspaces under `~/.config/zot/workspaces`.
+- `src/zotero_cli_agents/core/workspace.py`: repo-local workspaces under `.workspace/`.
 - `src/zotero_cli_agents/core/rag.py` and `rag_index.py`: workspace retrieval / indexing.
 - `src/zotero_cli_agents/core/embedding_router.py`: embedding provider routing.
 - `src/zotero_cli_agents/core/idempotency.py`: retry-safe mutation support.
@@ -99,7 +99,7 @@ If the CLI surface changes, keep the docs and skill in sync.
 
 Config lives at:
 
-- `~/.config/zot/config.toml`
+- `.zot/config.toml`
 
 The code supports profile-based configuration and a default profile selector.
 
@@ -117,11 +117,11 @@ Relevant env vars include:
 - `ZOT_API_KEY`
 - `ZOT_PROFILE`
 
-Zotero data dir auto-detects when not configured, but on this machine the repository has already been validated against a real local setup.
+Zotero data dir auto-detects when not configured, but this checkout now treats repo-local `.zot/config.toml` as the primary persistent source of truth.
 
-Current local config was verified with:
+Current local config is expected at:
 
-- config file at `C:\Users\chengliu\.config\zot\config.toml`
+- `E:\Desktop\CodingDaily\zotero-cli-agents\.zot\config.toml`
 - active default profile `zotero-cil`
 - real local database at `C:\Users\chengliu\Zotero\zotero.sqlite`
 - working Web API credentials for writes

@@ -20,8 +20,10 @@ from openai import OpenAI
 from zotero_cli_agents.config import (
     get_data_dir,
     get_prefs_js_path,
+    load_ai_note_config,
     load_config,
     resolve_library_id,
+    resolve_write_credentials,
 )
 from zotero_cli_agents.core.pdf_extractor import MinerUExtractor, get_extractor
 from zotero_cli_agents.core.rag import convert_pdfs_to_text
@@ -29,29 +31,13 @@ from zotero_cli_agents.core.reader import ZoteroReader
 from zotero_cli_agents.core.writer import SYNC_REMINDER, ZoteroWriter
 from zotero_cli_agents.models import Attachment, Creator, Item
 
-
-def load_env_file(path: Path) -> None:
-    if not path.exists():
-        return
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        key = key.strip()
-        value = value.strip().strip('"').strip("'")
-        if key and key not in os.environ:
-            os.environ[key] = value
-
-
-load_env_file(Path(__file__).resolve().parents[1] / ".env")
-
 DONE_TAG = "update/AInote"
 NOTE_TITLE_PREFIX = "AI条目分析 - "
 DEFAULT_OUTPUT_DIR = Path(".workspace") / "ai-note-analysis"
 DEFAULT_TEMPLATE_DIR = Path(__file__).resolve().parent / "note-templates"
-DEFAULT_MODEL = os.environ.get("ZOT_AI_NOTE_MODEL") or os.environ.get("OPENAI_MODEL") or "gpt-5.5"
-DEFAULT_REASONING_EFFORT = os.environ.get("ZOT_AI_NOTE_REASONING_EFFORT", "")
+AI_NOTE_CONFIG = load_ai_note_config()
+DEFAULT_MODEL = AI_NOTE_CONFIG.model or "gpt-5.5"
+DEFAULT_REASONING_EFFORT = AI_NOTE_CONFIG.reasoning_effort
 MAX_PDF_BYTES_DEFAULT = 100 * 1024 * 1024
 BOOK_TYPES = {"book", "bookSection"}
 CLASSIFICATION_TYPES = {"research_article", "review_article", "uncertain"}
@@ -343,11 +329,11 @@ def get_response_text(response: Any) -> str:
 
 
 def build_openai_client(api_key_env: str, base_url: str | None, timeout: float) -> OpenAI:
-    api_key = os.environ.get(api_key_env) or os.environ.get("OPENAI_API_KEY")
+    api_key = AI_NOTE_CONFIG.api_key or (os.environ.get(api_key_env) if api_key_env else "")
     if not api_key:
-        raise RuntimeError(f"OpenAI API key missing. Set {api_key_env} or OPENAI_API_KEY.")
+        raise RuntimeError("AI API key missing. Set [ai_notes].api_key in .zot/config.toml or pass --api-key-env.")
     kwargs: dict[str, Any] = {"api_key": api_key, "timeout": httpx.Timeout(timeout)}
-    resolved_base_url = base_url or os.environ.get("OPENAI_BASE_URL")
+    resolved_base_url = base_url or AI_NOTE_CONFIG.base_url
     if resolved_base_url:
         kwargs["base_url"] = resolved_base_url
     return OpenAI(**kwargs)
@@ -355,7 +341,7 @@ def build_openai_client(api_key_env: str, base_url: str | None, timeout: float) 
 
 def is_deepseek_model(model: str, base_url: str | None = None) -> bool:
     model_lower = model.lower()
-    base_url_lower = (base_url or os.environ.get("OPENAI_BASE_URL") or "").lower()
+    base_url_lower = (base_url or AI_NOTE_CONFIG.base_url or "").lower()
     return "deepseek" in model_lower or "deepseek" in base_url_lower
 
 
@@ -863,14 +849,16 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         print_progress("dry_run", f"prepared {len(candidates)} item(s); no AI calls or Zotero writes were made", progress)
         return preview
 
-    resolved_base_url = args.base_url or os.environ.get("OPENAI_BASE_URL")
+    resolved_base_url = args.base_url or AI_NOTE_CONFIG.base_url
     client = build_openai_client(args.api_key_env, args.base_url, args.openai_timeout)
-    writer_library_id: str | int | None = os.environ.get("ZOT_LIBRARY_ID", cfg.library_id)
-    if library_ctx["library_type"] == "group" and library_ctx.get("group_id"):
-        writer_library_id = library_ctx["group_id"]
-    api_key = os.environ.get("ZOT_API_KEY", cfg.api_key)
+    group_id = str(library_ctx["group_id"]) if library_ctx.get("group_id") else None
+    writer_library_id, api_key = resolve_write_credentials(
+        cfg,
+        library_type=library_ctx["library_type"],
+        group_id=group_id,
+    )
     if not writer_library_id or not api_key:
-        raise RuntimeError("Zotero write credentials are missing. Run 'zot config init' or export ZOT_API_KEY / ZOT_LIBRARY_ID.")
+        raise RuntimeError("Zotero write credentials are missing. Run 'zot config init' or fill in .zot/config.toml.")
     writer = ZoteroWriter(str(writer_library_id), api_key, library_type=library_ctx["library_type"])
 
     results = load_json_list(output_dir / "results.json")
@@ -1019,9 +1007,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 
 def parse_args() -> argparse.Namespace:
     repo_root = Path(__file__).resolve().parents[1]
-    default_pdf_input_mode = os.environ.get("ZOT_AI_NOTE_PDF_INPUT_MODE")
-    if default_pdf_input_mode is None:
-        default_pdf_input_mode = "mineru-text" if is_deepseek_model(DEFAULT_MODEL) else "mineru-markdown-images"
+    default_pdf_input_mode = AI_NOTE_CONFIG.pdf_input_mode or (
+        "mineru-text" if is_deepseek_model(DEFAULT_MODEL) else "mineru-markdown-images"
+    )
     parser = argparse.ArgumentParser(
         description="Generate AI analysis Zotero notes from all local PDF attachments and tag completed parent items."
     )
@@ -1043,7 +1031,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--api-mode",
         choices=["auto", "responses", "chat"],
-        default=os.environ.get("ZOT_AI_NOTE_API_MODE", "auto"),
+        default=AI_NOTE_CONFIG.api_mode or "auto",
         help="AI API surface. auto uses Responses for openai-file and Chat Completions for MinerU modes.",
     )
     parser.add_argument(
@@ -1052,12 +1040,12 @@ def parse_args() -> argparse.Namespace:
         help="Optional reasoning effort forwarded to the AI API, e.g. max/high/medium.",
     )
     parser.add_argument("--base-url", default=None, help="Optional OpenAI-compatible API base URL.")
-    parser.add_argument("--api-key-env", default="OPENAI_API_KEY", help="Environment variable containing the AI API key.")
+    parser.add_argument("--api-key-env", default="", help="Optional fallback environment variable containing the AI API key.")
     parser.add_argument("--openai-timeout", type=float, default=600.0, help="OpenAI request timeout in seconds.")
     parser.add_argument(
         "--chat-token-param",
         choices=["auto", "max_completion_tokens", "max_tokens"],
-        default=os.environ.get("ZOT_AI_NOTE_CHAT_TOKEN_PARAM", "auto"),
+        default=AI_NOTE_CONFIG.chat_token_param or "auto",
         help="Token parameter for Chat Completions. auto uses max_tokens for DeepSeek and max_completion_tokens otherwise.",
     )
     parser.add_argument("--classify-max-tokens", type=int, default=800, help="Max output tokens for classification.")
@@ -1067,19 +1055,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--max-extracted-chars",
         type=int,
-        default=int(os.environ.get("ZOT_AI_NOTE_MAX_EXTRACTED_CHARS", "180000")),
+        default=AI_NOTE_CONFIG.max_extracted_chars,
         help="Maximum extracted Markdown characters sent per item in MinerU modes. 0 disables truncation.",
     )
     parser.add_argument(
         "--max-images",
         type=int,
-        default=int(os.environ.get("ZOT_AI_NOTE_MAX_IMAGES", "24")),
+        default=AI_NOTE_CONFIG.max_images,
         help="Maximum MinerU-extracted images attached per item in mineru-markdown-images mode.",
     )
     parser.add_argument(
         "--max-image-mb",
         type=int,
-        default=int(os.environ.get("ZOT_AI_NOTE_MAX_IMAGE_MB", "8")),
+        default=AI_NOTE_CONFIG.max_image_mb,
         help="Skip extracted images larger than this size in mineru-markdown-images mode.",
     )
     parser.add_argument("--refresh-mineru-cache", action="store_true", help="Ignore cached MinerU Markdown/images and extract again.")

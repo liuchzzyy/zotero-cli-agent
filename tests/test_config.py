@@ -3,11 +3,15 @@ from pathlib import Path
 
 from zotero_cli_agents.config import (
     AppConfig,
+    config_file_path,
     detect_zotero_data_dir,
     get_default_profile,
     list_profiles,
+    load_ai_note_config,
     load_config,
+    project_root,
     save_config,
+    state_dir,
 )
 
 
@@ -214,3 +218,41 @@ def test_embedding_config_is_configured():
 
     assert EmbeddingConfig(url="http://x", api_key="k", model="m").is_configured is True
     assert EmbeddingConfig(url="http://x", api_key="", model="m").is_configured is False
+
+
+def test_repo_local_config_path():
+    root = project_root()
+    assert config_file_path() == root / ".zot" / "config.toml"
+
+
+def test_repo_local_state_dir():
+    root = project_root()
+    assert state_dir() == root / ".zot" / "state"
+
+
+def test_load_ai_note_config_from_toml(tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text("""
+[ai_notes]
+api_key = "test-key"
+base_url = "https://api.example.com/v1"
+model = "deepseek-v4-pro"
+reasoning_effort = "max"
+pdf_input_mode = "mineru-text"
+api_mode = "chat"
+chat_token_param = "max_tokens"
+max_extracted_chars = 1234
+max_images = 6
+max_image_mb = 3
+""")
+    cfg = load_ai_note_config(config_file)
+    assert cfg.api_key == "test-key"
+    assert cfg.base_url == "https://api.example.com/v1"
+    assert cfg.model == "deepseek-v4-pro"
+    assert cfg.reasoning_effort == "max"
+    assert cfg.pdf_input_mode == "mineru-text"
+    assert cfg.api_mode == "chat"
+    assert cfg.chat_token_param == "max_tokens"
+    assert cfg.max_extracted_chars == 1234
+    assert cfg.max_images == 6
+    assert cfg.max_image_mb == 3

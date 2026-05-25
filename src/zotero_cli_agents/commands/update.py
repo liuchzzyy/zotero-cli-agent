@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 from typing import TypedDict
 
 import click
 
-from zotero_cli_agents.config import load_config
+from zotero_cli_agents.config import load_config, resolve_write_credentials
 from zotero_cli_agents.core.writer import SYNC_REMINDER, ZoteroWriteError, ZoteroWriter
 from zotero_cli_agents.exit_codes import emit_error
 from zotero_cli_agents.formatter import emit_progress, envelope_ok, envelope_partial
@@ -220,11 +219,9 @@ def update_cmd(
                 click.echo(f"[dry-run] Would update {len(updates)} item(s) from {from_jsonl}")
             return
 
-        library_id = os.environ.get("ZOT_LIBRARY_ID", cfg.library_id)
-        api_key = os.environ.get("ZOT_API_KEY", cfg.api_key)
         library_type = ctx.obj.get("library_type", "user")
-        if library_type == "group" and ctx.obj.get("group_id"):
-            library_id = ctx.obj["group_id"]
+        group_id = ctx.obj.get("group_id")
+        library_id, api_key = resolve_write_credentials(cfg, library_type=library_type, group_id=group_id)
         if not library_id or not api_key:
             emit_error(
                 "auth_missing",
@@ -308,11 +305,9 @@ def update_cmd(
             click.echo(f"[dry-run] Would update '{key}' with {len(fields)} field(s): {list(fields.keys())}")
         return
 
-    library_id = os.environ.get("ZOT_LIBRARY_ID", cfg.library_id)
-    api_key = os.environ.get("ZOT_API_KEY", cfg.api_key)
     library_type = ctx.obj.get("library_type", "user")
-    if library_type == "group" and ctx.obj.get("group_id"):
-        library_id = ctx.obj["group_id"]
+    group_id = ctx.obj.get("group_id")
+    library_id, api_key = resolve_write_credentials(cfg, library_type=library_type, group_id=group_id)
     if not library_id or not api_key:
         emit_error(
             "auth_missing",

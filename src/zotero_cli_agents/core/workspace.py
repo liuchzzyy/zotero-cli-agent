@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import re
 import shutil
 import sys
@@ -16,22 +15,13 @@ else:
     except ModuleNotFoundError:
         import tomli as tomllib  # type: ignore[no-redef]
 
+from zotero_cli_agents.config import project_root, state_dir
+
 _NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
 
-def _detect_project_root(start: Path | None = None) -> Path:
-    current = (start or Path.cwd()).resolve()
-    for candidate in (current, *current.parents):
-        if (candidate / ".git").exists():
-            return candidate
-    return current
-
-
 def workspaces_dir() -> Path:
-    env_dir = os.environ.get("ZOT_WORKSPACES_DIR")
-    if env_dir:
-        return Path(env_dir).expanduser().resolve()
-    return _detect_project_root() / ".workspace"
+    return project_root() / ".workspace"
 
 
 def workspace_dir(name: str) -> Path:
@@ -47,7 +37,8 @@ def workspace_index_path(name: str) -> Path:
 
 
 def workspace_cache_path() -> Path:
-    return workspaces_dir() / "_cache" / "pdf_cache.sqlite"
+    # Shared PDF extraction cache is runtime state, not workspace definition.
+    return state_dir(project_root()) / "pdf_cache.sqlite"
 
 
 def validate_name(name: str) -> bool:

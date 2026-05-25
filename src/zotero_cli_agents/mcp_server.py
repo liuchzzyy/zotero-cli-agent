@@ -16,6 +16,7 @@ from zotero_cli_agents.config import (
     load_config,
     load_embedding_config,
     load_pdf_config,
+    resolve_semantic_scholar_api_key,
 )
 from zotero_cli_agents.core.pdf_cache import PdfCache
 from zotero_cli_agents.core.pdf_extractor import PdfExtractionError, get_extractor
@@ -30,7 +31,6 @@ from zotero_cli_agents.core.workspace import (
     workspace_cache_path,
     workspace_exists,
     workspace_index_path,
-    workspaces_dir,
 )
 from zotero_cli_agents.core.writer import ZoteroWriteError, ZoteroWriter
 from zotero_cli_agents.models import Collection, Item, Note
@@ -1045,8 +1045,6 @@ def _handle_update_status(
     apply: bool = False,
     library: str = "user",
 ) -> dict:
-    import os
-
     from zotero_cli_agents.core.semantic_scholar import SemanticScholarClient, extract_preprint_info
 
     cfg = load_config()
@@ -1076,11 +1074,7 @@ def _handle_update_status(
     if not preprint_items:
         return {"results": [], "published": 0, "checked": 0}
 
-    api_key = (
-        os.environ.get("S2_API_KEY", "")
-        or os.environ.get("SEMANTIC_SCHOLAR_API_KEY", "")
-        or cfg.semantic_scholar_api_key
-    )
+    api_key = resolve_semantic_scholar_api_key(cfg)
     client = SemanticScholarClient(api_key=api_key or None)
     results = []
     published_count = 0

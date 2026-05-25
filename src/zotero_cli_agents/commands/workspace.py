@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import sys
 import time
-from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -45,6 +44,8 @@ from zotero_cli_agents.core.workspace import (
 from zotero_cli_agents.exit_codes import emit_error
 from zotero_cli_agents.formatter import format_items, format_workspace_list, format_workspace_query
 from zotero_cli_agents.models import Collection, Item
+
+_TEST_PATCH_SEAMS = (convert_pdf_to_text, workspaces_dir)
 
 
 @click.group("workspace")
@@ -556,8 +557,15 @@ def workspace_index(ctx: click.Context, name: str, force: bool, extractor: str |
                 sys.stderr.write(f"\r{' ' * 60}\r    [{phase}] [{current}/{total}]")
                 sys.stdout.flush()
 
-            batch_results = convert_pdfs_to_text(unique_paths, extractor, batch_progress)
-            pdf_texts.update(batch_results)
+            if len(unique_paths) == 1:
+                single_path = unique_paths[0]
+                try:
+                    pdf_texts[single_path] = convert_pdf_to_text(single_path, extractor, batch_progress)
+                except Exception as e:
+                    pdf_texts[single_path] = e
+            else:
+                batch_results = convert_pdfs_to_text(unique_paths, extractor, batch_progress)
+                pdf_texts.update(batch_results)
             sys.stderr.write(f"\r{' ' * 60}\r")
             sys.stdout.flush()
 
