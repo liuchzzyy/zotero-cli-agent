@@ -176,3 +176,76 @@ rss_failed_dois_YYYY-MM-DD.txt
 如果需要，使用 -Date 指定日期，使用 -ProgressIntervalSeconds 调整进度刷新频率。
 导入完成后检查根目录的 rss_failed_dois_YYYY-MM-DD.txt；如果没有失败且脚本成功结束，tmp 应该被自动删除。
 ```
+
+## Remove Newer DOI Duplicates
+这是当前推荐的 DOI 精确去重入口。规则固定为：同 DOI 的重复条目里，保留 `date_added` 更早的旧条目，删除 `date_added` 更晚的新条目。
+
+### 判定规则
+- 只使用 `DOI` 做精确判断。
+- 不使用 `title` 做模糊或格式近似判断。
+- 不看 collection；同一个独立条目放在不同 collection 不影响判定。
+- 如果两个独立条目 DOI 一样，即使在不同 collection，也会被当成重复。
+
+### 标准入口
+在 `E:\Desktop\CodingDaily\zotero-cli-agents` 下执行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\remove-newer-doi-duplicates.ps1
+```
+
+默认是 dry-run：
+
+- 会先查询当前 Zotero 库中的 DOI 重复组。
+- 会生成 `keep / delete` 计划。
+- 不会真正删除任何条目。
+
+正式执行删除时，加 `-Apply`：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\remove-newer-doi-duplicates.ps1 -Apply
+```
+
+### 可选参数
+如果要调整每批删除的数量：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\remove-newer-doi-duplicates.ps1 -Apply -BatchSize 10
+```
+
+如果要指定 library：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\remove-newer-doi-duplicates.ps1 -Library user
+```
+
+### 运行特征
+- 脚本内部会先调用：
+
+```powershell
+uv run zot --json --library user duplicates --by doi
+```
+
+- 查询完成后会显示：
+  - DOI duplicate query 开始/结束时间
+  - 找到多少组重复
+- 生成计划时会持续显示：
+  - `plan x/y`
+  - 当前百分比
+  - 每组的 `keep` 和 `delete`
+- 正式删除时会持续显示：
+  - 当前 batch 编号
+  - 当前 batch 删除数量
+  - overall 已完成数量和百分比
+  - 本批实际 deleted keys
+
+### 当前适用场景
+- 适用于“新导入条目和旧库条目 DOI 一样，但 title 因大小写、空格、HTML 标签、上下标格式不同而看起来像不同条目”的场景。
+- 不适用于“没有 DOI，只能靠标题近似判断”的去重场景。
+
+### 推荐给代理的直接提示词
+```text
+不要用 title 模糊匹配做去重。
+直接在 E:\Desktop\CodingDaily\zotero-cli-agents 下调用 scripts\remove-newer-doi-duplicates.ps1。
+规则固定为：只按 DOI 精确判断；同 DOI 时保留 date_added 更早的旧条目，删除 date_added 更晚的新条目。
+先执行默认 dry-run 看 keep/delete 计划；我确认后，再加 -Apply 正式删除。
+```

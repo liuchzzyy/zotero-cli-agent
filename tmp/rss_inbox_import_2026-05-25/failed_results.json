@@ -1,0 +1,800 @@
+[
+  {
+    "index": 1358,
+    "doi": "10.1039/d5cs00964b",
+    "title": "Ternary organic solar cells: optimizing the third components",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "network_error",
+      "message": "Network error: _ssl.c:993: The handshake operation timed out",
+      "retryable": true
+    }
+  },
+  {
+    "index": 1680,
+    "doi": "10.1039/d6mh00625f",
+    "title": "Non-percolating Interfacial Microcapacitor Architecture Decouples Polarization Enhancement from Leakage Suppression in Humidity-Tolerant Polymer Films",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "network_error",
+      "message": "Network error: The read operation timed out",
+      "retryable": true
+    }
+  },
+  {
+    "index": 1829,
+    "doi": "10.1103/891y-wm1f",
+    "title": "Atomic cluster expansion potential for the Si-H system",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "network_error",
+      "message": "Network error: The read operation timed out",
+      "retryable": true
+    }
+  },
+  {
+    "index": 1924,
+    "doi": "10.34133/research.1063",
+    "title": "Mantis Leg-Inspired Smart Insole Integrating Closed-Loop Power Supply for Advanced Wearable Gait Diagnostics",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1925,
+    "doi": "10.34133/research.1064",
+    "title": "Particle Morphology Controls the Bulk Mechanical Behavior of Far-Side Lunar Regolith from Chang’e-6 Samples and Deep Learning",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1926,
+    "doi": "10.34133/research.1066",
+    "title": "Erratum to “Interleukin-4-Mediated NLRP3 Inflammasome Activation in Microglia Contributes to Allergic Rhinitis via Central Sensitization”",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1927,
+    "doi": "10.34133/research.1069",
+    "title": "SENP6 Restrains NLRP3 Inflammasome Activation via DeSUMOylation-Driven K48-Linked Ubiquitination of NLRP3 in Acute Lung Injury",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1928,
+    "doi": "10.34133/research.1070",
+    "title": "A Novel Autophagy Inhibitor p-Hydroxylcinnamaldehyde Suppresses Esophageal Squamous Cell Carcinoma by Targeting LDHA Phosphorylation-Mediated Metabolic Reprogramming",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1929,
+    "doi": "10.34133/research.1072",
+    "title": "The Optically Guided and Pre-assembled Implantation Cranial Window Reveals Cortical Spatial Representations during Navigation",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1930,
+    "doi": "10.34133/research.1074",
+    "title": "Gradient-Nested Organic/Inorganic Aerogels Achieve High Mechanical Strength and Feedback-Tunable Microwave Absorption",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1931,
+    "doi": "10.34133/research.1075",
+    "title": "Sea Anemone-Inspired Phase Change Composites for Efficient Heat Dissipation and Ultra-High Electromagnetic Interference Shielding",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1932,
+    "doi": "10.34133/research.1078",
+    "title": "ZFP36 Protects against Abdominal Aortic Aneurysm Formation by Regulating Vascular Smooth Muscle Phenotypic Switch",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1933,
+    "doi": "10.34133/research.1080",
+    "title": "Zincology: Decoding Homeostasis to Unveil Disease Mechanisms",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1934,
+    "doi": "10.34133/research.1082",
+    "title": "Multiscale Plant Defense Strategies against Ciprofloxacin Stress: From Chloroplast-Centered Adaptation to Microbiome Coordination",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1935,
+    "doi": "10.34133/research.1086",
+    "title": "ARTS Confers Chemoresistance of Breast Cancer by Inducing Apoptosis-Dependent Autophagy via Livin–MDM2–p53 Pathway",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1936,
+    "doi": "10.34133/research.1088",
+    "title": "Efficient Red Electroluminescent Copper Complexes with Fluorination-Balanced Dual Emission",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1937,
+    "doi": "10.34133/research.1093",
+    "title": "Advances in Biomaterials Development and Their Energy Harvesting Application",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1938,
+    "doi": "10.34133/research.1118",
+    "title": "Synergistic Solvation Strategy for Low-Temperature Alkaline Zinc−Ferricyanide Flow Battery",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1939,
+    "doi": "10.34133/research.1120",
+    "title": "A Self-Decoupling Multimodal Sensor for Enhanced Early Warning of Lithium-Ion Battery Thermal Runaway",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1940,
+    "doi": "10.34133/research.1125",
+    "title": "Targeting a Shared Mitophagy Regulator: The SIRT1–FOXO3–DEPP1 Axis Underpins the Dual Bone and Brain Benefits of Total Flavonoids from Drynaria fortunei",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1941,
+    "doi": "10.34133/research.1128",
+    "title": "Intratumoral Androgens and Genetic Variants Driving Therapy Resistance in Prostate Cancer",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1942,
+    "doi": "10.34133/research.1139",
+    "title": "Dual-Pronged Lipid Nanocarriers Promote Immunotherapy for TNBC by Inducing Immunogenic Cell Death and Activating Lymphoid Immune Cells",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1943,
+    "doi": "10.34133/research.1140",
+    "title": "Engineering a Gram-Negative Bactericidal Hydrogel: Cu x Te Nanozyme Functions as a Specific Killer by Hijacking LPS and Flagella Biosynthesis",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1944,
+    "doi": "10.34133/research.1145",
+    "title": "Clinical Application of Deep Learning for Spine MRI Interpretation: A Multicenter Evaluation of Artificial-Intelligence-Assisted versus Manual Reading on Diagnostic Agreement with the Reference Standard",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1945,
+    "doi": "10.34133/research.1148",
+    "title": "SiLNR1-Mediated Nitrogen Regulatory Signaling Enhances Nitrogen Use Efficiency and Grain Yield in Foxtail Millet (Setaria italica L.) under Low-Nitrogen Stress",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1946,
+    "doi": "10.34133/research.1149",
+    "title": "Antimicrobial Peptides as Cross-Seeding Modulators at the Neurodegenerative–Infectious Interface",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1947,
+    "doi": "10.34133/research.1150",
+    "title": "Origin of Single-Molecule Reaction Chirality",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1948,
+    "doi": "10.34133/research.1151",
+    "title": "A “Detachable Polyanionic Protective Shell” Enveloping Photodynamic Cationic Nanoassemblies for Keratitis Treatment",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1949,
+    "doi": "10.34133/research.1154",
+    "title": "Advancing Gene Therapy for Pancreatitis: From Genetic Insights to Clinical Translation",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1950,
+    "doi": "10.34133/research.1156",
+    "title": "Paraptosis Turning Cellular Stress into Therapeutic Weapon for Urological Diseases",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1951,
+    "doi": "10.34133/research.1157",
+    "title": "Blood Mechanical Intelligence: From Force Sensing to Precision Mechanomedicine",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1952,
+    "doi": "10.34133/research.1160",
+    "title": "Conjugation-Induced Self-Selective Coordination Enables Organic Polymers with Low-Temperature Ammonium-Ion Storage",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1953,
+    "doi": "10.34133/research.1161",
+    "title": "Repurposed Acarbose Targets Nidogen-1 to Remodel the Tumor Stroma and Suppress Portal Vein Tumor Thrombus in Hepatocellular Carcinoma",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1954,
+    "doi": "10.34133/research.1163",
+    "title": "Porphyromonas gingivalis Promotes Neuroinflammation by Microglial Ferroptosis via NOX4/PPAR-α/PGC-1α Pathway",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1955,
+    "doi": "10.34133/research.1164",
+    "title": "Initiation of Tertiary Lymphoid Structures for Cancer Immunotherapy",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1956,
+    "doi": "10.34133/research.1167",
+    "title": "Janus Microgel Robots for Actively Boosting Catalytic Efficiency and Recovery of Living Materials",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1957,
+    "doi": "10.34133/research.1168",
+    "title": "Structural–Functional Customization of Nanoscale Liposome-in-Liposome Systems: Precision Engineering Methodology and Artificial-Intelligence-Driven Design Prospects",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1958,
+    "doi": "10.34133/research.1169",
+    "title": "Atomic-Shell Engineering of GeSx-Au Nanorods Synergistically Suppresses Phonon Scattering and Activates N2 for Near-Infrared-Driven Ammonia Synthesis",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1959,
+    "doi": "10.34133/research.1170",
+    "title": "Methanesulfonate in phosphate superionic electrolyte enables ampere-hour practical aqueous batteries",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1960,
+    "doi": "10.34133/research.1172",
+    "title": "Directed Evolution of T7 RNA Polymerase Minimizes dsRNA By-product and Enables High-Fidelity mRNA Synthesis for Demanding Therapeutic Applications",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1961,
+    "doi": "10.34133/research.1188",
+    "title": "Biomaterial-Driven Integrated Therapy for Renal Cell Carcinoma: Renal Cancer Control and Kidney Injury Repair",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1962,
+    "doi": "10.34133/research.1215",
+    "title": "A Translational Neural Network Mechanism of Resilience: Top-Down Control and Plasticity of the Visual Cortex Relates to Resilient Outcome and Performance",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1963,
+    "doi": "10.34133/research.1216",
+    "title": "Machine-Learning-Enabled Raman Spectroscopy Refines Indocyanine Green Fluorescence Boundaries for Precise Glioblastoma Margin Delineation",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1964,
+    "doi": "10.34133/research.1221",
+    "title": "Peripheral Nerve–Cancer Interactions in the Tumor Microenvironment: A Three-Dimensional Framework Integrating Mechanisms, Modulators, and Therapeutic Strategies",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1965,
+    "doi": "10.34133/research.1225",
+    "title": "Eye-Tracking-Driven Programming Metasurface System for Adaptive Beam Focusing and Polarization-Agile Communication",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1966,
+    "doi": "10.34133/research.1227",
+    "title": "Dysregulation of the Cant1/β-Catenin/TCF4–CHSY1 Axis Underpins Impaired ECM Biosynthesis in Skeletal Disorders",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1967,
+    "doi": "10.34133/research.1234",
+    "title": "Postnatal Maxillofacial \"Developing\" Decellularized Extracellular Matrix Orchestrates Hierarchical Cross-Organ Regeneration via Macrophage Integrin αvβ5-Mediated Efferocytosis-Driven Developmental Recapitulation",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1968,
+    "doi": "10.34133/research.1235",
+    "title": "Mitochondrial 8-Oxoguanine DNA Glycosylase 1–Mitochondrial Permeability Transition Pore Axis Drives Mitochondrial DNA Escape and Accelerates Osteoarthritis Progression",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1969,
+    "doi": "10.34133/research.1241",
+    "title": "Mitochondrial Fission Regulator 1-Like Protein Protects the Heart from Ischemia/Reperfusion Injury via Dual Mitochondrial Mechanisms",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1970,
+    "doi": "10.34133/research.1244",
+    "title": "Transcranial Ultrasound Stimulation Pulsed at 40 Hz Improves Cognition and Neuroinflammation in Female Mice with Alzheimer’s Disease",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1971,
+    "doi": "10.34133/research.1246",
+    "title": "A 3-Dimensional Bioprinted Decellularized Umbilical Cord Matrix Patch for Enhanced Storage and Delivery of Extracellular Vesicles in Diabetic Wound Healing",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1972,
+    "doi": "10.34133/research.1247",
+    "title": "Erratum to “Integrated Single-Step Terahertz Metasensing for Simultaneous Detection Based on Exosomal Membrane Proteins Enables Pathological Typing of Gastric Cancer”",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1973,
+    "doi": "10.34133/research.1251",
+    "title": "Lycopene Alleviates Deoxynivalenol-Induced Porcine Intestinal Epithelial Barrier Injury by Inhibiting PGAM5-Mediated Mitophagy-Dependent Ferroptosis",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1974,
+    "doi": "10.34133/research.1253",
+    "title": "Two Molecularly Defined Neuronal Types in the Mammillary Body Govern Different Temporal Periods during Working Memory Maintenance",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1976,
+    "doi": "10.34133/research.1261",
+    "title": "The Multiscale Heterogeneity of Adipose Tissue in Health and Disease",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1977,
+    "doi": "10.35848/1882-0786/ae5bde",
+    "title": "Quantum sensing and imaging in the MeV regime of nuclear medicine",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  },
+  {
+    "index": 1978,
+    "doi": "10.35848/1882-0786/ae5ebe",
+    "title": "Flexible MicroLED–electrocorticography sheet for wide-area bidirectional neural interface in mice",
+    "target_collections": [
+      "00_INBOX_AA"
+    ],
+    "tracked_authors": [],
+    "error": {
+      "code": "api_error",
+      "message": "Bad request (400): \nCode: 400\nURL: https://api.zotero.org/items/new\nMethod: GET\nResponse: 'itemType' not provided",
+      "retryable": false
+    }
+  }
+]
