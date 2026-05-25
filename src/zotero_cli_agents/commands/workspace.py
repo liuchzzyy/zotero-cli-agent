@@ -23,6 +23,8 @@ from zotero_cli_agents.core.rag import (
     convert_pdf_to_text,
     convert_pdfs_to_text,
     embed_texts,
+    filter_ranked_results_by_pdf_kind,
+    infer_pdf_kind,
     reciprocal_rank_fusion,
     semantic_score_chunks,
     tokenize,
@@ -37,6 +39,7 @@ from zotero_cli_agents.core.workspace import (
     save_workspace,
     validate_name,
     workspace_exists,
+    workspace_index_path,
     workspaces_dir,
 )
 from zotero_cli_agents.exit_codes import emit_error
@@ -468,7 +471,7 @@ def _resolve_collection_key(reader: ZoteroReader, name_or_key: str) -> str | Non
 @workspace_group.command("index")
 @click.argument("name")
 @click.option("--force", is_flag=True, help="Rebuild index from scratch")
-@click.option("--extractor", default=None, help="PDF text extractor to use")
+@click.option("--extractor", default=None, help="PDF text extractor to use. Defaults to the configured MinerU extractor.")
 @click.pass_context
 def workspace_index(ctx: click.Context, name: str, force: bool, extractor: str | None) -> None:
     """Build RAG index for a workspace."""
@@ -497,7 +500,7 @@ def workspace_index(ctx: click.Context, name: str, force: bool, extractor: str |
     library_id = resolve_library_id(db_path, ctx.obj)
     reader = ZoteroReader(db_path, library_id=library_id, prefs_js_path=get_prefs_js_path(cfg))
 
-    idx_path = workspaces_dir() / f"{name}.idx.sqlite"
+    idx_path = workspace_index_path(name)
     idx = RagIndex(idx_path)
 
     try:
@@ -511,78 +514,52 @@ def workspace_index(ctx: click.Context, name: str, force: bool, extractor: str |
             click.echo(f"Index for '{name}' is up to date ({len(already_indexed)} item(s) indexed).")
             return
 
-        # PHASE 1 — Extract all PDF texts
-        import pymupdf
-
         t0 = time.monotonic()
 
-        # Gather items and PDF paths
         item_map: dict[str, Item] = {}
-        pdf_paths_map: dict[str, Path] = {}  # key → path
-        path_to_key: dict[Path, str] = {}  # path → key
+        pdf_refs: dict[str, list[tuple[str, str, Path]]] = {}
+        unique_pdf_paths: dict[Path, None] = {}
+        notes_map: dict[str, list[tuple[str, str]]] = {}
+
         for ws_item in to_index:
             item = reader.get_item(ws_item.key)
             if item is None:
                 click.echo(f"Warning: item '{ws_item.key}' not found in Zotero, skipped")
                 continue
             item_map[ws_item.key] = item
-            att = reader.get_pdf_attachment(ws_item.key)
-            if att is not None and att.path is not None and att.path.exists():
-                pdf_paths_map[ws_item.key] = att.path
-                path_to_key[att.path] = ws_item.key
+            pdf_attachments = reader.get_pdf_attachments(ws_item.key)
+            if pdf_attachments:
+                refs: list[tuple[str, str, Path]] = []
+                for att in pdf_attachments:
+                    if att.path is None or not att.path.exists():
+                        continue
+                    refs.append((att.key, att.filename or att.key, att.path))
+                    unique_pdf_paths[att.path] = None
+                if refs:
+                    pdf_refs[ws_item.key] = refs
 
-        # Compute total pages for header
-        total_pages = 0
-        for pdf_path in pdf_paths_map.values():
-            doc = pymupdf.open(str(pdf_path))
-            total_pages += len(doc)
-            doc.close()
+            note_refs: list[tuple[str, str]] = []
+            for note in reader.get_notes(ws_item.key):
+                if note.content.strip():
+                    note_refs.append((note.key, note.content))
+            if note_refs:
+                notes_map[ws_item.key] = note_refs
 
-        # Determine extraction strategy
-        pdf_texts: dict[str, str | Exception] = {}  # key → text or error
+        pdf_texts: dict[Path, str | Exception] = {}
         pdf_errors: list[tuple[str, str, Exception]] = []
 
-        if pdf_paths_map:
-            if extractor == "mineru" and len(pdf_paths_map) > 1:
-                # MinerU batch — has its own progress callback
-                click.echo(f"  Extracting {len(pdf_paths_map)} PDFs ({total_pages} pages) with MinerU...")
+        if unique_pdf_paths:
+            unique_paths = list(unique_pdf_paths.keys())
+            click.echo(f"  Extracting {len(unique_paths)} PDF attachment(s) with {extractor}...")
 
-                def batch_progress(phase: str, current: int, total: int, _pages: int) -> None:
-                    sys.stderr.write(f"\r{' ' * 60}\r    [{phase}] [{current}/{total}]")
-                    sys.stdout.flush()
-
-                batch_results = convert_pdfs_to_text(list(pdf_paths_map.values()), "mineru", batch_progress)
-                for path, text_or_err in batch_results.items():
-                    key = path_to_key[path]
-                    pdf_texts[key] = text_or_err
-            else:
-                # Sequential extraction (pymupdf or single MinerU)
-                click.echo(f"  Extracting PDFs ({total_pages} pages)...")
-
-                for i, (key, pdf_path) in enumerate(pdf_paths_map.items(), 1):
-                    total_files = len(pdf_paths_map)
-
-                    def make_seq_progress(file_idx: int, file_total: int) -> Callable[[str, int, int, int], None]:
-                        def seq_progress(phase: str, current: int, chunk_total: int, _pages: int) -> None:
-                            sys.stderr.write(
-                                f"\r{' ' * 60}\r    [{phase}] [{file_idx}/{file_total}] chunks [{current}/{chunk_total}]"
-                            )
-                            sys.stdout.flush()
-
-                        return seq_progress
-
-                    sys.stderr.write(f"\r{' ' * 60}\r    [extract] [{i}/{total_files}]")
-                    sys.stdout.flush()
-                    try:
-                        text = convert_pdf_to_text(
-                            pdf_path, extractor_name=extractor, progress_callback=make_seq_progress(i, total_files)
-                        )
-                        pdf_texts[key] = text
-                    except Exception as e:
-                        pdf_texts[key] = e
-                        pdf_errors.append((key, pdf_path.name, e))
-                sys.stderr.write(f"\r{' ' * 60}\r")
+            def batch_progress(phase: str, current: int, total: int, _pages: int) -> None:
+                sys.stderr.write(f"\r{' ' * 60}\r    [{phase}] [{current}/{total}]")
                 sys.stdout.flush()
+
+            batch_results = convert_pdfs_to_text(unique_paths, extractor, batch_progress)
+            pdf_texts.update(batch_results)
+            sys.stderr.write(f"\r{' ' * 60}\r")
+            sys.stdout.flush()
 
         # PHASE 2 — Chunk all texts
         click.echo(f"  Chunking {len(to_index)} item(s)...")
@@ -599,14 +576,23 @@ def workspace_index(ctx: click.Context, name: str, force: bool, extractor: str |
             meta_tokens = len(tokenize(meta_text))
             all_chunks.append((ws_item.key, "metadata", meta_text, meta_tokens))
 
-            if ws_item.key in pdf_texts:
-                pdf_text_or_err = pdf_texts[ws_item.key]
+            for note_key, note_content in notes_map.get(ws_item.key, []):
+                note_text = f"Title: {item.title}\nNote Key: {note_key}\nContent:\n{note_content}"
+                note_tokens = len(tokenize(note_text))
+                all_chunks.append((ws_item.key, f"note:{note_key}", note_text, note_tokens))
+
+            for att_key, pdf_name, pdf_path in pdf_refs.get(ws_item.key, []):
+                pdf_text_or_err = pdf_texts.get(pdf_path)
                 if isinstance(pdf_text_or_err, Exception):
-                    pass
-                else:
-                    for chunk_content in chunk_text(pdf_text_or_err, item.title):
-                        chunk_tokens = len(tokenize(chunk_content))
-                        all_chunks.append((ws_item.key, "pdf", chunk_content, chunk_tokens))
+                    pdf_errors.append((ws_item.key, pdf_name, pdf_text_or_err))
+                    continue
+                if not isinstance(pdf_text_or_err, str) or not pdf_text_or_err.strip():
+                    continue
+                pdf_kind = infer_pdf_kind(pdf_text_or_err, pdf_name)
+                labeled_title = f"{item.title} | PDF: {pdf_name} | Attachment: {att_key} | Kind: {pdf_kind}"
+                for chunk_content in chunk_text(pdf_text_or_err, labeled_title):
+                    chunk_tokens = len(tokenize(chunk_content))
+                    all_chunks.append((ws_item.key, f"pdf:{pdf_kind}:{att_key}:{pdf_name}", chunk_content, chunk_tokens))
 
         # PHASE 3 — Index all chunks (bulk insert, single commit)
         click.echo(f"  Indexing {len(all_chunks)} chunk(s)...")
@@ -685,8 +671,14 @@ def workspace_index(ctx: click.Context, name: str, force: bool, extractor: str |
     default="auto",
     help="Retrieval mode",
 )
+@click.option(
+    "--pdf-kind",
+    type=click.Choice(["any", "main", "supplementary"]),
+    default="any",
+    help="Restrict PDF results to main paper or supplementary PDF chunks",
+)
 @click.pass_context
-def workspace_query(ctx: click.Context, question: str, ws_name: str, top_k: int, mode: str) -> None:
+def workspace_query(ctx: click.Context, question: str, ws_name: str, top_k: int, mode: str, pdf_kind: str) -> None:
     """Query workspace papers with natural language."""
     json_out = ctx.obj.get("json", False)
     if not workspace_exists(ws_name):
@@ -698,7 +690,7 @@ def workspace_query(ctx: click.Context, question: str, ws_name: str, top_k: int,
             context="workspace query",
         )
 
-    idx_path = workspaces_dir() / f"{ws_name}.idx.sqlite"
+    idx_path = workspace_index_path(ws_name)
     if not idx_path.exists():
         emit_error(
             "not_found",
@@ -765,7 +757,8 @@ def workspace_query(ctx: click.Context, question: str, ws_name: str, top_k: int,
         else:
             merged = bm25_results
 
-        top = merged[:top_k]
+        filtered = filter_ranked_results_by_pdf_kind(merged, pdf_kind)
+        top = filtered[:top_k]
 
         if not top:
             if json_out:

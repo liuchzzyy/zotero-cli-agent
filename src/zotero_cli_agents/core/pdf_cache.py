@@ -4,7 +4,9 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-DEFAULT_CACHE_PATH = Path.home() / ".config" / "zot" / "cache" / "pdf_cache.sqlite"
+from zotero_cli_agents.core.workspace import workspace_cache_path
+
+DEFAULT_CACHE_PATH = workspace_cache_path()
 
 
 class PdfCache:

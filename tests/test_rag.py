@@ -15,6 +15,9 @@ from zotero_cli_agents.core.rag import (
     compute_term_frequencies,
     cosine_similarity,
     embed_texts,
+    filter_ranked_results_by_pdf_kind,
+    get_pdf_kind_from_source,
+    infer_pdf_kind,
     reciprocal_rank_fusion,
     tokenize,
 )
@@ -141,6 +144,46 @@ class TestChunking:
         assert "Attention Is All You Need" in chunk
         assert "Vaswani et al." in chunk
         assert "transformer" in chunk
+
+    def test_infer_pdf_kind_supplementary(self):
+        text = "Electronic Supplementary Material (ESI). Figure S1. Extra synthesis details."
+        assert infer_pdf_kind(text, "paper.pdf") == "supplementary"
+
+    def test_infer_pdf_kind_main(self):
+        text = "Introduction\nZinc-ion batteries have emerged as a promising candidate."
+        assert infer_pdf_kind(text, "paper.pdf") == "main"
+
+    def test_get_pdf_kind_from_source(self):
+        assert get_pdf_kind_from_source("pdf:main:ABC:file.pdf") == "main"
+        assert get_pdf_kind_from_source("pdf:supplementary:XYZ:file.pdf") == "supplementary"
+        assert get_pdf_kind_from_source("note:ABC") is None
+
+    def test_filter_ranked_results_by_pdf_kind(self):
+        results = [
+            (1, 0.9, {"source": "pdf:main:A:file.pdf", "item_key": "A", "content": "main"}),
+            (2, 0.8, {"source": "pdf:supplementary:B:file.pdf", "item_key": "A", "content": "supp"}),
+            (3, 0.7, {"source": "note:N1", "item_key": "A", "content": "note"}),
+        ]
+        filtered = filter_ranked_results_by_pdf_kind(results, "supplementary")
+        assert len(filtered) == 1
+        assert filtered[0][2]["source"].startswith("pdf:supplementary:")
+
+    def test_abbreviation_heading_normalized_to_first_supplementary_label(self):
+        text = "# Abbreviation\n\nZinc hydroxide sulfate: ZHS\n\nFigure S1. A supplementary figure."
+        chunks = chunk_text(text, "Paper | Kind: supplementary", max_tokens=500)
+        assert any("> Figure S1]" in chunk for chunk in chunks)
+
+    def test_supplementary_figures_split_into_separate_sections(self):
+        text = (
+            "# Abbreviation\n\n"
+            "Zinc hydroxide sulfate: ZHS\n\n"
+            "Figure S1. First figure description.\n\n"
+            "Figure S2. Second figure description."
+        )
+        chunks = chunk_text(text, "Paper | Kind: supplementary", max_tokens=500)
+        joined = "\n".join(chunks)
+        assert "> Figure S1]" in joined
+        assert "> Figure S2]" in joined
 
 
 class TestBM25:

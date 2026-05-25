@@ -17,6 +17,48 @@ CONFIG_DIR = Path.home() / ".config" / "zot"
 CONFIG_FILE = CONFIG_DIR / "config.toml"
 
 
+def _detect_project_root(start: Path | None = None) -> Path:
+    current = (start or Path.cwd()).resolve()
+    for candidate in (current, *current.parents):
+        if (candidate / ".git").exists() or (candidate / "pyproject.toml").exists():
+            return candidate
+    return current
+
+
+def _parse_dotenv_value(raw: str) -> str:
+    value = raw.strip()
+    if not value:
+        return ""
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        value = value[1:-1]
+    return value
+
+
+def load_local_env(path: Path | None = None) -> Path | None:
+    dotenv_path = path
+    if dotenv_path is None:
+        env_override = os.environ.get("ZOT_DOTENV_PATH")
+        if env_override:
+            dotenv_path = Path(env_override).expanduser()
+        else:
+            dotenv_path = _detect_project_root() / ".env"
+    if not dotenv_path.exists():
+        return None
+    for line in dotenv_path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, raw_value = stripped.split("=", 1)
+        key = key.strip()
+        if not key:
+            continue
+        os.environ.setdefault(key, _parse_dotenv_value(raw_value))
+    return dotenv_path
+
+
+load_local_env()
+
+
 def _detect_zotero_data_dir_from_registry() -> Path | None:
     """Detect Zotero data directory from Windows Registry.
 
@@ -138,7 +180,7 @@ def load_embedding_config(path: Path | None = None, *, apply_env_overrides: obje
 
 @dataclass
 class PdfConfig:
-    extractor: str = "pymupdf"
+    extractor: str = "mineru"
     mineru_token: str = ""
 
 

@@ -13,6 +13,27 @@ from zotero_cli_agents.core.pdf_cache import PdfCache
 from zotero_cli_agents.core.pdf_extractor import get_extractor
 from zotero_cli_agents.core.rag_index import RagIndex
 
+_SUPPLEMENTARY_HINTS = (
+    "electronic supplementary material",
+    "supplementary material",
+    "supplementary information",
+    "supporting information",
+    "supporting info",
+    "supporting data",
+    "figure s1",
+    "table s1",
+)
+
+_MAIN_PAPER_HINTS = (
+    "cite this:",
+    "received ",
+    "accepted ",
+    "doi:",
+    "broader context",
+)
+
+_SUPPLEMENTARY_LABEL_RE = re.compile(r"\b(Figure S\d+[A-Za-z]?|Table S\d+[A-Za-z]?|Scheme S\d+[A-Za-z]?)\b", re.IGNORECASE)
+
 
 def tokenize(text: str) -> list[str]:
     tokens = []
@@ -39,6 +60,40 @@ def build_metadata_chunk(title: str, authors: str, abstract: str | None, tags: l
     if tags:
         parts.append(f"Tags: {', '.join(tags)}")
     return "\n".join(parts)
+
+
+def infer_pdf_kind(text: str, filename: str = "") -> str:
+    head = f"{filename}\n{text[:2500]}".lower()
+    extended = f"{filename}\n{text[:10000]}".lower()
+    if any(hint in head for hint in _MAIN_PAPER_HINTS):
+        return "main"
+    if "experimental section" in head:
+        return "supplementary"
+    if any(hint in extended for hint in _SUPPLEMENTARY_HINTS):
+        return "supplementary"
+    return "main"
+
+
+def get_pdf_kind_from_source(source: str) -> str | None:
+    if source.startswith("pdf:main:"):
+        return "main"
+    if source.startswith("pdf:supplementary:"):
+        return "supplementary"
+    return None
+
+
+def filter_ranked_results_by_pdf_kind(
+    results: list[tuple[int, float, dict]],
+    pdf_kind: str | None,
+) -> list[tuple[int, float, dict]]:
+    if not pdf_kind or pdf_kind == "any":
+        return results
+    filtered: list[tuple[int, float, dict]] = []
+    for cid, score, chunk in results:
+        kind = get_pdf_kind_from_source(chunk.get("source", ""))
+        if kind == pdf_kind:
+            filtered.append((cid, score, chunk))
+    return filtered
 
 
 def clean_html(text: str) -> str:
@@ -135,6 +190,46 @@ def cascade_chunk(text: str, max_chars: int, overlap: int) -> list[str]:
     return _chunk_by_sentence(text, max_chars, overlap)
 
 
+def _normalize_heading(heading: str, section_text: str) -> str:
+    normalized = heading.strip()
+    if not normalized:
+        return normalized
+    if normalized.lower() != "abbreviation":
+        return normalized
+    match = _SUPPLEMENTARY_LABEL_RE.search(section_text)
+    if match:
+        return match.group(1)
+    head = section_text[:1200].lower()
+    if "experimental section" in head:
+        return "Experimental Section"
+    return normalized
+
+
+def _split_supplementary_sections(heading: str, section_text: str) -> list[tuple[str, str]]:
+    text = section_text.strip()
+    if not text:
+        return []
+    matches = list(_SUPPLEMENTARY_LABEL_RE.finditer(text))
+    if not matches:
+        return [(heading, text)]
+
+    sections: list[tuple[str, str]] = []
+    first_match = matches[0]
+    prelude = text[: first_match.start()].strip()
+    if prelude:
+        prelude_heading = _normalize_heading(heading, prelude)
+        sections.append((prelude_heading, prelude))
+
+    for i, match in enumerate(matches):
+        label = match.group(1)
+        start = match.start()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        block = text[start:end].strip()
+        if block:
+            sections.append((label, block))
+    return sections or [(heading, text)]
+
+
 def chunk_text(text: str, paper_title: str, max_tokens: int = 500, overlap: int = 50) -> list[str]:
     text = clean_html(text)
     sections: list[tuple[str, str]] = []
@@ -153,9 +248,15 @@ def chunk_text(text: str, paper_title: str, max_tokens: int = 500, overlap: int 
     if not sections:
         sections = [("", text.strip())]
 
+    expanded_sections: list[tuple[str, str]] = []
+    for heading, section_text in sections:
+        expanded_sections.extend(_split_supplementary_sections(heading, section_text))
+    sections = expanded_sections or sections
+
     chunks: list[str] = []
     max_chars = max_tokens * 4
     for heading, section_text in sections:
+        heading = _normalize_heading(heading, section_text)
         prefix = f"[{paper_title} > {heading}] " if heading else f"[{paper_title}] "
         if len(section_text) <= max_chars:
             chunks.append(prefix + section_text)

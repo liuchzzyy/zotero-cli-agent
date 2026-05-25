@@ -27,7 +27,9 @@ from zotero_cli_agents.core.workspace import (
     load_workspace,
     save_workspace,
     validate_name,
+    workspace_cache_path,
     workspace_exists,
+    workspace_index_path,
     workspaces_dir,
 )
 from zotero_cli_agents.core.writer import ZoteroWriteError, ZoteroWriter
@@ -207,18 +209,7 @@ def _handle_pdf(key: str, pages: str | None, library: str = "user") -> dict:
         else:
             text = pdf_extractor.extract_text(pdf_path, pages=page_range)
     except PdfExtractionError as e:
-        if extractor_name == "mineru":
-            pdf_extractor = get_extractor("pymupdf")
-            try:
-                if page_range is None:
-                    text = pdf_extractor.extract_text(pdf_path)
-                    cache.put(pdf_path, "pymupdf", text)
-                else:
-                    text = pdf_extractor.extract_text(pdf_path, pages=page_range)
-            except PdfExtractionError:
-                return {"error": str(e), "context": "pdf"}
-        else:
-            return {"error": str(e), "context": "pdf"}
+        return {"error": str(e), "context": "pdf"}
     finally:
         cache.close()
 
@@ -233,7 +224,7 @@ def _handle_annotations(key: str, library: str = "user") -> dict:
     pdf_path = att.path
     if not pdf_path or not pdf_path.exists():
         return {"error": f"PDF file not found at {pdf_path or att.filename}"}
-    annots = get_extractor("pymupdf").extract_annotations(pdf_path)
+    annots = get_extractor(load_pdf_config().extractor).extract_annotations(pdf_path)
     return {"key": key, "annotations": annots, "total": len(annots)}
 
 
@@ -834,6 +825,7 @@ def _handle_workspace_index(name: str, force: bool = False, library: str = "user
         compute_term_frequencies,
         convert_pdf_to_text,
         embed_texts,
+        infer_pdf_kind,
         tokenize,
     )
     from zotero_cli_agents.core.rag_index import RagIndex
@@ -846,9 +838,9 @@ def _handle_workspace_index(name: str, force: bool = False, library: str = "user
 
     reader = _get_reader(library)
 
-    idx_path = workspaces_dir() / f"{name}.idx.sqlite"
+    idx_path = workspace_index_path(name)
     idx = RagIndex(idx_path)
-    md_cache_path = workspaces_dir() / ".md_cache.sqlite"
+    md_cache_path = workspace_cache_path()
     md_cache = PdfCache(db_path=md_cache_path)
 
     try:
@@ -879,15 +871,29 @@ def _handle_workspace_index(name: str, force: bool = False, library: str = "user
             all_chunk_texts.append(meta_text)
             total_chunks += 1
 
-            att = reader.get_pdf_attachment(ws_item.key)
-            if att is not None:
+            for note in reader.get_notes(ws_item.key):
+                if not note.content.strip():
+                    continue
+                note_text = f"Title: {item.title}\nNote Key: {note.key}\nContent:\n{note.content}"
+                cid = idx.insert_chunk(ws_item.key, f"note:{note.key}", note_text)
+                tfs = compute_term_frequencies(tokenize(note_text))
+                idx.insert_bm25_terms(cid, tfs)
+                all_chunk_ids.append(cid)
+                all_chunk_texts.append(note_text)
+                total_chunks += 1
+
+            for att in reader.get_pdf_attachments(ws_item.key):
                 pdf_path = att.path
                 if pdf_path and pdf_path.exists():
                     try:
                         pdf_text = convert_pdf_to_text(pdf_path)
-                        chunks = chunk_text(pdf_text, item.title)
+                        pdf_kind = infer_pdf_kind(pdf_text, att.filename)
+                        chunks = chunk_text(
+                            pdf_text,
+                            f"{item.title} | PDF: {att.filename} | Attachment: {att.key} | Kind: {pdf_kind}",
+                        )
                         for chunk_content in chunks:
-                            cid = idx.insert_chunk(ws_item.key, "pdf", chunk_content)
+                            cid = idx.insert_chunk(ws_item.key, f"pdf:{pdf_kind}:{att.key}:{att.filename}", chunk_content)
                             tfs = compute_term_frequencies(tokenize(chunk_content))
                             idx.insert_bm25_terms(cid, tfs)
                             all_chunk_ids.append(cid)
@@ -929,10 +935,11 @@ def _handle_workspace_index(name: str, force: bool = False, library: str = "user
         idx.close()
 
 
-def _handle_workspace_query(name: str, question: str, top_k: int = 5, mode: str = "auto") -> dict:
+def _handle_workspace_query(name: str, question: str, top_k: int = 5, mode: str = "auto", pdf_kind: str = "any") -> dict:
     from zotero_cli_agents.core.rag import (
         bm25_score_chunks,
         embed_texts,
+        filter_ranked_results_by_pdf_kind,
         reciprocal_rank_fusion,
         semantic_score_chunks,
     )
@@ -940,7 +947,7 @@ def _handle_workspace_query(name: str, question: str, top_k: int = 5, mode: str 
 
     if not workspace_exists(name):
         return {"error": f"Workspace '{name}' not found."}
-    idx_path = workspaces_dir() / f"{name}.idx.sqlite"
+    idx_path = workspace_index_path(name)
     if not idx_path.exists():
         return {"error": f"No index for workspace '{name}'. Run workspace_index first."}
 
@@ -972,7 +979,8 @@ def _handle_workspace_query(name: str, question: str, top_k: int = 5, mode: str 
         else:
             merged = bm25_results
 
-        top = merged[:top_k]
+        filtered = filter_ranked_results_by_pdf_kind(merged, pdf_kind)
+        top = filtered[:top_k]
         return {
             "results": [
                 {

@@ -602,6 +602,19 @@ class ZoteroReader:
                 return att
         return None
 
+    def get_pdf_attachments(self, key: str) -> list[Attachment]:
+        pdf_attachments: list[Attachment] = []
+        seen_paths: set[str] = set()
+        for att in self.get_attachments(key):
+            if att.content_type != "application/pdf":
+                continue
+            marker = str(att.path.resolve()) if att.path and att.path.exists() else f"{att.filename}:{att.key}"
+            if marker in seen_paths:
+                continue
+            seen_paths.add(marker)
+            pdf_attachments.append(att)
+        return pdf_attachments
+
     def get_arxiv_preprints(
         self,
         collection: str | None = None,

@@ -249,7 +249,7 @@ def _add_from_pdf(
 
     doi = doi_override
     if not doi:
-        doi = get_extractor("pymupdf").extract_doi(pdf_path)
+        doi = get_extractor("mineru").extract_doi(pdf_path)
     if not doi:
         emit_error(
             "validation_error",

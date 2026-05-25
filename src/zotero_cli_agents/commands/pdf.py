@@ -64,7 +64,7 @@ def _extract_section(markdown: str, section_num: int) -> str:
 
 @click.command("pdf")
 @click.option("--pages", default=None, help="Page range, e.g. '1-5'")
-@click.option("--extractor", default=None, help="PDF extractor to use (mineru, pymupdf). Defaults to auto-detect.")
+@click.option("--extractor", default=None, help="PDF extractor to use. Defaults to the configured MinerU extractor.")
 @click.option("--annotations", is_flag=True, help="Extract annotations (highlights, notes) instead of text")
 @click.option("--outline", is_flag=True, help="Extract and list all headings as a numbered outline")
 @click.option("--section", type=int, default=None, help="Extract content under the N-th heading from outline")
@@ -140,7 +140,7 @@ def pdf_cmd(
             )
         if annotations:
             try:
-                annots = get_extractor("pymupdf").extract_annotations(pdf_path)
+                annots = get_extractor(extractor).extract_annotations(pdf_path)
             except PdfExtractionError as e:
                 emit_error("runtime_error", str(e), output_json=json_out, context="pdf")
             if not annots:
@@ -161,26 +161,11 @@ def pdf_cmd(
                     text = cached
                 else:
                     pdf_extractor = get_extractor(extractor)
-                    try:
-                        text = pdf_extractor.extract_text(pdf_path)
-                        cache.put(pdf_path, extractor, text)
-                    except PdfExtractionError:
-                        if extractor == "mineru":
-                            pdf_extractor = get_extractor("pymupdf")
-                            text = pdf_extractor.extract_text(pdf_path)
-                            cache.put(pdf_path, "pymupdf", text)
-                        else:
-                            raise
+                    text = pdf_extractor.extract_text(pdf_path)
+                    cache.put(pdf_path, extractor, text)
             else:
                 pdf_extractor = get_extractor(extractor)
-                try:
-                    text = pdf_extractor.extract_text(pdf_path, pages=page_range)
-                except PdfExtractionError:
-                    if extractor == "mineru":
-                        pdf_extractor = get_extractor("pymupdf")
-                        text = pdf_extractor.extract_text(pdf_path, pages=page_range)
-                    else:
-                        raise
+                text = pdf_extractor.extract_text(pdf_path, pages=page_range)
         except PdfExtractionError as e:
             cache.close()
             emit_error(

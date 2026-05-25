@@ -10,6 +10,7 @@ import zipfile
 from abc import ABC, abstractmethod
 from collections import deque
 from collections.abc import Callable
+from hashlib import sha1
 from pathlib import Path
 from threading import Lock
 from typing import Any
@@ -196,6 +197,13 @@ class MinerUExtractor(BasePdfExtractor):
         return []
 
     def extract_doi(self, pdf_path: Path) -> str | None:
+        try:
+            text = self.extract_text(pdf_path, pages=(1, 2))
+        except (PdfExtractionError, FileNotFoundError, OSError):
+            return None
+        match = re.search(r"10\.\d{4,9}/[^\s]+", text)
+        if match:
+            return match.group(0).rstrip(".,;)]}>'\"")
         return None
 
     def _upload_batch(
@@ -331,12 +339,20 @@ class MinerUExtractor(BasePdfExtractor):
         doc.close()
         return chunks
 
+    @staticmethod
+    def _remote_file_name(pdf_path: Path, chunk_tag: str | None = None) -> str:
+        path_hash = sha1(str(pdf_path).encode("utf-8")).hexdigest()[:12]
+        stem = pdf_path.stem
+        suffix = pdf_path.suffix or ".pdf"
+        tag = f".{chunk_tag}" if chunk_tag else ""
+        return f"{stem}.{path_hash}{tag}{suffix}"
+
     def _extract_single(
         self,
         pdf_path: Path,
         progress_callback: Callable[[str, int, int, int], None] | None = None,
     ) -> str:
-        file_name = pdf_path.name
+        file_name = self._remote_file_name(pdf_path)
         data_id = os.path.splitext(file_name)[0]
 
         def upload_progress(done: int) -> None:
@@ -459,13 +475,13 @@ class MinerUExtractor(BasePdfExtractor):
                 chunk_paths = self._split_pdf(pdf_path, 200)
                 temp_files.extend(chunk_paths)
                 original_to_chunks[pdf_path] = chunk_paths
-                for chunk_path in chunk_paths:
-                    file_name = chunk_path.name
-                    data_id = os.path.splitext(pdf_path.name)[0] + f"_p{chunk_path.stem.split('chunk')[1]}"
+                for chunk_idx, chunk_path in enumerate(chunk_paths):
+                    file_name = self._remote_file_name(pdf_path, chunk_tag=f"chunk{chunk_idx}")
+                    data_id = os.path.splitext(file_name)[0]
                     valid_batch_args.append((chunk_path, file_name, data_id))
             else:
                 original_to_chunks[pdf_path] = [pdf_path]
-                file_name = pdf_path.name
+                file_name = self._remote_file_name(pdf_path)
                 data_id = os.path.splitext(file_name)[0]
                 valid_batch_args.append((pdf_path, file_name, data_id))
 
@@ -590,7 +606,7 @@ def _clean_markdown_images(text: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-_EXTRACTORS: dict[str, type[BasePdfExtractor]] = {"pymupdf": PyMuPdfExtractor, "mineru": MinerUExtractor}
+_EXTRACTORS: dict[str, type[BasePdfExtractor]] = {"mineru": MinerUExtractor}
 
 
 def get_extractor(name: str | None = None) -> BasePdfExtractor:

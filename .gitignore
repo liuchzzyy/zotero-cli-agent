@@ -21,3 +21,8 @@ my-docs/
 .claude/
 .agents/skills/
 idea/TODO/
+.env
+.env.local
+.env.*
+!.env.example
+.workspace/

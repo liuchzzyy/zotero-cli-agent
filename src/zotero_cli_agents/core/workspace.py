@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import re
+import shutil
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -17,8 +19,35 @@ else:
 _NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
 
+def _detect_project_root(start: Path | None = None) -> Path:
+    current = (start or Path.cwd()).resolve()
+    for candidate in (current, *current.parents):
+        if (candidate / ".git").exists():
+            return candidate
+    return current
+
+
 def workspaces_dir() -> Path:
-    return Path.home() / ".config" / "zot" / "workspaces"
+    env_dir = os.environ.get("ZOT_WORKSPACES_DIR")
+    if env_dir:
+        return Path(env_dir).expanduser().resolve()
+    return _detect_project_root() / ".workspace"
+
+
+def workspace_dir(name: str) -> Path:
+    return workspaces_dir() / name
+
+
+def workspace_file_path(name: str) -> Path:
+    return workspace_dir(name) / "workspace.toml"
+
+
+def workspace_index_path(name: str) -> Path:
+    return workspace_dir(name) / "rag.idx.sqlite"
+
+
+def workspace_cache_path() -> Path:
+    return workspaces_dir() / "_cache" / "pdf_cache.sqlite"
 
 
 def validate_name(name: str) -> bool:
@@ -63,7 +92,7 @@ class Workspace:
 
 
 def _workspace_path(name: str) -> Path:
-    return workspaces_dir() / f"{name}.toml"
+    return workspace_file_path(name)
 
 
 def _escape_toml_string(s: str) -> str:
@@ -106,19 +135,19 @@ def list_workspaces() -> list[Workspace]:
     if not ws_dir.exists():
         return []
     result = []
-    for path in sorted(ws_dir.glob("*.toml")):
+    for path in sorted(ws_dir.glob("*/workspace.toml")):
         try:
-            result.append(load_workspace(path.stem))
+            result.append(load_workspace(path.parent.name))
         except Exception:
             continue
     return result
 
 
 def delete_workspace(name: str) -> None:
-    path = _workspace_path(name)
+    path = workspace_dir(name)
     if not path.exists():
         raise FileNotFoundError(f"Workspace '{name}' not found")
-    path.unlink()
+    shutil.rmtree(path)
 
 
 def workspace_exists(name: str) -> bool:
