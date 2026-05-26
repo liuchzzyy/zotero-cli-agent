@@ -2,6 +2,7 @@
 param(
     [string]$Date = (Get-Date).ToString("yyyy-MM-dd"),
     [string]$RssRepoRoot = "E:\Desktop\CodingDaily\rss-cli-agent",
+    [string]$SelectedJson = "",
     [string]$ZoteroRepoRoot = "",
     [string]$Library = "user",
     [string]$Profile = "",
@@ -225,7 +226,13 @@ function Export-FailedDois {
     return $failedCount
 }
 
-$selectedJson = Join-Path $RssRepoRoot ("storage\daily\{0}.selected.json" -f $Date)
+$selectedJson = $SelectedJson
+if (-not $selectedJson) {
+    $selectedJson = Join-Path $RssRepoRoot ("storage\exports\daily\{0}.selected.json" -f $Date)
+}
+else {
+    $selectedJson = (Resolve-Path $selectedJson).Path
+}
 if (-not (Test-Path -LiteralPath $selectedJson)) {
     throw "Selected JSON not found: $selectedJson"
 }

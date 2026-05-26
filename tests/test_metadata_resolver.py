@@ -76,6 +76,10 @@ class TestMapCrossrefToZotero:
         message = {"title": ["x"], "issued": {"date-parts": [[2020]]}}
         assert map_crossref_to_zotero(message)["date"] == "2020"
 
+    def test_ignores_trailing_none_date_parts(self) -> None:
+        message = {"title": ["x"], "issued": {"date-parts": [[2026, None, None]]}}
+        assert map_crossref_to_zotero(message)["date"] == "2026"
+
     def test_corporate_author(self) -> None:
         message = {"title": ["x"], "author": [{"name": "The Consortium"}]}
         creators = map_crossref_to_zotero(message)["creators"]

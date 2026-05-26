@@ -22,11 +22,31 @@
 
 ### 推荐给代理的直接提示词
 ```text
-不要手动拆开执行 RSS DOI 导入流程。
-直接在 E:\Desktop\CodingDaily\zotero-cli-agents 下调用 scripts\run-rss-daily-doi-import.ps1 做日常导入。
-默认读取 rss-cli-agent\storage\daily\当天.selected.json。
-如果需要，使用 -Date 指定日期，使用 -ProgressIntervalSeconds 调整进度刷新频率。
-导入完成后检查根目录的 rss_failed_dois_YYYY-MM-DD.txt；如果没有失败且脚本成功结束，tmp 应该被自动删除。
+在 E:\Desktop\CodingDaily\zotero-cli-agents 下执行 Daily RSS DOI Import。
+
+日常运行不要手动拆开清洗/导入步骤，直接调用 wrapper：
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-rss-daily-doi-import.ps1 -Date YYYY-MM-DD -ProgressIntervalSeconds 5
+
+默认读取：
+E:\Desktop\CodingDaily\rss-cli-agent\storage\exports\daily\YYYY-MM-DD.selected.json
+
+如果 RSS selected JSON 在非默认位置，必须显式传入完整路径：
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-rss-daily-doi-import.ps1 -Date YYYY-MM-DD -SelectedJson "E:\Desktop\CodingDaily\rss-cli-agent\storage\exports\daily\YYYY-MM-DD.selected.json" -ProgressIntervalSeconds 5
+
+运行时必须显示实时进度。关注 processed/total、created_new、reused_existing、already_routed、failed。长时间停在 preflight/import starting 时，检查 tmp\rss_inbox_import_YYYY-MM-DD\import_summary.json 和是否仍有 import_rss_inbox_plan.py 进程，不要凭表面输出判断卡死。
+
+如果 wrapper 已经完成且 failed=0：
+- 删除 stale 的 rss_failed_dois_YYYY-MM-DD.txt（如果存在）。
+- tmp 应该被自动删除；如果是手动 checkpoint 恢复完成，也要确认 tmp 已清理。
+- 提醒用户 Zotero Web API 写入后需要 Zotero 同步，本地 SQLite 才会完全反映。
+
+如果中途失败或被中断且 tmp 还在：
+- 不要立刻重跑 wrapper；wrapper 会从头清 tmp，可能丢掉 checkpoint。
+- 先确认没有残留 import_rss_inbox_plan.py 进程。
+- 用同一个 route_plan 和 output_dir 恢复：
+  .\.venv\Scripts\python.exe scripts\import_rss_inbox_plan.py --route-plan tmp\rss_inbox_plan_YYYY-MM-DD\route_plan.json --output-dir tmp\rss_inbox_import_YYYY-MM-DD --library user --apply
+- 恢复完成后检查 failed_results.json；若为空且 checkpoint 覆盖全部 route_plan entries，再删除 stale 的 rss_failed_dois_YYYY-MM-DD.txt 和 tmp。
+- 如果失败来自 metadata/Crossref 解析异常，先修复代码并补测试，再基于原 checkpoint 恢复；不要清空 tmp。
 ```
 
 ## Remove Newer DOI Duplicates

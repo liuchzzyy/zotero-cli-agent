@@ -57,7 +57,18 @@ def _format_date(date_parts: list[list[int]] | None) -> str | None:
     parts = date_parts[0] if isinstance(date_parts[0], list) else date_parts
     if not parts:
         return None
-    return "-".join(f"{int(p):02d}" if i > 0 else str(int(p)) for i, p in enumerate(parts))
+    formatted: list[str] = []
+    for i, part in enumerate(parts):
+        if part is None:
+            break
+        try:
+            value = int(part)
+        except (TypeError, ValueError):
+            return None
+        formatted.append(f"{value:02d}" if i > 0 else str(value))
+    if not formatted:
+        return None
+    return "-".join(formatted)
 
 
 def _map_creators(authors: list[dict[str, Any]] | None) -> list[dict[str, str]]:
