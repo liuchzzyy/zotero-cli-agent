@@ -7,7 +7,9 @@ param(
     [string]$Library = "user",
     [string]$Profile = "",
     [string]$RecentCutoffUtc = "",
-    [int]$ProgressIntervalSeconds = 10
+    [int]$ProgressIntervalSeconds = 10,
+    [string]$OutputDir = "",
+    [switch]$KeepLog
 )
 
 Set-StrictMode -Version Latest
@@ -16,6 +18,42 @@ $ErrorActionPreference = "Stop"
 function Get-RepoRoot {
     $scriptDir = Split-Path -Parent $PSCommandPath
     return (Resolve-Path (Join-Path $scriptDir "..")).Path
+}
+
+function New-RunOutputDir {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RepoRoot,
+        [Parameter(Mandatory = $true)]
+        [string]$Date,
+        [string]$RequestedOutputDir
+    )
+    if ($RequestedOutputDir) {
+        if ([System.IO.Path]::IsPathRooted($RequestedOutputDir)) {
+            return $RequestedOutputDir
+        }
+        return Join-Path $RepoRoot $RequestedOutputDir
+    }
+    return Join-Path $RepoRoot ("log\rss-daily-doi-import_{0}" -f $Date)
+}
+
+function Remove-EmptyLogRoot {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RunOutputDir
+    )
+    $parent = Split-Path -Parent $RunOutputDir
+    if ((Split-Path -Leaf $parent) -ne "log") {
+        return
+    }
+    if (-not (Test-Path -LiteralPath $parent)) {
+        return
+    }
+    $children = @(Get-ChildItem -LiteralPath $parent -Force -ErrorAction SilentlyContinue)
+    if ($children.Count -eq 0) {
+        Remove-Item -LiteralPath $parent -Force
+        Write-Host "Removed empty log directory: $parent"
+    }
 }
 
 if ($ZoteroRepoRoot) {
@@ -243,24 +281,27 @@ if ($runningImports.Count -gt 0) {
     throw "Detected running import_rss_inbox_plan.py process(es). Stop them before rerunning.`n$details"
 }
 
-$tmpRoot = Join-Path $ZoteroRepoRoot "tmp"
-$planDir = Join-Path $tmpRoot ("rss_inbox_plan_{0}" -f $Date)
-$importDir = Join-Path $tmpRoot ("rss_inbox_import_{0}" -f $Date)
+$runOutputDir = New-RunOutputDir -RepoRoot $ZoteroRepoRoot -Date $Date -RequestedOutputDir $OutputDir
+$planDir = Join-Path $runOutputDir "rss_inbox_plan"
+$importDir = Join-Path $runOutputDir "rss_inbox_import"
 $routePlan = Join-Path $planDir "route_plan.json"
 $cleanSummaryPath = Join-Path $planDir "summary.json"
 $importSummaryPath = Join-Path $importDir "import_summary.json"
 $failedResultsPath = Join-Path $importDir "failed_results.json"
-$failedTxtPath = Join-Path $ZoteroRepoRoot ("rss_failed_dois_{0}.txt" -f $Date)
+$failedTxtPath = Join-Path $runOutputDir ("rss_failed_dois_{0}.txt" -f $Date)
+$legacyFailedTxtPath = Join-Path $ZoteroRepoRoot ("rss_failed_dois_{0}.txt" -f $Date)
 $completed = $false
 $failedCount = 0
+$failedExportChecked = $false
 
 try {
-    if (Test-Path -LiteralPath $tmpRoot) {
-        Remove-Item -LiteralPath $tmpRoot -Recurse -Force
+    if (Test-Path -LiteralPath $runOutputDir) {
+        Remove-Item -LiteralPath $runOutputDir -Recurse -Force
     }
-    New-Item -ItemType Directory -Path $tmpRoot | Out-Null
+    New-Item -ItemType Directory -Force -Path $runOutputDir | Out-Null
 
     Write-Host ("Selected JSON: {0}" -f $selectedJson)
+    Write-Host ("Run output: {0}" -f $runOutputDir)
 
     $cleanArgs = @(
         "run", "python", "scripts/clean_rss_selected_for_inbox.py",
@@ -314,19 +355,25 @@ try {
     Write-Host ("  failed                   : {0}" -f $importSummary.failed)
 
     $failedCount = Export-FailedDois -FailedResultsPath $failedResultsPath -OutputTxtPath $failedTxtPath -Date $Date
+    $failedExportChecked = $true
     if ([int]$importSummary.failed -gt 0) {
         throw "Import finished with $($importSummary.failed) failures. Review: $failedResultsPath"
+    }
+    if (Test-Path -LiteralPath $legacyFailedTxtPath) {
+        Remove-Item -LiteralPath $legacyFailedTxtPath -Force
+        Write-Host "Removed stale legacy failed DOI file: $legacyFailedTxtPath"
     }
 
     $completed = $true
 }
 finally {
-    if (-not $failedCount) {
+    if (-not $failedExportChecked) {
         $failedCount = Export-FailedDois -FailedResultsPath $failedResultsPath -OutputTxtPath $failedTxtPath -Date $Date
     }
-    if ($completed -and (Test-Path -LiteralPath $tmpRoot)) {
-        Remove-Item -LiteralPath $tmpRoot -Recurse -Force
+    if ($completed -and (-not $KeepLog) -and (Test-Path -LiteralPath $runOutputDir)) {
+        Remove-Item -LiteralPath $runOutputDir -Recurse -Force
         Write-Host ""
-        Write-Host "Removed tmp directory: $tmpRoot"
+        Write-Host "Removed run log directory: $runOutputDir"
+        Remove-EmptyLogRoot -RunOutputDir $runOutputDir
     }
 }

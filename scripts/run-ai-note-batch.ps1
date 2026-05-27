@@ -18,7 +18,8 @@ param(
     [switch]$Force,
     [switch]$NoCleanIntermediate,
     [switch]$StopOnError,
-    [switch]$RefreshMineruCache
+    [switch]$RefreshMineruCache,
+    [switch]$KeepLog
 )
 
 $ErrorActionPreference = "Stop"
@@ -49,10 +50,28 @@ function Read-CliProxyApiKey {
 
 function New-RunOutputDir([string]$RepoRoot, [string]$RequestedOutputDir) {
     if ($RequestedOutputDir) {
-        return $RequestedOutputDir
+        if ([System.IO.Path]::IsPathRooted($RequestedOutputDir)) {
+            return $RequestedOutputDir
+        }
+        return Join-Path $RepoRoot $RequestedOutputDir
     }
     $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-    return Join-Path $RepoRoot ".workspace\ai-note-analysis-batch-$stamp"
+    return Join-Path $RepoRoot "log\ai-note-analysis-batch-$stamp"
+}
+
+function Remove-EmptyLogRoot([string]$RunOutputDir) {
+    $parent = Split-Path -Parent $RunOutputDir
+    if ((Split-Path -Leaf $parent) -ne "log") {
+        return
+    }
+    if (-not (Test-Path -LiteralPath $parent)) {
+        return
+    }
+    $children = @(Get-ChildItem -LiteralPath $parent -Force -ErrorAction SilentlyContinue)
+    if ($children.Count -eq 0) {
+        Remove-Item -LiteralPath $parent -Force
+        Write-Host "Removed empty log directory: $parent"
+    }
 }
 
 function Invoke-AiNoteBatch {
@@ -156,8 +175,10 @@ Write-Host "Repo:   $repoRoot"
 Write-Host "Output: $runOutputDir"
 Write-Host "DryRun: $DryRun"
 Write-Host "Clean intermediate assets after successful batches: $(-not $NoCleanIntermediate)"
+Write-Host "Keep log after successful completion: $KeepLog"
 
 $iteration = 1
+$completed = $false
 while ($true) {
     Invoke-AiNoteBatch -RepoRoot $repoRoot -RunOutputDir $runOutputDir -Iteration $iteration
     $summary = Read-BatchSummary -RunOutputDir $runOutputDir
@@ -186,6 +207,7 @@ while ($true) {
 
     if ($DryRun) {
         Write-Host "Dry-run prepared candidates: $prepared"
+        $completed = $true
         break
     }
 
@@ -202,10 +224,18 @@ while ($true) {
     }
 
     Write-Host "No more writable candidates found. Batch processing complete."
+    $completed = $true
     break
 }
 
 Write-Host ""
-Write-Host "Final output directory:"
-Write-Host $runOutputDir
+if ($completed -and -not $KeepLog -and -not $NoCleanIntermediate) {
+    Remove-Item -LiteralPath $runOutputDir -Recurse -Force
+    Write-Host "Removed run log directory: $runOutputDir"
+    Remove-EmptyLogRoot -RunOutputDir $runOutputDir
+}
+else {
+    Write-Host "Final output directory:"
+    Write-Host $runOutputDir
+}
 Write-Host "Keep Zotero open or run Zotero sync so local SQLite can reflect Web API writes."

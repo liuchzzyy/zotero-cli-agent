@@ -8,7 +8,8 @@ param(
     [switch]$NoIndex,
     [switch]$ForceRebuild,
     [switch]$KeepInventory,
-    [switch]$StopOnError
+    [switch]$StopOnError,
+    [switch]$KeepLog
 )
 
 $ErrorActionPreference = "Stop"
@@ -20,10 +21,28 @@ function Get-RepoRoot {
 
 function New-RunOutputDir([string]$RepoRoot, [string]$RequestedOutputDir) {
     if ($RequestedOutputDir) {
-        return $RequestedOutputDir
+        if ([System.IO.Path]::IsPathRooted($RequestedOutputDir)) {
+            return $RequestedOutputDir
+        }
+        return Join-Path $RepoRoot $RequestedOutputDir
     }
     $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-    return Join-Path $RepoRoot ".workspace\rag-full-library-$stamp"
+    return Join-Path $RepoRoot "log\rag-full-library-$stamp"
+}
+
+function Remove-EmptyLogRoot([string]$RunOutputDir) {
+    $parent = Split-Path -Parent $RunOutputDir
+    if ((Split-Path -Leaf $parent) -ne "log") {
+        return
+    }
+    if (-not (Test-Path -LiteralPath $parent)) {
+        return
+    }
+    $children = @(Get-ChildItem -LiteralPath $parent -Force -ErrorAction SilentlyContinue)
+    if ($children.Count -eq 0) {
+        Remove-Item -LiteralPath $parent -Force
+        Write-Host "Removed empty log directory: $parent"
+    }
 }
 
 function Invoke-LoggedCommand {
@@ -211,6 +230,7 @@ Write-Host "Output:     $runOutputDir"
 Write-Host "DryRun:     $DryRun"
 Write-Host "NoIndex:    $NoIndex"
 Write-Host "Force:      $ForceRebuild"
+Write-Host "KeepLog:    $KeepLog"
 
 $inventoryCmd = @(
     "uv", "run", "python", "-u", $inventoryScript,
@@ -223,6 +243,7 @@ if ($DryRun) {
     $inventoryCmd += "--dry-run"
 }
 
+$completed = $false
 try {
     Invoke-LoggedCommand -RepoRoot $repoRoot -LogPath (Join-Path $logsDir "inventory.log") -Command $inventoryCmd
 
@@ -238,21 +259,25 @@ try {
 
     if ($DryRun) {
         Write-Host "Dry-run complete. No workspace or RAG index changes were made."
+        $completed = $true
         return
     }
 
     if ($NoIndex) {
         Write-Host "Workspace inventory updated. Skipped RAG indexing because -NoIndex was set."
+        $completed = $true
         return
     }
 
     if (($inventory.local_pdf_items -eq 0) -and (-not $ForceRebuild)) {
         Write-Host "No local PDF items found. Nothing to index."
+        $completed = $true
         return
     }
 
     if (($inventory.pending_index_items -eq 0) -and (-not $ForceRebuild)) {
         Write-Host "RAG index is already up to date for workspace '$WorkspaceName'."
+        $completed = $true
         return
     }
 
@@ -263,8 +288,9 @@ try {
 
     Write-Host ""
     Write-Host "Starting RAG index. This may take a long time for MinerU extraction."
-    Write-Host "Progress is streamed and also saved to logs\index.log."
+    Write-Host ("Progress is streamed and also saved to {0}." -f (Join-Path $logsDir "index.log"))
     Invoke-LoggedCommand -RepoRoot $repoRoot -LogPath (Join-Path $logsDir "index.log") -Command $indexCmd
+    $completed = $true
 }
 catch {
     Write-Error $_
@@ -276,6 +302,11 @@ catch {
 finally {
     if (-not $KeepInventory) {
         Remove-Item -LiteralPath $inventoryScript -Force -ErrorAction SilentlyContinue
+    }
+    if ($completed -and -not $KeepLog -and -not $KeepInventory) {
+        Remove-Item -LiteralPath $runOutputDir -Recurse -Force
+        Write-Host "Removed run log directory: $runOutputDir"
+        Remove-EmptyLogRoot -RunOutputDir $runOutputDir
     }
 }
 
