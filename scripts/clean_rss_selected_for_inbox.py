@@ -8,7 +8,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-ROOT_COLLECTION_NAME = "00_INBOX_AA"
+INBOX_UNSORTED_COLLECTION = "00_INBOX/00_UNSORTED"
+AUTHOR_WATCH_ROOT_COLLECTION = "00_INBOX/10_AUTHOR_WATCH"
 
 
 @dataclass
@@ -38,9 +39,9 @@ class ManifestRow:
     @property
     def target_collections(self) -> list[str]:
         if not self.tracked_authors:
-            return [ROOT_COLLECTION_NAME]
-        targets = [ROOT_COLLECTION_NAME]
-        targets.extend(f"{ROOT_COLLECTION_NAME}/{author}" for author in self.tracked_authors)
+            return [INBOX_UNSORTED_COLLECTION]
+        targets = [INBOX_UNSORTED_COLLECTION]
+        targets.extend(f"{AUTHOR_WATCH_ROOT_COLLECTION}/{author}" for author in self.tracked_authors)
         return targets
 
     def to_manifest_dict(self, *, already_in_library: bool) -> dict[str, Any]:
@@ -228,12 +229,12 @@ def build_outputs(
     new_dois_path.write_text("\n".join(row["doi"] for row in new_manifest_rows) + ("\n" if new_manifest_rows else ""), encoding="utf-8")
 
     route_plan = {
-        "root_collection": ROOT_COLLECTION_NAME,
+        "root_collection": INBOX_UNSORTED_COLLECTION,
         "root_only_dois": root_only_dois,
         "author_collections": [
             {
                 "author": author,
-                "collection_path": [ROOT_COLLECTION_NAME, author],
+                "collection_path": ["00_INBOX", "10_AUTHOR_WATCH", author],
                 "dois": sorted(dois),
             }
             for author, dois in sorted(author_routes.items())
@@ -273,7 +274,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=repo_root / "tmp" / "rss_inbox_plan",
+        default=repo_root / "log" / "rss_inbox_plan",
         help="Directory for generated plan files.",
     )
     parser.add_argument(

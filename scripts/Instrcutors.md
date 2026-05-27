@@ -6,11 +6,72 @@
 
 注意：RAG workspace 本身仍然是持久状态，保存在 `.workspace\<workspace-name>\`；这不是运行中间文件，不能作为清理对象。只把每次运行产生的 inventory、临时脚本、批次日志、MinerU 临时资产等放进 `log\`。
 
+## Zotero Library Rebuild
+
+### 推荐给代理的直接提示词
+```text
+使用 skill zotero-library-rebuild。
+在 E:\Desktop\CodingDaily\zotero-cli-agents 下重构 Zotero library 的 collection tree 和 tag system。
+
+目标：
+先导出当前 Zotero 的真实状态，包括所有条目、集合结构、tag、item-collection 关系和 item-tag 关系；再根据 skill\zotero-library-rebuild\references 中的 collection/tag 设计生成审核计划。不要直接写 zotero.sqlite，不删除条目，不在第一轮移除 legacy tag，不把条目路由到 40_WORKSPACE。
+
+先做只读基线检查：
+uv run zot --json collection list
+uv run zot --json stats
+uv run zot --json workspace list
+
+先跑小样本 smoke，只生成审核材料，不写 Zotero：
+powershell -NoProfile -ExecutionPolicy Bypass -File skill\zotero-library-rebuild\scripts\run-zotero-library-rebuild.ps1 -OutputDir smoke -Limit 50 -TitleSampleSize 50 -KeepOutput
+
+如果 smoke 输出结构正常，再生成完整审核计划：
+powershell -NoProfile -ExecutionPolicy Bypass -File skill\zotero-library-rebuild\scripts\run-zotero-library-rebuild.ps1 -OutputDir current-state-review -TitleSampleSize 200 -KeepOutput
+
+审核入口固定看：
+- log\zotero-library-rebuild\current-state-review\plan.md
+- log\zotero-library-rebuild\current-state-review\summary.md
+
+同时检查这些关键计划：
+- 00_export_current_state：当前库导出。
+- 10_extract_library_signals：集合画像、标题集、trash/delete candidates。
+- 20_ai_keyword_tag_review：给 AI 的关键词/tag/架构审查 prompt。
+- 30_design_adjustment：目标 collection tree 和设计调整记录。
+- 40_plan_for_confirmation：archive plan、item movement plan、tag update plan、low-confidence items。
+
+确认逻辑：
+- plan.md 是人工确认入口；summary.md 是快速计数概览。
+- 不确定条目必须留在 90_ARCHIVE/00_PRE_REBUILD_<date>/00_UNSURE_MANUAL_REVIEW，不要强行塞进项目/topic 子集合。
+- legacy 04_TRASH 只映射到 80_TRASH 作为 holding collection；是否永久删除需要另行确认。
+- Zotero built-in trash 条目只导出为 delete candidates，不进入普通移动/tag 更新计划。
+- tag 第一轮只 additive：例如 update/metadata -> workflow/metadata_cleaned，update/AInote -> workflow/ai_note，/reading -> status/reading；不要删除旧 tag。
+- 如果当前库显示框架需要调整，先更新 skill\zotero-library-rebuild\references 和 planner 规则，再重新生成 plan。
+
+正式写入前必须让我确认 plan.md。确认前不要执行 apply。
+
+我确认后，分阶段执行，不要一开始直接 -Phase all：
+powershell -NoProfile -ExecutionPolicy Bypass -File skill\zotero-library-rebuild\scripts\apply-zotero-library-rebuild.ps1 -ReviewDir current-state-review -Phase collections -Apply
+powershell -NoProfile -ExecutionPolicy Bypass -File skill\zotero-library-rebuild\scripts\apply-zotero-library-rebuild.ps1 -ReviewDir current-state-review -Phase items -BatchSize 25 -Apply
+powershell -NoProfile -ExecutionPolicy Bypass -File skill\zotero-library-rebuild\scripts\apply-zotero-library-rebuild.ps1 -ReviewDir current-state-review -Phase verify -BatchSize 25 -Apply
+
+执行时必须实时显示进度，items/verify 阶段至少要能看到 batch x/y、processed=xx/total、failed、missing、trashed_skipped 或 trashed_items。
+
+执行结果检查：
+- log\zotero-library-rebuild\current-state-review\50_execution_results\item_update_summary.json
+- log\zotero-library-rebuild\current-state-review\50_execution_results\failed_results.jsonl
+- log\zotero-library-rebuild\current-state-review\50_execution_results\verification_summary.md
+- log\zotero-library-rebuild\current-state-review\50_execution_results\verification_missing_items.jsonl
+- log\zotero-library-rebuild\current-state-review\50_execution_results\verification_trashed_items.jsonl
+
+如果 Web API 返回 data.deleted=1，计为 trashed_skipped，不给它添加普通集合或 tag。若本地 SQLite 有条目但 Web API fetch 不到，记录 missing key/title，不能当作成功写入。
+
+完成后以 Web API verification 为准；Zotero 桌面端同步后本地 zotero.sqlite 才会完全反映结果。成功并复核无误后再清理本次 log\zotero-library-rebuild\current-state-review；失败、中断、等待确认或需要审计时保留该目录。
+```
+
 ## Zotero Library Relevance Cleanup
 
 ### 推荐给代理的直接提示词
 ```text
-在 E:\Desktop\CodingDaily\zotero-cli-agents 下执行 Zotero library relevance cleanup，用于把与当前研究主题无关的期刊条目移动到 04_TRASH 集合。
+在 E:\Desktop\CodingDaily\zotero-cli-agents 下执行 Zotero library relevance cleanup，用于把与当前研究主题无关的期刊条目移动到 80_TRASH 集合。
 
 规则文件固定为：
 scripts\zotero-cleanup-rules.json
@@ -21,7 +82,7 @@ scripts\zotero-cleanup-rules.json
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-zotero-cleanup.ps1
 
 dry-run 输出目录默认是：
-logs\zotero-cleanup\YYYYMMDD-HHMMSS
+log\zotero-cleanup\YYYYMMDD-HHMMSS
 
 检查本次目录中的：
 - classification-preview.md
@@ -45,7 +106,7 @@ logs\zotero-cleanup\YYYYMMDD-HHMMSS
 正式执行前必须让我确认 dry-run 结果。确认后再运行：
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-zotero-cleanup.ps1 -Apply
 
-“移动到 04_TRASH”的语义是：把 reject 候选条目的 collections 设置为仅 04_TRASH，使它们不再分散在原来的文件夹中。不是追加到 04_TRASH，也不是删除条目。
+“移动到 80_TRASH”的语义是：把 reject 候选条目的 collections 设置为仅 80_TRASH，使它们不再分散在原来的文件夹中。不是追加到 80_TRASH，也不是删除条目。
 
 执行时必须实时显示进度。关注：
 - preflight 中的 active journalArticle / keep / unsure / move_candidates
@@ -63,11 +124,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-zotero-cleanup.p
 - completed-keys.txt 的行数应等于 apply-summary.json 中的 completed。progress.ndjson 的最后应包含 apply_complete 和 postcheck 事件。
 
 如果执行中断或网络/API 失败，不要重建计划后盲目全量重跑。使用同一个输出目录继续：
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-zotero-cleanup.ps1 -Apply -Resume -OutputDir logs\zotero-cleanup\YYYYMMDD-HHMMSS
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-zotero-cleanup.ps1 -Apply -Resume -OutputDir log\zotero-cleanup\YYYYMMDD-HHMMSS
 
 恢复逻辑：
 - completed-keys.txt 中已有的 key 会跳过。
-- Web API 中已经只属于 04_TRASH 的条目也会跳过。
+- Web API 中已经只属于 80_TRASH 的条目也会跳过。
 - failed-keys.txt 和 api-results.ndjson 用于定位失败项。
 
 完成后检查：
@@ -77,9 +138,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-zotero-cleanup.p
 - postcheck-web-api.json 中 not_only_target_count 和 missing_count 是否为 0
 
 Zotero Web API 写入后，需要 Zotero 桌面端同步，本地 zotero.sqlite 才会完全反映新的集合归属。验证正式执行结果优先看 postcheck-web-api.json，不要立即用本地 SQLite 判断失败。
-同理，刚执行完时 `zot collection items HKS9Z4Z3` 可能仍读取本地旧库，不能代替 Web API postcheck。
+同理，刚执行完时 `zot collection items JJ6JSGT5` 可能仍读取本地旧库，不能代替 Web API postcheck。
 
-本工作流的运行目录使用 logs\zotero-cleanup\YYYYMMDD-HHMMSS。失败、中断、等待确认或需要审计时保留该目录；确认完成且无需审计后再清理。
+本工作流的运行目录使用 log\zotero-cleanup\YYYYMMDD-HHMMSS。失败、中断、等待确认或需要审计时保留该目录；确认完成且无需审计后再清理。
 ```
 
 ## Clean-up all metadata
@@ -89,7 +150,7 @@ Zotero Web API 写入后，需要 Zotero 桌面端同步，本地 zotero.sqlite 
 使用 skill zotero-cli-agents。
 在 E:\Desktop\CodingDaily\zotero-cli-agents 下执行 metadata cleanup。先建立本次运行目录：log\metadata-cleanup-YYYYMMDD-HHMM。
 
-先读取 Zotero 条目 metadata，使用 `uv run zot --json --detail full summarize-all --exclude-tag update/metadata --limit 5000 > log\metadata-cleanup-YYYYMMDD-HHMM\metadata-export.json` 导出未处理条目。
+先读取 Zotero 条目 metadata，使用 `uv run zot --json --detail full summarize-all --exclude-tag workflow/metadata_cleaned --exclude-tag update/metadata --limit 5000 > log\metadata-cleanup-YYYYMMDD-HHMM\metadata-export.json` 导出未处理条目。
 只清洗这些字段的格式问题：title、abstractNote、publicationTitle、journalAbbreviation、language、publisher。
 清洗目标：去掉 HTML 标签，修复异常空格、断裂换行、特殊符号粘连；保持原意，不改事实内容。
 边界处理：化学式、化学计量数和电荷不要插入空格，例如 CO2、H2O、MnO2、Zn2+、LiFePO4、Ni3S2；不要把小数改成 `1. 0`；不要把 `single- versus`、`regio- and` 这类并列短语合并成一个词。
@@ -98,10 +159,10 @@ Zotero Web API 写入后，需要 Zotero 桌面端同步，本地 zotero.sqlite 
 
 先执行 `uv run zot --json update --from-jsonl log\metadata-cleanup-YYYYMMDD-HHMM\cleaned-metadata.jsonl --dry-run > log\metadata-cleanup-YYYYMMDD-HHMM\metadata-cleanup-dry-run.json`，不要正式写入，等我确认。等待确认期间保留本次 log 目录。
 我确认后，按 25-100 条切分 cleaned-metadata.jsonl 为 log\metadata-cleanup-YYYYMMDD-HHMM\cleaned-metadata-batch-N.jsonl 分批正式写入，避免长批次超时或 API 断连；如果条目很少，可以只生成一个批次，但仍按批次记录。
-每批先在终端实时打印进度，例如 `[batch 2/8] applying 75 items -> log\metadata-cleanup-YYYYMMDD-HHMM\metadata-cleanup-apply-batch-2.json`，再执行 `uv run zot --json update --from-jsonl log\metadata-cleanup-YYYYMMDD-HHMM\cleaned-metadata-batch-N.jsonl --add-tag update/metadata > log\metadata-cleanup-YYYYMMDD-HHMM\metadata-cleanup-apply-batch-N.json`；如果确实只跑一个完整文件，可用 `uv run zot --json update --from-jsonl log\metadata-cleanup-YYYYMMDD-HHMM\cleaned-metadata.jsonl --add-tag update/metadata > log\metadata-cleanup-YYYYMMDD-HHMM\metadata-cleanup-apply.json`。
+每批先在终端实时打印进度，例如 `[batch 2/8] applying 75 items -> log\metadata-cleanup-YYYYMMDD-HHMM\metadata-cleanup-apply-batch-2.json`，再执行 `uv run zot --json update --from-jsonl log\metadata-cleanup-YYYYMMDD-HHMM\cleaned-metadata-batch-N.jsonl --add-tag workflow/metadata_cleaned > log\metadata-cleanup-YYYYMMDD-HHMM\metadata-cleanup-apply-batch-N.json`；如果确实只跑一个完整文件，可用 `uv run zot --json update --from-jsonl log\metadata-cleanup-YYYYMMDD-HHMM\cleaned-metadata.jsonl --add-tag workflow/metadata_cleaned > log\metadata-cleanup-YYYYMMDD-HHMM\metadata-cleanup-apply.json`。
 不要静默等待长批次；每批结束后立即报告成功数、失败数、剩余批次数和日志路径。
-如果某批超时或断连，不要盲目重跑全量；先用 Web API 复核哪些条目已经同时完成字段更新和 `update/metadata` tag，再只续跑未完成条目，续跑文件也放在同一个 log\metadata-cleanup-YYYYMMDD-HHMM 目录。
-全部批次完成后，复核 cleaned-metadata.jsonl 中所有 key 都已完成字段更新并带有 `update/metadata` tag。
+如果某批超时或断连，不要盲目重跑全量；先用 Web API 复核哪些条目已经同时完成字段更新和 `workflow/metadata_cleaned` tag，再只续跑未完成条目，续跑文件也放在同一个 log\metadata-cleanup-YYYYMMDD-HHMM 目录。
+全部批次完成后，复核 cleaned-metadata.jsonl 中所有 key 都已完成字段更新并带有 `workflow/metadata_cleaned` tag。
 复核无误后删除本次 log\metadata-cleanup-YYYYMMDD-HHMM 目录；如果 log\ 已空，也删除 log\。
 ```
 
@@ -162,7 +223,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\remove-newer-doi-dup
 使用 E:\Desktop\CodingDaily\zotero-cli-agents\scripts\run-ai-note-batch.ps1 批量生成 Zotero AI note，不要手动拼长命令逐条跑。
 
 目标：
-对尚未带有 update/AInote 的非书籍条目，读取所有本地 PDF 附件，使用 MinerU 抽取 Markdown 和图片，经 CLIProxyAPI 的 gpt-5.5 生成“AI条目分析 - <title>”note，写回 Zotero Web API，并给父条目打 tag update/AInote。
+对尚未带有 `workflow/ai_note` 或旧 `update/AInote` 的非书籍条目，读取所有本地 PDF 附件，使用 MinerU 抽取 Markdown 和图片，经 CLIProxyAPI 的 gpt-5.5 生成“AI条目分析 - <title>”note，写回 Zotero Web API，并给父条目打 tag `workflow/ai_note`。
 
 默认命令。wrapper 默认把 checkpoint、preview、results、failures、notes、MinerU 临时资产和 batch logs 放到 log\ai-note-analysis-batch-YYYYMMDD-HHMMSS，并在完整成功后自动清理本次 log 目录：
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-ai-note-batch.ps1 -BatchSize 3
@@ -174,10 +235,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-ai-note-batch.ps
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-ai-note-batch.ps1 -Keys VH4PXB5G -BatchSize 1
 
 边界和跳过规则：
-- 已有 update/AInote 的父条目默认完全跳过，不重复生成 note。
+- 已有 `workflow/ai_note` 或旧 `update/AInote` 的父条目默认完全跳过，不重复生成 note。
 - 同一个 output/checkpoint 中已经 tagged 的条目也跳过；这是为了避免 Zotero Web API 写入后，本地 SQLite 尚未同步导致重复处理。
 - book 和 bookSection 跳过；当前不做书籍 AI 分析。
-- 无 PDF、PDF 路径缺失、PDF 超过 max PDF 大小、MinerU 抽取失败、AI 分类 uncertain、AI 调用失败、Zotero 写入失败，都不打 update/AInote，便于下次继续。
+- 无 PDF、PDF 路径缺失、PDF 超过 max PDF 大小、MinerU 抽取失败、AI 分类 uncertain、AI 调用失败、Zotero 写入失败，都不打 `workflow/ai_note`，便于下次继续。
 - Zotero 读操作来自本地 SQLite；写 note/tag 通过 Zotero Web API。写入成功后需要 Zotero 同步，本地数据库才会看到新 note 和 tag。
 
 模型和图片边界：

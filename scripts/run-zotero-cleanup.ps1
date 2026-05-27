@@ -42,7 +42,7 @@ function New-RunOutputDir {
     }
 
     $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-    return Join-Path $RepoRoot ("logs\zotero-cleanup\{0}" -f $stamp)
+    return Join-Path $RepoRoot ("log\zotero-cleanup\{0}" -f $stamp)
 }
 
 function Write-RunMetadata {

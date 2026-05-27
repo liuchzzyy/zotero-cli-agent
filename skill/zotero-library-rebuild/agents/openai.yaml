@@ -1,0 +1,4 @@
+interface:
+  display_name: "Zotero Library Rebuild"
+  short_description: "Plan, apply, and verify Zotero collection/tag rebuilds"
+  default_prompt: "Use $zotero-library-rebuild to export the current Zotero state, generate a reviewed rebuild plan, apply confirmed collection/tag phases, and verify the result."

@@ -5,7 +5,6 @@ import csv
 import json
 import re
 import sqlite3
-import sys
 import time
 from collections import Counter
 from pathlib import Path
@@ -449,7 +448,7 @@ def apply_cleanup(
             try:
                 update_items_batch(zot, updates)
                 moved_keys = [str(item["key"]) for item in updates]
-            except Exception as exc:
+            except Exception:
                 # Fallback to one-by-one updates to isolate failures.
                 for item in updates:
                     key = str(item["key"])
@@ -505,18 +504,9 @@ def apply_cleanup(
         append_jsonl(progress_path, progress)
         append_jsonl(api_results_path, progress)
         log(
-            "[batch {0}/{1}] fetched={2} moved={3} already={4} failed={5} completed={6}/{7} ({8:.1f}%) elapsed={9:.1f}s".format(
-                batch_index,
-                len(batches),
-                len(fetched),
-                len(moved_keys),
-                len(already_target),
-                len(batch_failed),
-                completed_now,
-                len(keys),
-                percent,
-                elapsed,
-            )
+            f"[batch {batch_index}/{len(batches)}] fetched={len(fetched)} moved={len(moved_keys)} "
+            f"already={len(already_target)} failed={len(batch_failed)} completed={completed_now}/{len(keys)} "
+            f"({percent:.1f}%) elapsed={elapsed:.1f}s"
         )
 
     summary = {
@@ -576,12 +566,8 @@ def postcheck(
     write_json(output_dir / "postcheck-web-api.json", result)
     append_jsonl(progress_path, {"event": "postcheck", **result})
     log(
-        "[postcheck] checked={0} only_target={1} not_only_target={2} missing={3}".format(
-            result["checked"],
-            result["only_target_count"],
-            result["not_only_target_count"],
-            result["missing_count"],
-        )
+        f"[postcheck] checked={result['checked']} only_target={result['only_target_count']} "
+        f"not_only_target={result['not_only_target_count']} missing={result['missing_count']}"
     )
     return result
 
@@ -589,7 +575,7 @@ def postcheck(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Classify Zotero journal articles and move unrelated items to a collection.")
     parser.add_argument("--rules", type=Path, required=True, help="Rules JSON file.")
-    parser.add_argument("--output-dir", type=Path, required=True, help="Run output directory under logs.")
+    parser.add_argument("--output-dir", type=Path, required=True, help="Run output directory under log/.")
     parser.add_argument("--batch-size", type=int, default=50)
     parser.add_argument("--apply", action="store_true", help="Apply Web API collection moves.")
     parser.add_argument("--resume", action="store_true", help="Skip keys already listed in completed-keys.txt.")
@@ -628,12 +614,8 @@ def main() -> int:
     )
     counts = summary["classification_counts"]
     log(
-        "[preflight] active journalArticle={0} keep={1} unsure={2} move_candidates={3}".format(
-            summary["classification_scope"]["active_journal_articles_classified"],
-            counts.get("keep", 0),
-            counts.get("unsure", 0),
-            counts.get("reject", 0),
-        )
+        f"[preflight] active journalArticle={summary['classification_scope']['active_journal_articles_classified']} "
+        f"keep={counts.get('keep', 0)} unsure={counts.get('unsure', 0)} move_candidates={counts.get('reject', 0)}"
     )
 
     if not args.apply:

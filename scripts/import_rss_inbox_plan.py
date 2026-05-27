@@ -871,7 +871,10 @@ def run_import_plan(
 def parse_args() -> argparse.Namespace:
     repo_root = Path(__file__).resolve().parents[1]
     parser = argparse.ArgumentParser(
-        description="Import DOI-only RSS inbox plan into Zotero and route items into 00_INBOX_AA collections."
+        description=(
+            "Import DOI-only RSS inbox plan into Zotero and route items into "
+            "00_INBOX/00_UNSORTED and 00_INBOX/10_AUTHOR_WATCH collections."
+        )
     )
     parser.add_argument(
         "--route-plan",
@@ -882,7 +885,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=repo_root / "tmp" / "rss_inbox_import",
+        default=repo_root / "log" / "rss_inbox_import",
         help="Directory for import preview/results.",
     )
     parser.add_argument("--profile", default=None, help="Optional zot profile name.")

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "status": "draft_for_user_confirmation",
   "generated_at": "2026-05-27",
-  "purpose": "Rules for reviewing journalArticle entries before moving unrelated items to the 04_TRASH collection. Do not delete items.",
+  "purpose": "Rules for reviewing journalArticle entries before moving unrelated items to the 80_TRASH collection. Do not delete items.",
   "zotero_scope": {
     "library_total_main_items": 4965,
     "journal_article_items": 4844,
@@ -24,9 +24,9 @@
       "blogPost"
     ],
     "target_trash_collection": {
-      "name": "04_TRASH",
-      "key": "HKS9Z4Z3",
-      "current_item_count": 0
+      "name": "80_TRASH",
+      "key": "JJ6JSGT5",
+      "current_item_count": 1852
     }
   },
   "decision_labels": [
@@ -37,7 +37,7 @@
   "decision_policy": {
     "keep": "Journal article clearly matches the user's research areas or method/tool interests.",
     "unsure": "Journal article has one weak research signal, a broad chemistry/materials signal, or ambiguous relevance; export for manual confirmation before moving.",
-    "reject": "Journal article has no keep/unsure signal in title, abstract, journal title, tags, or collections; only move to 04_TRASH after user confirmation.",
+    "reject": "Journal article has no keep/unsure signal in title, abstract, journal title, tags, or collections; only move to 80_TRASH after user confirmation.",
     "never_delete": true,
     "non_journal_rule": "Keep all non-journalArticle entries, including data, encyclopedia, software, books, reports, theses, webpages, and preprints."
   },

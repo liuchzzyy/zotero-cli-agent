@@ -31,7 +31,8 @@ from zotero_cli_agents.core.reader import ZoteroReader
 from zotero_cli_agents.core.writer import SYNC_REMINDER, ZoteroWriter
 from zotero_cli_agents.models import Attachment, Creator, Item
 
-DONE_TAG = "update/AInote"
+DONE_TAG = "workflow/ai_note"
+LEGACY_DONE_TAGS = {"update/AInote"}
 NOTE_TITLE_PREFIX = "AI条目分析 - "
 DEFAULT_OUTPUT_DIR = Path(".workspace") / "ai-note-analysis"
 DEFAULT_TEMPLATE_DIR = Path(__file__).resolve().parent / "note-templates"
@@ -176,6 +177,11 @@ def checkpoint_status(checkpoint: dict[str, Any], key: str) -> str:
     if not isinstance(entry, dict):
         return ""
     return str(entry.get("status") or "")
+
+
+def has_done_tag(item: Item) -> bool:
+    tags = set(item.tags)
+    return DONE_TAG in tags or bool(tags.intersection(LEGACY_DONE_TAGS))
 
 
 def load_template(template_dir: Path, name: str) -> str:
@@ -772,7 +778,7 @@ def prepare_candidates(
             progress.skipped_checkpoint += 1
             print_progress("scan", f"skip checkpoint-tagged {item.key}", progress)
             continue
-        if DONE_TAG in item.tags and not force:
+        if has_done_tag(item) and not force:
             progress.skipped_tag += 1
             update_checkpoint(checkpoint, checkpoint_path, item.key, status="skipped_done_tag", data={"title": item.title})
             print_progress("scan", f"skip tagged {item.key}", progress)
