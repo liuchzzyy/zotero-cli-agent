@@ -6,6 +6,82 @@
 
 注意：RAG workspace 本身仍然是持久状态，保存在 `.workspace\<workspace-name>\`；这不是运行中间文件，不能作为清理对象。只把每次运行产生的 inventory、临时脚本、批次日志、MinerU 临时资产等放进 `log\`。
 
+## Zotero Library Relevance Cleanup
+
+### 推荐给代理的直接提示词
+```text
+在 E:\Desktop\CodingDaily\zotero-cli-agents 下执行 Zotero library relevance cleanup，用于把与当前研究主题无关的期刊条目移动到 04_TRASH 集合。
+
+规则文件固定为：
+scripts\zotero-cleanup-rules.json
+
+不要使用旧的 aa.json、aa_* 预览文件或 TODO 中间文件；这些只是早期临时命名，不再是正式接口。
+
+先执行 dry-run，只生成预览和计划，不写 Zotero：
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-zotero-cleanup.ps1
+
+dry-run 输出目录默认是：
+logs\zotero-cleanup\YYYYMMDD-HHMMSS
+
+检查本次目录中的：
+- classification-preview.md
+- classification-summary.json
+- cleanup-plan.json
+- reject-candidates.csv
+- unsure.csv
+- keep.csv
+- run.out.log
+- progress.ndjson
+
+边界：
+- 只分类和处理 journalArticle。
+- 非期刊条目全部保留，不移动；包括 book、preprint、document、computerProgram、encyclopediaArticle、webpage、report、thesis 等。
+- 已在 Zotero 自带回收站中的条目跳过。
+- keep 和 unsure 不动。
+- reject 才作为移动候选。
+- 不调用 zot delete，不删除 Zotero 条目。
+- 不直接写 zotero.sqlite；读操作来自本地 SQLite，写操作必须走 Zotero Web API。
+
+正式执行前必须让我确认 dry-run 结果。确认后再运行：
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-zotero-cleanup.ps1 -Apply
+
+“移动到 04_TRASH”的语义是：把 reject 候选条目的 collections 设置为仅 04_TRASH，使它们不再分散在原来的文件夹中。不是追加到 04_TRASH，也不是删除条目。
+
+执行时必须实时显示进度。关注：
+- preflight 中的 active journalArticle / keep / unsure / move_candidates
+- 每批 batch 的 fetched、moved、already、failed、completed/total、elapsed
+- postcheck 中的 only_target、not_only_target、missing
+
+默认批量大小为 50，这是 Zotero Web API 单批上限。不要调到 50 以上。
+
+实际运行经验：
+- 2026-05-27 的一次正式运行中，dry-run 分类结果为 active journalArticle=4824、keep=2173、unsure=799、move_candidates=1852。
+- 正式移动 1852 个条目时，共 38 批；前 37 批每批 50 个，最后 1 批 2 个。
+- Web API 写入阶段耗时约 640 秒（约 10 分 40 秒）；多数 50 条批次耗时约 16-20 秒。不要因为 10-20 秒没有新行就判断卡死。
+- postcheck 额外耗时约 47 秒；本次结果为 checked=1852、only_target_count=1852、not_only_target_count=0、missing_count=0。
+- dry-run 和 -Apply 如果都不指定 -OutputDir，会生成两个不同的时间戳目录；正式结果以 -Apply 运行目录为准。
+- completed-keys.txt 的行数应等于 apply-summary.json 中的 completed。progress.ndjson 的最后应包含 apply_complete 和 postcheck 事件。
+
+如果执行中断或网络/API 失败，不要重建计划后盲目全量重跑。使用同一个输出目录继续：
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-zotero-cleanup.ps1 -Apply -Resume -OutputDir logs\zotero-cleanup\YYYYMMDD-HHMMSS
+
+恢复逻辑：
+- completed-keys.txt 中已有的 key 会跳过。
+- Web API 中已经只属于 04_TRASH 的条目也会跳过。
+- failed-keys.txt 和 api-results.ndjson 用于定位失败项。
+
+完成后检查：
+- apply-summary.json
+- postcheck-web-api.json
+- failed-keys.txt 是否为空或不存在
+- postcheck-web-api.json 中 not_only_target_count 和 missing_count 是否为 0
+
+Zotero Web API 写入后，需要 Zotero 桌面端同步，本地 zotero.sqlite 才会完全反映新的集合归属。验证正式执行结果优先看 postcheck-web-api.json，不要立即用本地 SQLite 判断失败。
+同理，刚执行完时 `zot collection items HKS9Z4Z3` 可能仍读取本地旧库，不能代替 Web API postcheck。
+
+本工作流的运行目录使用 logs\zotero-cleanup\YYYYMMDD-HHMMSS。失败、中断、等待确认或需要审计时保留该目录；确认完成且无需审计后再清理。
+```
+
 ## Clean-up all metadata
 
 ### 推荐给代理的直接提示词
