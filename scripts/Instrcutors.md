@@ -250,7 +250,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-book-metadata-cl
 - publisher 对 Douban HTML / 出品方 / 出版年 / 副标题杂项做图书专用清理，只保留出版社名。
 - language 根据图书标题、摘要、出版社、shortTitle 判断；中文书名应为 `zh`，英文书应为 `en`。
 - abstractNote 只做 HTML、空白、常见 mojibake 和破折号格式修复，不改写事实内容。
-- apply 时默认只给处理过的 book 添加一个 tag：`workflow/book_metadata_update`。
+- apply 时默认只给处理过的 book 添加一个 tag：`workflow/metadata_cleaned`。
 - 不再额外生成 `source/book_metadata/*` 之类的 provider 来源 tag。
 
 确认 dry-run 后正式写入：
