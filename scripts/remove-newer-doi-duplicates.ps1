@@ -4,7 +4,8 @@ param(
     [string]$Library = "user",
     [string]$Profile = "",
     [int]$BatchSize = 25,
-    [switch]$Apply
+    [switch]$Apply,
+    [switch]$HideProgressWatchCommands
 )
 
 Set-StrictMode -Version Latest
@@ -30,6 +31,18 @@ function Get-PercentText {
     }
 
     return ([Math]::Round(($Completed * 100.0) / $Total, 1)).ToString("0.0")
+}
+
+function Write-ProgressWatchCommands {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$WorkingDirectory
+    )
+    Write-Host ""
+    Write-Host "Progress watch from another PowerShell:" -ForegroundColor DarkGray
+    Write-Host "  Keep this PowerShell visible; use these checks for live progress instead of waiting silently." -ForegroundColor DarkGray
+    Write-Host '  Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match ''remove-newer-doi-duplicates|zot.*duplicates|zot.*delete'' } | Select-Object ProcessId,Name,CommandLine'
+    Write-Host ("  Get-Item -LiteralPath '{0}' | Select-Object FullName,LastWriteTime" -f $WorkingDirectory)
 }
 
 function Invoke-UvJsonCommand {
@@ -248,6 +261,11 @@ if ($Profile) {
     $duplicatesArgs += @("--profile", $Profile)
 }
 $duplicatesArgs += @("duplicates", "--by", "doi")
+
+Write-Host "Run mode: direct PowerShell with visible output and progress checks"
+if (-not $HideProgressWatchCommands) {
+    Write-ProgressWatchCommands -WorkingDirectory $ZoteroRepoRoot
+}
 
 Write-Stage "Querying DOI duplicates..."
 $duplicates = Invoke-UvJsonCommand -Arguments $duplicatesArgs -WorkingDirectory $ZoteroRepoRoot -AllowedExitCodes @(0, 6)

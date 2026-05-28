@@ -14,7 +14,8 @@ param(
     [switch]$NoAddTag,
     [switch]$Apply,
     [switch]$Resume,
-    [switch]$LocalNormalization
+    [switch]$LocalNormalization,
+    [switch]$HideProgressWatchCommands
 )
 
 Set-StrictMode -Version Latest
@@ -83,6 +84,23 @@ function Write-RunMetadata {
     $metadata | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $RunOutputDir "run-metadata.json") -Encoding UTF8
 }
 
+function Write-ProgressWatchCommands {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RunOutputDir
+    )
+    $runLog = Join-Path $RunOutputDir "run.out.log"
+    $planPath = Join-Path $RunOutputDir "book-metadata-plan.json"
+    $verificationPath = Join-Path $RunOutputDir "book-metadata-web-api-verification.json"
+    Write-Host ""
+    Write-Host "Progress watch from another PowerShell:" -ForegroundColor DarkGray
+    Write-Host "  Keep this PowerShell visible; use these checks for live progress instead of waiting silently." -ForegroundColor DarkGray
+    Write-Host '  Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match ''run-book-metadata-cleanup|book_metadata_cleanup'' } | Select-Object ProcessId,Name,CommandLine'
+    Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-Content -Tail 30 -LiteralPath '{0}' }}" -f $runLog)
+    Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-Item -LiteralPath '{0}' | Select-Object FullName,Length,LastWriteTime }}" -f $planPath)
+    Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-Content -Raw -LiteralPath '{0}' }}" -f $verificationPath)
+}
+
 if ($BatchSize -lt 1 -or $BatchSize -gt 50) {
     throw "BatchSize must be between 1 and 50 because Zotero API batch/update workflows should stay at or below 50."
 }
@@ -138,6 +156,10 @@ if ($LocalNormalization) {
 
 ("uv " + ($arguments -join " ")) | Set-Content -LiteralPath $commandFile -Encoding UTF8
 Write-Host ("Run output dir: {0}" -f $runOutputDir)
+Write-Host "Run mode: direct PowerShell with visible output and progress checks"
+if (-not $HideProgressWatchCommands) {
+    Write-ProgressWatchCommands -RunOutputDir $runOutputDir
+}
 Write-Host ("Running: uv {0}" -f ($arguments -join " "))
 
 Push-Location $repoRoot

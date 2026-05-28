@@ -9,7 +9,8 @@ param(
     [string]$RecentCutoffUtc = "",
     [int]$ProgressIntervalSeconds = 10,
     [string]$OutputDir = "",
-    [switch]$KeepLog
+    [switch]$KeepLog,
+    [switch]$HideProgressWatchCommands
 )
 
 Set-StrictMode -Version Latest
@@ -69,12 +70,41 @@ function Get-ImportProcesses {
         Select-Object ProcessId, Name, CommandLine
 }
 
+function Write-ProgressWatchCommands {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ImportSummaryPath,
+        [Parameter(Mandatory = $true)]
+        [string]$RunOutputDir
+    )
+    Write-Host ""
+    Write-Host "Progress watch from another PowerShell:" -ForegroundColor DarkGray
+    Write-Host "  Keep this PowerShell visible; use these checks for live progress instead of waiting silently." -ForegroundColor DarkGray
+    Write-Host '  Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match ''run-rss-daily-doi-import|import_rss_inbox_plan'' } | Select-Object ProcessId,Name,CommandLine'
+    Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-Content -Raw -LiteralPath '{0}' }}" -f $ImportSummaryPath)
+    Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-ChildItem -LiteralPath '{0}' -Recurse -File | Sort-Object LastWriteTime -Descending | Select-Object -First 20 FullName,Length,LastWriteTime }}" -f $RunOutputDir)
+}
+
 function Read-JsonFile {
     param(
         [Parameter(Mandatory = $true)]
         [string]$Path
     )
     return Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
+}
+
+function Write-JsonFile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [Parameter(Mandatory = $true)]
+        $Payload
+    )
+    $parent = Split-Path -Parent $Path
+    if ($parent) {
+        New-Item -ItemType Directory -Force -Path $parent | Out-Null
+    }
+    ConvertTo-Json -InputObject $Payload -Depth 20 | Set-Content -LiteralPath $Path -Encoding UTF8
 }
 
 function Invoke-UvCommand {
@@ -302,6 +332,10 @@ try {
 
     Write-Host ("Selected JSON: {0}" -f $selectedJson)
     Write-Host ("Run output: {0}" -f $runOutputDir)
+    Write-Host "Run mode: direct PowerShell with visible output and progress checks"
+    if (-not $HideProgressWatchCommands) {
+        Write-ProgressWatchCommands -ImportSummaryPath $importSummaryPath -RunOutputDir $runOutputDir
+    }
 
     $cleanArgs = @(
         "run", "python", "scripts/clean_rss_selected_for_inbox.py",
@@ -325,24 +359,80 @@ try {
     Write-Host ("  new_dois                 : {0}" -f $cleanSummary.new_dois)
     Write-Host ("  author_routed_new_dois   : {0}" -f $cleanSummary.author_routed_new_dois)
 
-    $importArgs = @(
-        "run", "python", "scripts/import_rss_inbox_plan.py",
-        "--route-plan", $routePlan,
-        "--output-dir", $importDir,
-        "--library", $Library,
-        "--apply"
-    )
-    if ($Profile) {
-        $importArgs += @("--profile", $Profile)
+    if ($totalToImport -le 0) {
+        New-Item -ItemType Directory -Force -Path $importDir | Out-Null
+        Write-Host ""
+        Write-Host "No new DOIs to import; skipping import_rss_inbox_plan.py." -ForegroundColor Yellow
+        $previewPath = Join-Path $importDir "import_plan_preview.json"
+        $resumeStatePath = Join-Path $importDir "resume_state.json"
+        $checkpointPath = Join-Path $importDir "checkpoint.json"
+        Write-JsonFile -Path (Join-Path $importDir "imported_results.json") -Payload @()
+        Write-JsonFile -Path $failedResultsPath -Payload @()
+        Write-JsonFile -Path $checkpointPath -Payload @{
+            items = @{}
+            updated_at = (Get-Date).ToUniversalTime().ToString("o")
+        }
+        Write-JsonFile -Path $previewPath -Payload ([ordered]@{
+            route_plan = $routePlan
+            apply = $true
+            total_entries_considered = 0
+            existing_items_detected = 0
+            pending_import = 0
+            entries_needing_collection_repair = 0
+            sample_pending_dois = @()
+            sample_collection_repairs = @()
+            checkpoint_path = $checkpointPath
+        })
+        Write-JsonFile -Path $resumeStatePath -Payload ([ordered]@{
+            known_items = @{}
+            collection_diagnostics = @{ collections = @() }
+            recent_diagnostics = @{ enabled = $false }
+            checkpoint_path = $checkpointPath
+        })
+        $importSummaryPayload = [ordered]@{
+            route_plan = $routePlan
+            apply = $true
+            total_entries_considered = 0
+            created_new = 0
+            reused_existing = 0
+            already_routed = 0
+            collection_repairs = 0
+            failed = 0
+            created_collections = @()
+            checkpoint_path = $checkpointPath
+            sync_reminder = ""
+            phase = "apply"
+            output_files = [ordered]@{
+                preview = $previewPath
+                resume_state = $resumeStatePath
+                checkpoint = $checkpointPath
+                imported_results = (Join-Path $importDir "imported_results.json")
+                failed_results = $failedResultsPath
+                summary = $importSummaryPath
+            }
+        }
+        Write-JsonFile -Path $importSummaryPath -Payload $importSummaryPayload
     }
-    if ($RecentCutoffUtc) {
-        $importArgs += @("--recent-cutoff-utc", $RecentCutoffUtc)
-    }
+    else {
+        $importArgs = @(
+            "run", "python", "scripts/import_rss_inbox_plan.py",
+            "--route-plan", $routePlan,
+            "--output-dir", $importDir,
+            "--library", $Library,
+            "--apply"
+        )
+        if ($Profile) {
+            $importArgs += @("--profile", $Profile)
+        }
+        if ($RecentCutoffUtc) {
+            $importArgs += @("--recent-cutoff-utc", $RecentCutoffUtc)
+        }
 
-    Write-Host ""
-    Write-Host ("Import progress will update every {0}s." -f $ProgressIntervalSeconds)
-    $importProcess = Start-UvProcess -Arguments $importArgs -WorkingDirectory $ZoteroRepoRoot
-    Wait-ImportWithProgress -Process $importProcess -ImportSummaryPath $importSummaryPath -Total $totalToImport -ProgressIntervalSeconds $ProgressIntervalSeconds
+        Write-Host ""
+        Write-Host ("Import progress will update every {0}s." -f $ProgressIntervalSeconds)
+        $importProcess = Start-UvProcess -Arguments $importArgs -WorkingDirectory $ZoteroRepoRoot
+        Wait-ImportWithProgress -Process $importProcess -ImportSummaryPath $importSummaryPath -Total $totalToImport -ProgressIntervalSeconds $ProgressIntervalSeconds
+    }
 
     $importSummary = Read-JsonFile -Path $importSummaryPath
 

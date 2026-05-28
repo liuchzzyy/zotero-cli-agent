@@ -6,7 +6,8 @@ param(
     [int]$Limit = 0,
     [int]$TitleSampleSize = 200,
     [string]$ArchiveDate = "",
-    [switch]$KeepOutput
+    [switch]$KeepOutput,
+    [switch]$HideProgressWatchCommands
 )
 
 $ErrorActionPreference = "Stop"
@@ -38,6 +39,15 @@ if (-not $isUnderLog) {
     throw "OutputDir must resolve under repository log directory: $logRoot"
 }
 
+function Write-ProgressWatchCommands([string]$OutputDirFull) {
+    Write-Host ""
+    Write-Host "Progress watch from another PowerShell:" -ForegroundColor DarkGray
+    Write-Host "  Keep this PowerShell visible; use these checks for live progress instead of waiting silently." -ForegroundColor DarkGray
+    Write-Host '  Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match ''run-zotero-library-rebuild|plan_rebuild'' } | Select-Object ProcessId,Name,CommandLine'
+    Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-ChildItem -LiteralPath '{0}' -Recurse -File | Sort-Object LastWriteTime -Descending | Select-Object -First 20 FullName,Length,LastWriteTime }}" -f $OutputDirFull)
+    Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-Content -Raw -LiteralPath '{0}' }}" -f (Join-Path $OutputDirFull "summary.md"))
+}
+
 Push-Location $repoRoot
 try {
     $script = Join-Path $repoRoot "skill\zotero-library-rebuild\scripts\plan_rebuild.py"
@@ -65,6 +75,10 @@ try {
 
     Write-Host "Generating Zotero rebuild dry-run artifacts..."
     Write-Host "OutputDir: $outputDirFull"
+    Write-Host "Run mode: direct PowerShell with visible output and progress checks"
+    if (-not $HideProgressWatchCommands) {
+        Write-ProgressWatchCommands -OutputDirFull $outputDirFull
+    }
     & uv @argsList
     if ($LASTEXITCODE -ne 0) {
         throw "Dry-run planner failed with exit code $LASTEXITCODE"

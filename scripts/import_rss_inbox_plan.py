@@ -568,6 +568,56 @@ def run_import_plan(
         summary=_current_summary(),
     )
 
+    if not all_entries:
+        checkpoint["updated_at"] = datetime.now(timezone.utc).isoformat()
+        _write_json_atomic(checkpoint_path, checkpoint)
+        empty_preview = {
+            "route_plan": str(route_plan),
+            "apply": apply,
+            "total_entries_considered": 0,
+            "existing_items_detected": 0,
+            "pending_import": 0,
+            "entries_needing_collection_repair": 0,
+            "root_collection": root_collection,
+            "server_existing_collection_paths": [],
+            "server_missing_collection_paths": [],
+            "local_existing_collection_paths": [],
+            "local_missing_collection_paths": [],
+            "sample_pending_dois": [],
+            "sample_collection_repairs": [],
+            "checkpoint_path": str(checkpoint_path),
+            "server_state_files": {
+                "resume_state": str(output_dir / "resume_state.json"),
+                "preview": str(output_dir / "import_plan_preview.json"),
+            },
+            "diagnostics": {
+                "collection_scan": {"collections": []},
+                "recent_scan": {"enabled": False},
+                "auto_recent_cutoff_utc": None,
+            },
+        }
+        _write_json_atomic(output_dir / "import_plan_preview.json", empty_preview)
+        _write_json_atomic(
+            output_dir / "resume_state.json",
+            {
+                "known_items": {},
+                "collection_diagnostics": {"collections": []},
+                "recent_diagnostics": {"enabled": False},
+                "checkpoint_path": str(checkpoint_path),
+            },
+        )
+        if not apply:
+            return empty_preview
+        summary = _current_summary()
+        summary["phase"] = "apply"
+        _write_progress_files(
+            output_dir=output_dir,
+            processed_results=processed_results,
+            failed_results=failed_results,
+            summary=summary,
+        )
+        return summary
+
     client = _build_client(profile, library_ctx)
     local_collection_paths = _load_local_collection_paths(profile, library_ctx)
     server_path_to_key, server_key_to_path = _build_server_collection_maps(client)

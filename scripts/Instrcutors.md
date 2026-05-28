@@ -1,3 +1,14 @@
+## 通用执行规则
+
+本文件中的所有 Zotero workflow 都默认直接在 PowerShell 中运行对应 `*.ps1` wrapper，然后查看真实进度；这条规则也适用于本次没有运行到的指令、参数组合、恢复命令和 apply 阶段。
+
+推荐操作顺序：
+1. 直接在 `E:\Desktop\CodingDaily\zotero-cli-agents` 下运行对应 wrapper，保留当前 PowerShell 输出。
+2. 长任务运行时，另开 PowerShell 或使用 wrapper 打印的 progress watch 命令查看进程、`log\...` 目录、`progress.ndjson`、`summary.json`、`import_summary.json`、`run.out.log`、batch 日志或 Web API postcheck 文件。
+3. 汇报进度必须引用实际证据，例如已处理数量、batch 编号、failed 数、输出文件修改时间、checkpoint/summary 内容；不要只说“正在运行”。
+4. 如果 workflow 尚未实际执行，也要在说明和脚本里保留同样的直接运行和进度检查要求。
+5. 对应 wrapper 默认打印 progress watch 命令；只有在输出过多时才使用 `-HideProgressWatchCommands` 隐藏提示。
+
 ## Zotero Library Rebuild
 
 ### 推荐给代理的直接提示词
@@ -281,6 +292,10 @@ Zotero Web API 写入后，需要 Zotero 桌面端同步，本地 zotero.sqlite 
 日常运行不要手动拆开清洗/导入步骤，直接调用 wrapper。wrapper 默认把本次 route_plan、checkpoint、summary、failed_results 等运行文件放到 log\rss-daily-doi-import_YYYY-MM-DD，并在 failed=0 成功完成后自动删除本次 log 目录：
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-rss-daily-doi-import.ps1 -Date YYYY-MM-DD -ProgressIntervalSeconds 5
 
+推荐直接在 PowerShell 中运行 wrapper，保留终端输出；如需旁路查看进度，另开 PowerShell 查询 import 进程和 import_summary.json：
+Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'run-rss-daily-doi-import|import_rss_inbox_plan' } | Select-Object ProcessId,Name,CommandLine
+Get-Content -Raw log\rss-daily-doi-import_YYYY-MM-DD\rss_inbox_import\import_summary.json
+
 默认读取：
 E:\Desktop\CodingDaily\rss-cli-agent\storage\exports\daily\YYYY-MM-DD.selected.json
 
@@ -290,6 +305,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-rss-daily-doi-im
 如果需要保留成功运行记录用于审查，加 `-KeepLog`；否则不要保留成功运行的 log 目录。
 
 运行时必须显示实时进度。关注 processed/total、created_new、reused_existing、already_routed、failed。长时间停在 preflight/import starting 时，检查 log\rss-daily-doi-import_YYYY-MM-DD\rss_inbox_import\import_summary.json 和是否仍有 import_rss_inbox_plan.py 进程，不要凭表面输出判断卡死。
+如果 clean summary 显示 new_dois=0，wrapper 应直接写出 created_new=0、reused_existing=0、already_routed=0、failed=0 的 summary，并跳过 import_rss_inbox_plan.py；不要为 0 个 DOI 启动空导入进程。
 
 如果 wrapper 已经完成且 failed=0：
 - 本次 log\rss-daily-doi-import_YYYY-MM-DD 应该已被自动删除；如果使用过 -KeepLog，复核无误后手动删除。

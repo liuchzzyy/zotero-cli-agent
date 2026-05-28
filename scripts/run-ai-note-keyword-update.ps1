@@ -12,7 +12,8 @@ param(
     [switch]$Apply,
     [switch]$Status,
     [switch]$FullRun,
-    [switch]$NoSkipDoneTag
+    [switch]$NoSkipDoneTag,
+    [switch]$HideProgressWatchCommands
 )
 
 $ErrorActionPreference = "Stop"
@@ -68,6 +69,19 @@ function New-BaseCommand([string]$WorkspacePath) {
     return $cmd
 }
 
+function Write-ProgressWatchCommands([string]$WorkspacePath) {
+    $summaryPath = Join-Path $WorkspacePath "summary.json"
+    $remainingPath = Join-Path $WorkspacePath "remaining.jsonl"
+    $logsDir = Join-Path $WorkspacePath "logs"
+    Write-Host ""
+    Write-Host "Progress watch from another PowerShell:" -ForegroundColor DarkGray
+    Write-Host "  Keep this PowerShell visible; use these checks for live progress instead of waiting silently." -ForegroundColor DarkGray
+    Write-Host '  Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match ''run-ai-note-keyword-update|update_ai_note_keywords'' } | Select-Object ProcessId,Name,CommandLine'
+    Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-ChildItem -LiteralPath '{0}' -File | Sort-Object LastWriteTime -Descending | Select-Object -First 5 FullName,Length,LastWriteTime }}" -f $logsDir)
+    Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-Content -Raw -LiteralPath '{0}' }}" -f $summaryPath)
+    Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-Content -Tail 20 -LiteralPath '{0}' }}" -f $remainingPath)
+}
+
 $repoRoot = Get-RepoRoot
 $workspacePath = Resolve-RunPath -RepoRoot $repoRoot -PathValue $Workspace
 $logsDir = Join-Path $workspacePath "logs"
@@ -91,8 +105,12 @@ $base = New-BaseCommand -WorkspacePath $workspacePath
 Write-Host "Repo:      $repoRoot"
 Write-Host "Workspace: $workspacePath"
 Write-Host "Model:     $Model"
+Write-Host "Run mode:  direct PowerShell with visible output and progress checks"
 if ($PromptPath) {
     Write-Host "Prompt:    $(Resolve-RunPath -RepoRoot $repoRoot -PathValue $PromptPath)"
+}
+if (-not $HideProgressWatchCommands) {
+    Write-ProgressWatchCommands -WorkspacePath $workspacePath
 }
 
 if ($Generate) {

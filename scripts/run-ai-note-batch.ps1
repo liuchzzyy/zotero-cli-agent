@@ -19,7 +19,8 @@ param(
     [switch]$NoCleanIntermediate,
     [switch]$StopOnError,
     [switch]$RefreshMineruCache,
-    [switch]$KeepLog
+    [switch]$KeepLog,
+    [switch]$HideProgressWatchCommands
 )
 
 $ErrorActionPreference = "Stop"
@@ -72,6 +73,19 @@ function Remove-EmptyLogRoot([string]$RunOutputDir) {
         Remove-Item -LiteralPath $parent -Force
         Write-Host "Removed empty log directory: $parent"
     }
+}
+
+function Write-ProgressWatchCommands([string]$RunOutputDir) {
+    $summaryPath = Join-Path $RunOutputDir "summary.json"
+    $failuresPath = Join-Path $RunOutputDir "failures.json"
+    $logsDir = Join-Path $RunOutputDir "logs"
+    Write-Host ""
+    Write-Host "Progress watch from another PowerShell:" -ForegroundColor DarkGray
+    Write-Host "  Keep this PowerShell visible; use these checks for live progress instead of waiting silently." -ForegroundColor DarkGray
+    Write-Host '  Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match ''run-ai-note-batch|batch_ai_note_analysis|mineru|zot.*note'' } | Select-Object ProcessId,Name,CommandLine'
+    Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-ChildItem -LiteralPath '{0}' -File | Sort-Object LastWriteTime -Descending | Select-Object -First 5 FullName,Length,LastWriteTime }}" -f $logsDir)
+    Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-Content -Raw -LiteralPath '{0}' }}" -f $summaryPath)
+    Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-Content -Raw -LiteralPath '{0}' }}" -f $failuresPath)
 }
 
 function Invoke-AiNoteBatch {
@@ -174,8 +188,12 @@ $env:CLIPROXYAPI_KEY = Read-CliProxyApiKey
 Write-Host "Repo:   $repoRoot"
 Write-Host "Output: $runOutputDir"
 Write-Host "DryRun: $DryRun"
+Write-Host "Run mode: direct PowerShell with visible output and progress checks"
 Write-Host "Clean intermediate assets after successful batches: $(-not $NoCleanIntermediate)"
 Write-Host "Keep log after successful completion: $KeepLog"
+if (-not $HideProgressWatchCommands) {
+    Write-ProgressWatchCommands -RunOutputDir $runOutputDir
+}
 
 $iteration = 1
 $completed = $false

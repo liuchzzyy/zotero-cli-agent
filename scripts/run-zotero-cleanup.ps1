@@ -5,7 +5,8 @@ param(
     [int]$BatchSize = 50,
     [string]$Profile = "",
     [switch]$Apply,
-    [switch]$Resume
+    [switch]$Resume,
+    [switch]$HideProgressWatchCommands
 )
 
 Set-StrictMode -Version Latest
@@ -67,6 +68,23 @@ function Write-RunMetadata {
     $metadata | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $RunOutputDir "run-metadata.json") -Encoding UTF8
 }
 
+function Write-ProgressWatchCommands {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RunOutputDir
+    )
+    $progressPath = Join-Path $RunOutputDir "progress.ndjson"
+    $summaryPath = Join-Path $RunOutputDir "classification-summary.json"
+    $applySummaryPath = Join-Path $RunOutputDir "apply-summary.json"
+    Write-Host ""
+    Write-Host "Progress watch from another PowerShell:" -ForegroundColor DarkGray
+    Write-Host "  Keep this PowerShell visible; use these checks for live progress instead of waiting silently." -ForegroundColor DarkGray
+    Write-Host '  Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match ''run-zotero-cleanup|zotero_cleanup'' } | Select-Object ProcessId,Name,CommandLine'
+    Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-Content -Tail 20 -LiteralPath '{0}' }}" -f $progressPath)
+    Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-Content -Raw -LiteralPath '{0}' }}" -f $summaryPath)
+    Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-Content -Raw -LiteralPath '{0}' }}" -f $applySummaryPath)
+}
+
 $repoRoot = Get-RepoRoot
 if (-not $RulesPath) {
     $RulesPath = Join-Path $repoRoot "scripts\zotero-cleanup-rules.json"
@@ -110,6 +128,10 @@ if ($Profile) {
 
 ("uv " + ($arguments -join " ")) | Set-Content -LiteralPath $commandFile -Encoding UTF8
 Write-Host ("Run output dir: {0}" -f $runOutputDir)
+Write-Host "Run mode: direct PowerShell with visible output and progress checks"
+if (-not $HideProgressWatchCommands) {
+    Write-ProgressWatchCommands -RunOutputDir $runOutputDir
+}
 Write-Host ("Running: uv {0}" -f ($arguments -join " "))
 
 Push-Location $repoRoot

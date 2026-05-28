@@ -9,7 +9,8 @@ param(
     [switch]$ForceRebuild,
     [switch]$KeepInventory,
     [switch]$StopOnError,
-    [switch]$KeepLog
+    [switch]$KeepLog,
+    [switch]$HideProgressWatchCommands
 )
 
 $ErrorActionPreference = "Stop"
@@ -43,6 +44,17 @@ function Remove-EmptyLogRoot([string]$RunOutputDir) {
         Remove-Item -LiteralPath $parent -Force
         Write-Host "Removed empty log directory: $parent"
     }
+}
+
+function Write-ProgressWatchCommands([string]$RunOutputDir) {
+    $inventoryPath = Join-Path $RunOutputDir "inventory.json"
+    $logsDir = Join-Path $RunOutputDir "logs"
+    Write-Host ""
+    Write-Host "Progress watch from another PowerShell:" -ForegroundColor DarkGray
+    Write-Host "  Keep this PowerShell visible; use these checks for live progress instead of waiting silently." -ForegroundColor DarkGray
+    Write-Host '  Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match ''run-rag-full-library|workspace index|mineru|inventory_full_pdf_workspace'' } | Select-Object ProcessId,Name,CommandLine'
+    Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-ChildItem -LiteralPath '{0}' -File | Sort-Object LastWriteTime -Descending | Select-Object -First 5 FullName,Length,LastWriteTime }}" -f $logsDir)
+    Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-Content -Raw -LiteralPath '{0}' }}" -f $inventoryPath)
 }
 
 function Invoke-LoggedCommand {
@@ -231,6 +243,10 @@ Write-Host "DryRun:     $DryRun"
 Write-Host "NoIndex:    $NoIndex"
 Write-Host "Force:      $ForceRebuild"
 Write-Host "KeepLog:    $KeepLog"
+Write-Host "Run mode:   direct PowerShell with visible output and progress checks"
+if (-not $HideProgressWatchCommands) {
+    Write-ProgressWatchCommands -RunOutputDir $runOutputDir
+}
 
 $inventoryCmd = @(
     "uv", "run", "python", "-u", $inventoryScript,
