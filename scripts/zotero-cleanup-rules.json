@@ -27,7 +27,19 @@
       "name": "80_TRASH",
       "key": "JJ6JSGT5",
       "current_item_count": 1852
-    }
+    },
+    "exclude_collections": [
+      {
+        "name": "80_TRASH",
+        "key": "JJ6JSGT5",
+        "reason": "holding collection for rejected items; no need to classify again"
+      },
+      {
+        "name": "90_ARCHIVE",
+        "key": "6HREN2FT",
+        "reason": "archived holding collection; no routine relevance cleanup"
+      }
+    ]
   },
   "decision_labels": [
     "keep",

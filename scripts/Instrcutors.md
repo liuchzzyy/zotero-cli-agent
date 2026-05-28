@@ -71,6 +71,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File skill\zotero-library-rebuild
 scripts\zotero-cleanup-rules.json
 
 不要使用旧的 aa.json、aa_* 预览文件或 TODO 中间文件；这些只是早期临时命名，不再是正式接口。
+规则文件中的 `zotero_scope.exclude_collections` 默认跳过持有集合：
+- `80_TRASH` (`JJ6JSGT5`)：已经判为无关或待丢弃的 holding collection，不重复分类。
+- `90_ARCHIVE` (`6HREN2FT`)：归档 holding collection，不参与日常 relevance cleanup。
+如需排除其他持有集合，先更新 `scripts\zotero-cleanup-rules.json`，不要手改 CSV 或临时过滤输出。
 
 本指令独立包含运行文件规则：classification preview、summary、cleanup plan、CSV 清单、progress、apply 结果和 postcheck 都放在本次 log\zotero-cleanup\YYYYMMDD-HHMMSS 目录；不要放在仓库根目录散文件、tmp\ 或临时 .workspace\... 运行目录中。失败、中断、等待确认或需要审计时保留该目录；确认完成且无需审计后再清理。
 
@@ -94,8 +98,9 @@ log\zotero-cleanup\YYYYMMDD-HHMMSS
 - 只分类和处理 journalArticle。
 - 非期刊条目全部保留，不移动；包括 book、preprint、document、computerProgram、encyclopediaArticle、webpage、report、thesis 等。
 - 已在 Zotero 自带回收站中的条目跳过。
+- 已在 `80_TRASH` 或 `90_ARCHIVE` 的条目默认跳过，不再重复分类。
 - keep 和 unsure 不动。
-- reject 才作为移动候选。
+- reject 才作为移动候选；`cleanup-plan.json` 中的 `reject_item_keys` 只包含还需要实际移动的条目。
 - 不调用 zot delete，不删除 Zotero 条目。
 - 不直接写 zotero.sqlite；读操作来自本地 SQLite，写操作必须走 Zotero Web API。
 
@@ -106,14 +111,17 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-zotero-cleanup.p
 
 执行时必须实时显示进度。关注：
 - preflight 中的 active journalArticle / keep / unsure / move_candidates
+- classification-summary.json 中的 classification_scope.excluded_by_collection_count / excluded_collection_keys
+- cleanup-plan.json 中的 reject_count / already_only_target_count / move_needed_count
 - 每批 batch 的 fetched、moved、already、failed、completed/total、elapsed
 - postcheck 中的 only_target、not_only_target、missing
 
 默认批量大小为 50，这是 Zotero Web API 单批上限。不要调到 50 以上。
 
 实际运行经验：
-- 2026-05-27 的一次正式运行中，dry-run 分类结果为 active journalArticle=4824、keep=2173、unsure=799、move_candidates=1852。
-- 正式移动 1852 个条目时，共 38 批；前 37 批每批 50 个，最后 1 批 2 个。
+- 2026-05-27 的一次正式运行中，dry-run 分类结果为 active journalArticle=4824、keep=2173、unsure=799、move_candidates=1852；正式移动 1852 个条目成功。
+- 2026-05-28 之后，规则默认排除 `80_TRASH` 和 `90_ARCHIVE`。一次只读 smoke 结果为 active journalArticle=2975、keep=2286、unsure=689、move_candidates=0、excluded_by_collection_count=1855。
+- 如果 `move_needed_count=0`，不要再执行 -Apply；说明没有需要移动的 reject 条目。
 - Web API 写入阶段耗时约 640 秒（约 10 分 40 秒）；多数 50 条批次耗时约 16-20 秒。不要因为 10-20 秒没有新行就判断卡死。
 - postcheck 额外耗时约 47 秒；本次结果为 checked=1852、only_target_count=1852、not_only_target_count=0、missing_count=0。
 - dry-run 和 -Apply 如果都不指定 -OutputDir，会生成两个不同的时间戳目录；正式结果以 -Apply 运行目录为准。
@@ -147,7 +155,23 @@ Zotero Web API 写入后，需要 Zotero 桌面端同步，本地 zotero.sqlite 
 在 E:\Desktop\CodingDaily\zotero-cli-agents 下执行 metadata cleanup。先建立本次运行目录：log\metadata-cleanup-YYYYMMDD-HHMM。
 本指令独立包含运行文件规则：metadata-export、cleaned jsonl、dry-run/apply 输出、batch 文件、续跑文件和诊断记录都只放在本次 log\metadata-cleanup-YYYYMMDD-HHMM 目录；不要放在仓库根目录散文件、tmp\ 或临时 .workspace\... 运行目录中。失败、中断、等待确认或需要排查时保留该目录；复核无误后删除本次目录，如果 log\ 已空也删除 log\。
 
-先读取 Zotero 条目 metadata，使用 `uv run zot --json --detail full summarize-all --exclude-tag workflow/metadata_cleaned --exclude-tag update/metadata --limit 5000 > log\metadata-cleanup-YYYYMMDD-HHMM\metadata-export.json` 导出未处理条目。
+如果这是 CodingDaily 的“全库条目清理”总控流程，优先使用根目录 wrapper：
+powershell -NoProfile -ExecutionPolicy Bypass -File E:\Desktop\CodingDaily\run-full-library-cleanup.ps1 -SkipDuplicates -SkipRelevance
+该 wrapper 会默认排除 `80_TRASH` (`JJ6JSGT5`) 和 `90_ARCHIVE` (`6HREN2FT`)，并在 apply 时提供 `-ResumeMetadataApply` 续跑和实时 `[batch x/y] item a/b | overall c/d` 进度。
+
+如果在本仓库内单独执行 metadata cleanup，先读取 Zotero 条目 metadata。默认导出命令必须同时跳过已清理 tag 和不需要清理的 holding collections：
+uv run zot --json --detail full summarize-all --exclude-tag workflow/metadata_cleaned --exclude-tag update/metadata --exclude-collection-key JJ6JSGT5 --exclude-collection-key 6HREN2FT --limit 5000 > log\metadata-cleanup-YYYYMMDD-HHMM\metadata-export.json
+
+默认排除集合：
+- `80_TRASH` (`JJ6JSGT5`)：无关/丢弃 holding collection，不做 metadata cleanup。
+- `90_ARCHIVE` (`6HREN2FT`)：归档 holding collection，不做日常 metadata cleanup。
+- `40_WORKSPACE` (`AFTJQCQA`) 默认不排除；只有明确不需要清理 workspace 条目时，才额外追加 `--exclude-collection-key AFTJQCQA`，或在总控 wrapper 中使用 `-ExcludeWorkspaceMetadata`。
+
+导出后检查 metadata-export.json 的 meta：
+- `excluded_tags` 应包含 `workflow/metadata_cleaned` 和 `update/metadata`。
+- `excluded_collection_keys` 应默认包含 `JJ6JSGT5` 和 `6HREN2FT`。
+- `count` 是本次需要交给代理判断的条目数；不要对已排除集合生成 cleaned-metadata.jsonl。
+
 只清洗这些字段的格式问题：title、abstractNote、publicationTitle、journalAbbreviation、language、publisher。
 清洗目标：去掉 HTML 标签，修复异常空格、断裂换行、特殊符号粘连；保持原意，不改事实内容。
 边界处理：化学式、化学计量数和电荷不要插入空格，例如 CO2、H2O、MnO2、Zn2+、LiFePO4、Ni3S2；不要把小数改成 `1. 0`；不要把 `single- versus`、`regio- and` 这类并列短语合并成一个词。
@@ -155,11 +179,32 @@ Zotero Web API 写入后，需要 Zotero 桌面端同步，本地 zotero.sqlite 
 只输出实际发生变更的条目，生成 log\metadata-cleanup-YYYYMMDD-HHMM\cleaned-metadata.jsonl。
 
 先执行 `uv run zot --json update --from-jsonl log\metadata-cleanup-YYYYMMDD-HHMM\cleaned-metadata.jsonl --dry-run > log\metadata-cleanup-YYYYMMDD-HHMM\metadata-cleanup-dry-run.json`，不要正式写入，等我确认。等待确认期间保留本次 log 目录。
-我确认后，按 25-100 条切分 cleaned-metadata.jsonl 为 log\metadata-cleanup-YYYYMMDD-HHMM\cleaned-metadata-batch-N.jsonl 分批正式写入，避免长批次超时或 API 断连；如果条目很少，可以只生成一个批次，但仍按批次记录。
-每批先在终端实时打印进度，例如 `[batch 2/8] applying 75 items -> log\metadata-cleanup-YYYYMMDD-HHMM\metadata-cleanup-apply-batch-2.json`，再执行 `uv run zot --json update --from-jsonl log\metadata-cleanup-YYYYMMDD-HHMM\cleaned-metadata-batch-N.jsonl --add-tag workflow/metadata_cleaned > log\metadata-cleanup-YYYYMMDD-HHMM\metadata-cleanup-apply-batch-N.json`；如果确实只跑一个完整文件，可用 `uv run zot --json update --from-jsonl log\metadata-cleanup-YYYYMMDD-HHMM\cleaned-metadata.jsonl --add-tag workflow/metadata_cleaned > log\metadata-cleanup-YYYYMMDD-HHMM\metadata-cleanup-apply.json`。
-不要静默等待长批次；每批结束后立即报告成功数、失败数、剩余批次数和日志路径。
-如果某批超时或断连，不要盲目重跑全量；先用 Web API 复核哪些条目已经同时完成字段更新和 `workflow/metadata_cleaned` tag，再只续跑未完成条目，续跑文件也放在同一个 log\metadata-cleanup-YYYYMMDD-HHMM 目录。
-全部批次完成后，复核 cleaned-metadata.jsonl 中所有 key 都已完成字段更新并带有 `workflow/metadata_cleaned` tag。
+
+我确认后，按批次正式写入。推荐批大小为 50；如果网络不稳定可降到 25，不要超过 100。每批文件命名为：
+- log\metadata-cleanup-YYYYMMDD-HHMM\cleaned-metadata-batch-001.jsonl
+- log\metadata-cleanup-YYYYMMDD-HHMM\metadata-cleanup-apply-batch-001.json
+- log\metadata-cleanup-YYYYMMDD-HHMM\metadata-cleanup-apply-batch-001.err.log
+
+正式写入命令：
+uv run zot --json update --from-jsonl log\metadata-cleanup-YYYYMMDD-HHMM\cleaned-metadata-batch-001.jsonl --add-tag workflow/metadata_cleaned > log\metadata-cleanup-YYYYMMDD-HHMM\metadata-cleanup-apply-batch-001.json 2> log\metadata-cleanup-YYYYMMDD-HHMM\metadata-cleanup-apply-batch-001.err.log
+
+不要静默等待长批次。`zot update --from-jsonl` 会在 stderr 输出结构化 progress；代理必须实时读取 stderr 或使用总控 wrapper，把进度转成类似：
+`[batch 3/13] item 41/50 | overall 141/630 | succeeded=... failed=...`
+每批结束后立即报告成功数、失败数、剩余批次数和日志路径。
+
+增量/续跑规则：
+- 已成功的 batch 判定标准是 apply JSON 中 `ok=true` 且 `failed=[]`，并且 succeeded 数等于该 batch 行数。
+- 中断、超时或 API 断连后，不要重跑全量 cleaned-metadata.jsonl。
+- 先读取已有 `metadata-cleanup-apply-batch-*.json`；成功 batch 跳过。
+- partial batch 只收集 `data.failed` 中的条目，写入 `cleaned-metadata-retry-failed-001.jsonl` 后单独重试。
+- 空文件、缺失输出或 JSON 解析失败的 batch 才重跑该 batch。
+- 在 CodingDaily 总控流程中，直接用同一个 `-RunName` 加 `-ResumeMetadataApply` 续跑：
+  powershell -NoProfile -ExecutionPolicy Bypass -File E:\Desktop\CodingDaily\run-full-library-cleanup.ps1 -RunName full-library-cleanup-YYYYMMDD-HHMMSS -SkipDuplicates -SkipRelevance -SkipMetadataExport -CleanedMetadataJsonl E:\Desktop\CodingDaily\zotero-cli-agents\log\full-library-cleanup-YYYYMMDD-HHMMSS\03_metadata\cleaned-metadata.jsonl -ApplyMetadata -ResumeMetadataApply
+
+全部批次完成后，生成或检查最终汇总：
+- 单独流程：人工汇总每个 batch 的 succeeded/failed，确认 cleaned-metadata.jsonl 中所有 key 都成功。
+- 总控 wrapper：检查 03_metadata\metadata-cleanup-final-summary.json，要求 final_succeeded 等于 total_updates，final_unresolved_failed=0。
+
 复核无误后删除本次 log\metadata-cleanup-YYYYMMDD-HHMM 目录；如果 log\ 已空，也删除 log\。
 ```
 
@@ -209,6 +254,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-rss-daily-doi-im
 
 规则固定为：只按 DOI 精确判断；同 DOI 时保留 date_added 更早的旧条目，删除 date_added 更晚的新条目。
 执行时必须给出实时进度：查询 DOI 重复项、构建 keep/delete 计划、每个重复组的 keep/delete 判断；正式删除时还要报告批次编号、已删除数、失败数、总体百分比。
+
+如果这是 CodingDaily 的“全库条目清理”总控流程，本步骤是第一步，仍然先 dry-run，不要和 relevance / metadata apply 一起无确认地自动写入：
+powershell -NoProfile -ExecutionPolicy Bypass -File E:\Desktop\CodingDaily\run-full-library-cleanup.ps1
+确认 DOI keep/delete 计划后，才只执行 DOI duplicate apply：
+powershell -NoProfile -ExecutionPolicy Bypass -File E:\Desktop\CodingDaily\run-full-library-cleanup.ps1 -RunName full-library-cleanup-YYYYMMDD-HHMMSS -SkipRelevance -SkipMetadataExport -ApplyDuplicates
+如果 dry-run 显示 0 groups found，不需要进入 apply。
 
 如果需要保存终端输出，先建立 log\remove-newer-doi-duplicates-YYYYMMDD-HHMM，并用 Tee-Object 同时显示和记录；不要把计划文件或日志放到根目录散文件：
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\remove-newer-doi-duplicates.ps1 2>&1 | Tee-Object -FilePath log\remove-newer-doi-duplicates-YYYYMMDD-HHMM\dry-run.log

@@ -85,6 +85,18 @@ def chunked(values: list[str], size: int) -> list[list[str]]:
     return [values[i : i + size] for i in range(0, len(values), size)]
 
 
+def collection_keys_from_scope(scope: dict[str, Any], field_name: str) -> set[str]:
+    keys: set[str] = set()
+    for value in scope.get(field_name, []) or []:
+        if isinstance(value, dict):
+            key = value.get("key")
+        else:
+            key = value
+        if key:
+            keys.add(str(key))
+    return keys
+
+
 def load_rules(path: Path) -> dict[str, Any]:
     rules = json.loads(path.read_text(encoding="utf-8"))
     if "zotero_scope" not in rules:
@@ -230,15 +242,24 @@ def build_classification_outputs(
     output_dir: Path,
     progress_path: Path,
 ) -> tuple[list[str], dict[str, Any]]:
-    classify_types = set(rules["zotero_scope"].get("classify_item_types") or ["journalArticle"])
+    scope = rules["zotero_scope"]
+    classify_types = set(scope.get("classify_item_types") or ["journalArticle"])
+    excluded_collection_keys = collection_keys_from_scope(scope, "exclude_collections") | collection_keys_from_scope(
+        scope, "exclude_collection_keys"
+    )
     items = fetch_library_rows(db_path)
 
     counts_by_type_all = Counter(row["item_type"] for row in items.values())
     counts_by_type_active = Counter(row["item_type"] for row in items.values() if not row["deleted"])
     rows: list[dict[str, Any]] = []
+    excluded_by_collection: list[dict[str, Any]] = []
 
     for row in items.values():
         if row["item_type"] not in classify_types or row["deleted"]:
+            continue
+        row_collection_keys = set(row.get("collection_keys", []) or [])
+        if row_collection_keys & excluded_collection_keys:
+            excluded_by_collection.append(row)
             continue
         decision, reason, high_hits, medium_hits, guard_hits = classify_item(row, rules)
         rows.append(
@@ -277,6 +298,12 @@ def build_classification_outputs(
     write_csv(output_dir / "reject-candidates.csv", reject_rows)
 
     target = rules["zotero_scope"]["target_trash_collection"]
+    target_key = str(target["key"])
+    reject_rows_already_target = [
+        row for row in reject_rows if [key for key in row["collection_keys"].split("; ") if key] == [target_key]
+    ]
+    reject_rows_to_move = [row for row in reject_rows if row not in reject_rows_already_target]
+
     plan = {
         "status": "generated",
         "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -284,7 +311,9 @@ def build_classification_outputs(
         "target_collection": target,
         "operation_if_confirmed": "set reject candidate journalArticle item collections to only the target collection",
         "reject_count": len(reject_rows),
-        "reject_item_keys": [row["key"] for row in reject_rows],
+        "already_only_target_count": len(reject_rows_already_target),
+        "move_needed_count": len(reject_rows_to_move),
+        "reject_item_keys": [row["key"] for row in reject_rows_to_move],
     }
     write_json(output_dir / "cleanup-plan.json", plan)
 
@@ -299,6 +328,8 @@ def build_classification_outputs(
             "active_main_items_by_type": dict(counts_by_type_active.most_common()),
             "already_zotero_deleted_main_items": sum(1 for row in items.values() if row["deleted"]),
             "active_journal_articles_classified": len(rows),
+            "excluded_by_collection_count": len(excluded_by_collection),
+            "excluded_collection_keys": sorted(excluded_collection_keys),
             "non_journal_active_items_preserved": sum(
                 1 for row in items.values() if not row["deleted"] and row["item_type"] not in classify_types
             ),
@@ -306,6 +337,11 @@ def build_classification_outputs(
         "classification_counts": dict(by_label),
         "reason_counts": dict(by_reason),
         "target_collection": target,
+        "reject_target_status": {
+            "total_reject": len(reject_rows),
+            "already_only_target": len(reject_rows_already_target),
+            "move_needed": len(reject_rows_to_move),
+        },
         "output_files": {
             "classification_all_csv": str(output_dir / "classification-all.csv"),
             "keep_csv": str(output_dir / "keep.csv"),
@@ -327,6 +363,9 @@ def build_classification_outputs(
         f"Keep: {by_label.get('keep', 0)}",
         f"Unsure: {by_label.get('unsure', 0)}",
         f"Move candidates for {target['name']}: {by_label.get('reject', 0)}",
+        f"Excluded by holding collections: {len(excluded_by_collection)}",
+        f"Already only in {target['name']}: {len(reject_rows_already_target)}",
+        f"Need movement to {target['name']}: {len(reject_rows_to_move)}",
         f"Already in Zotero trash and excluded: {summary['classification_scope']['already_zotero_deleted_main_items']}",
         f"Non-journal active items preserved: {summary['classification_scope']['non_journal_active_items_preserved']}",
         "",
@@ -350,9 +389,11 @@ def build_classification_outputs(
             "active_journal_articles": len(rows),
             "counts": dict(by_label),
             "reason_counts": dict(by_reason),
+            "reject_target_status": summary["reject_target_status"],
+            "excluded_by_collection_count": len(excluded_by_collection),
         },
     )
-    return [row["key"] for row in reject_rows], summary
+    return [row["key"] for row in reject_rows_to_move], summary
 
 
 def read_key_file(path: Path) -> set[str]:

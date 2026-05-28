@@ -57,8 +57,20 @@ def _summarize_item(item: Item, detail: str) -> dict:
     multiple=True,
     help="Exclude items carrying this tag (repeatable). Useful for skipping already-processed metadata batches.",
 )
+@click.option(
+    "--exclude-collection-key",
+    "exclude_collection_keys",
+    multiple=True,
+    help="Exclude items in this collection key (repeatable). Useful for skipping archive/trash holding collections.",
+)
 @click.pass_context
-def summarize_all_cmd(ctx: click.Context, offset: int, limit: int | None, exclude_tags: tuple[str, ...]) -> None:
+def summarize_all_cmd(
+    ctx: click.Context,
+    offset: int,
+    limit: int | None,
+    exclude_tags: tuple[str, ...],
+    exclude_collection_keys: tuple[str, ...],
+) -> None:
     """Export item metadata in bulk for AI classification or cleanup workflows.
 
     \b
@@ -67,6 +79,7 @@ def summarize_all_cmd(ctx: click.Context, offset: int, limit: int | None, exclud
       zot summarize-all --limit 100       First 100 items
       zot summarize-all --offset 100      Skip first 100 (pagination)
       zot summarize-all --exclude-tag update/metadata
+      zot summarize-all --exclude-collection-key JJ6JSGT5
       zot --detail full summarize-all     Include full item metadata + writable field map
     """
     cfg = load_config(profile=ctx.obj.get("profile"))
@@ -84,19 +97,28 @@ def summarize_all_cmd(ctx: click.Context, offset: int, limit: int | None, exclud
             limit=limit,
             detail=detail,
             exclude_tags=list(exclude_tags) if exclude_tags else None,
+            exclude_collection_keys=list(exclude_collection_keys) if exclude_collection_keys else None,
         )
         result = reader.search("", limit=1_000_000, offset=0)
+        excluded_collection_key_set = set(exclude_collection_keys)
         filtered_items = [
-            item for item in result.items if not exclude_tags or not any(tag in item.tags for tag in exclude_tags)
+            item
+            for item in result.items
+            if (not exclude_tags or not any(tag in item.tags for tag in exclude_tags))
+            and (
+                not excluded_collection_key_set
+                or not any(collection_key in excluded_collection_key_set for collection_key in item.collections)
+            )
         ]
         total = len(filtered_items)
         paged_items = filtered_items[offset : offset + limit]
+        page_total = len(paged_items)
         items = []
         for i, item in enumerate(paged_items, 1):
-            if total >= 100 and i % max(1, total // 20) == 0:
-                emit_progress("progress", phase="summarize_all", done=i, total=total)
+            if page_total >= 100 and i % max(1, page_total // 20) == 0:
+                emit_progress("progress", phase="summarize_all", done=i, total=page_total, filtered_total=total)
             items.append(_summarize_item(item, detail))
-        emit_progress("complete", phase="summarize_all", done=total, total=total)
+        emit_progress("complete", phase="summarize_all", done=page_total, total=page_total, filtered_total=total)
         json_out = ctx.obj.get("json", False)
         if json_out:
             click.echo(
@@ -108,6 +130,7 @@ def summarize_all_cmd(ctx: click.Context, offset: int, limit: int | None, exclud
                             "detail": detail,
                             "filtered_total": total,
                             "excluded_tags": list(exclude_tags),
+                            "excluded_collection_keys": list(exclude_collection_keys),
                         },
                     ),
                     indent=2,

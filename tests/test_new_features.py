@@ -203,6 +203,19 @@ class TestOffset:
         assert env["meta"]["filtered_total"] >= env["meta"]["count"]
         assert all("transformer" not in item.get("tags", []) for item in env["data"])
 
+    def test_summarize_all_exclude_collection_key_filters_results(self, test_db_path):
+        runner = CliRunner()
+        result = runner.invoke(
+            main,
+            ["--json", "summarize-all", "--exclude-collection-key", "COLTR02", "--limit", "100"],
+            env={"ZOT_DATA_DIR": str(test_db_path.parent), "ZOT_FORMAT": "table"},
+        )
+        assert result.exit_code == 0
+        env = _parse_json_output(result.output)
+        assert env["meta"]["excluded_collection_keys"] == ["COLTR02"]
+        assert env["meta"]["filtered_total"] >= env["meta"]["count"]
+        assert all("COLTR02" not in item.get("collections", []) for item in env["data"])
+
 
 # --- PdfExtractionError tests ---
 
