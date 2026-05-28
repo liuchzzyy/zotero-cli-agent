@@ -208,6 +208,68 @@ uv run zot --json update --from-jsonl log\metadata-cleanup-YYYYMMDD-HHMM\cleaned
 复核无误后删除本次 log\metadata-cleanup-YYYYMMDD-HHMM 目录；如果 log\ 已空，也删除 log\。
 ```
 
+## Clean-up book metadata
+
+### 推荐给代理的直接提示词
+```text
+在 E:\Desktop\CodingDaily\zotero-cli-agents 下执行图书条目 metadata cleanup。图书不要使用期刊论文 DOI / Crossref 清洗路径，也不要直接写 zotero.sqlite。
+
+图书专用 workflow 固定使用：
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-book-metadata-cleanup.ps1
+
+dry-run 会生成本次目录：
+log\book-metadata-cleanup\YYYYMMDD-HHMMSS
+
+重点检查：
+- book-metadata-preview.csv
+- book-metadata-plan.json
+- book-metadata-updates.jsonl
+- book-metadata-dry-run.json
+
+图书专用脚本只处理 book 条目，优先按 ISBN 到外部书目源解析元数据，字段更新限定为：
+- title
+- date
+- abstractNote
+- language
+- publisher
+- shortTitle
+- ISBN
+- numPages
+- series
+- edition
+- place
+
+不要在这个 workflow 中修改 DOI、url、creators、collections，也不要用期刊 publicationTitle/journalAbbreviation 逻辑处理图书。
+默认外部来源顺序是 `open_library,library_of_congress`。如果要用 Google Books：
+- 已有可用 token cache 时，直接传 `-GoogleOAuthTokenCache` 即可。
+- 只有首次授权或 token 过期且无法刷新时，才需要再传 `-GoogleOAuthClientSecret`。
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-book-metadata-cleanup.ps1 -Providers google_books,open_library,library_of_congress -GoogleOAuthTokenCache E:\Desktop\CodingDaily\zotero-cli-agents\.zot\state\google-books-oauth-token.json
+
+图书字段规则：
+- date 清理 Zotero/Crossref 异常重复日期，例如 `2016-00-00 2016` -> `2016`，`2018-02-00 2018-02` -> `2018-02`。
+- publisher 对 Douban HTML / 出品方 / 出版年 / 副标题杂项做图书专用清理，只保留出版社名。
+- language 根据图书标题、摘要、出版社、shortTitle 判断；中文书名应为 `zh`，英文书应为 `en`。
+- abstractNote 只做 HTML、空白、常见 mojibake 和破折号格式修复，不改写事实内容。
+- apply 时默认只给处理过的 book 添加一个 tag：`workflow/book_metadata_update`。
+- 不再额外生成 `source/book_metadata/*` 之类的 provider 来源 tag。
+
+确认 dry-run 后正式写入：
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-book-metadata-cleanup.ps1 -OutputDir log\book-metadata-cleanup\YYYYMMDD-HHMMSS -Apply
+
+如果中断或需要复核，使用同一个目录续跑：
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-book-metadata-cleanup.ps1 -OutputDir log\book-metadata-cleanup\YYYYMMDD-HHMMSS -Apply -Resume
+
+正式写入后必须看 Web API postcheck：
+- book-metadata-web-api-verification.json
+
+要求：
+- missing_count = 0
+- field_mismatch_count = 0
+- tag_mismatch_count = 0
+
+Zotero Web API 写入后，需要 Zotero 桌面端同步，本地 zotero.sqlite 才会完全反映新的字段值。复核正式执行结果优先看 book-metadata-web-api-verification.json，不要立即用本地 SQLite 判断失败。
+```
+
 ## Daily RSS DOI Import
 
 ### 推荐给代理的直接提示词
