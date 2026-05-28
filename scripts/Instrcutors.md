@@ -1,11 +1,3 @@
-## Global Run-File Rule
-
-所有日常任务的运行中间文件、checkpoint、preview、inventory、批次日志和临时诊断文件，都放在仓库根目录的 `log\` 目录下，不要放在根目录散文件、`tmp\` 或临时 `.workspace\...` 运行目录中。
-
-任务成功完成并复核无误后，清理本次 `log\...` 运行目录；如果 `log\` 已经为空，也删除空的 `log\` 目录。任务失败、中断、等待我确认、或需要排查时，不要清理对应 `log\...` 目录，因为其中的 checkpoint / failed / preview 文件用于恢复和审计。
-
-注意：RAG workspace 本身仍然是持久状态，保存在 `.workspace\<workspace-name>\`；这不是运行中间文件，不能作为清理对象。只把每次运行产生的 inventory、临时脚本、批次日志、MinerU 临时资产等放进 `log\`。
-
 ## Zotero Library Rebuild
 
 ### 推荐给代理的直接提示词
@@ -15,6 +7,8 @@
 
 目标：
 先导出当前 Zotero 的真实状态，包括所有条目、集合结构、tag、item-collection 关系和 item-tag 关系；再根据 skill\zotero-library-rebuild\references 中的 collection/tag 设计生成审核计划。不要直接写 zotero.sqlite，不删除条目，不在第一轮移除 legacy tag，不把条目路由到 40_WORKSPACE。
+
+本指令独立包含运行文件规则：所有导出、审核计划、checkpoint、执行结果、临时诊断文件都放在 log\zotero-library-rebuild\<run-name> 下，不要放在仓库根目录散文件、tmp\ 或临时 .workspace\... 运行目录中。-OutputDir smoke 对应 log\zotero-library-rebuild\smoke；-OutputDir current-state-review 对应 log\zotero-library-rebuild\current-state-review。成功并复核无误后清理本次目录；失败、中断、等待确认或需要审计时保留。
 
 先做只读基线检查：
 uv run zot --json collection list
@@ -77,6 +71,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File skill\zotero-library-rebuild
 scripts\zotero-cleanup-rules.json
 
 不要使用旧的 aa.json、aa_* 预览文件或 TODO 中间文件；这些只是早期临时命名，不再是正式接口。
+
+本指令独立包含运行文件规则：classification preview、summary、cleanup plan、CSV 清单、progress、apply 结果和 postcheck 都放在本次 log\zotero-cleanup\YYYYMMDD-HHMMSS 目录；不要放在仓库根目录散文件、tmp\ 或临时 .workspace\... 运行目录中。失败、中断、等待确认或需要审计时保留该目录；确认完成且无需审计后再清理。
 
 先执行 dry-run，只生成预览和计划，不写 Zotero：
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-zotero-cleanup.ps1
@@ -149,6 +145,7 @@ Zotero Web API 写入后，需要 Zotero 桌面端同步，本地 zotero.sqlite 
 ```text
 使用 skill zotero-cli-agents。
 在 E:\Desktop\CodingDaily\zotero-cli-agents 下执行 metadata cleanup。先建立本次运行目录：log\metadata-cleanup-YYYYMMDD-HHMM。
+本指令独立包含运行文件规则：metadata-export、cleaned jsonl、dry-run/apply 输出、batch 文件、续跑文件和诊断记录都只放在本次 log\metadata-cleanup-YYYYMMDD-HHMM 目录；不要放在仓库根目录散文件、tmp\ 或临时 .workspace\... 运行目录中。失败、中断、等待确认或需要排查时保留该目录；复核无误后删除本次目录，如果 log\ 已空也删除 log\。
 
 先读取 Zotero 条目 metadata，使用 `uv run zot --json --detail full summarize-all --exclude-tag workflow/metadata_cleaned --exclude-tag update/metadata --limit 5000 > log\metadata-cleanup-YYYYMMDD-HHMM\metadata-export.json` 导出未处理条目。
 只清洗这些字段的格式问题：title、abstractNote、publicationTitle、journalAbbreviation、language、publisher。
@@ -171,6 +168,8 @@ Zotero Web API 写入后，需要 Zotero 桌面端同步，本地 zotero.sqlite 
 ### 推荐给代理的直接提示词
 ```text
 在 E:\Desktop\CodingDaily\zotero-cli-agents 下执行 Daily RSS DOI Import。
+
+本指令独立包含运行文件规则：route_plan、checkpoint、summary、failed_results、progress 和恢复审计文件都放在 log\rss-daily-doi-import_YYYY-MM-DD；不要放在仓库根目录散文件、tmp\ 或临时 .workspace\... 运行目录中。成功且 failed=0 时默认清理本次 log 目录；失败、中断或需要恢复时保留该目录。
 
 日常运行不要手动拆开清洗/导入步骤，直接调用 wrapper。wrapper 默认把本次 route_plan、checkpoint、summary、failed_results 等运行文件放到 log\rss-daily-doi-import_YYYY-MM-DD，并在 failed=0 成功完成后自动删除本次 log 目录：
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-rss-daily-doi-import.ps1 -Date YYYY-MM-DD -ProgressIntervalSeconds 5
@@ -206,6 +205,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-rss-daily-doi-im
 不要用 title 模糊匹配做去重。
 直接在 E:\Desktop\CodingDaily\zotero-cli-agents 下调用 scripts\remove-newer-doi-duplicates.ps1。
 
+本指令独立包含运行文件规则：dry-run 输出、apply 输出、计划记录和诊断日志都放在本次 log\remove-newer-doi-duplicates-YYYYMMDD-HHMM 目录；不要放在仓库根目录散文件、tmp\ 或临时 .workspace\... 运行目录中。复核删除结果无误后清理本次目录；失败或等待确认时保留。
+
 规则固定为：只按 DOI 精确判断；同 DOI 时保留 date_added 更早的旧条目，删除 date_added 更晚的新条目。
 执行时必须给出实时进度：查询 DOI 重复项、构建 keep/delete 计划、每个重复组的 keep/delete 判断；正式删除时还要报告批次编号、已删除数、失败数、总体百分比。
 
@@ -224,6 +225,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\remove-newer-doi-dup
 
 目标：
 对尚未带有 `workflow/ai_note` 或旧 `update/AInote` 的非书籍条目，读取所有本地 PDF 附件，使用 MinerU 抽取 Markdown 和图片，经 CLIProxyAPI 的 gpt-5.5 生成“AI条目分析 - <title>”note，写回 Zotero Web API，并给父条目打 tag `workflow/ai_note`。
+
+本指令独立包含运行文件规则：checkpoint、preview、results、failures、notes、MinerU 临时资产和 batch logs 都放在 log\ai-note-analysis-batch-YYYYMMDD-HHMMSS；不要放在仓库根目录散文件、tmp\ 或临时 .workspace\... 运行目录中。完整成功并复核无误后清理本次目录；失败、中断、等待审查或需要保留 MinerU 原始材料时保留。
 
 默认命令。wrapper 默认把 checkpoint、preview、results、failures、notes、MinerU 临时资产和 batch logs 放到 log\ai-note-analysis-batch-YYYYMMDD-HHMMSS，并在完整成功后自动清理本次 log 目录：
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-ai-note-batch.ps1 -BatchSize 3
@@ -295,6 +298,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-ai-note-batch.ps
 目标：
 读取本地 Zotero SQLite 中带 workflow/ai_note 的父条目及其 AI note，对比现有 citationKey，生成统一的引用关键词，并通过 Zotero Web API 写回父条目 citationKey；写入成功后给父条目添加 tag workflow/keyword。
 
+本指令独立包含运行文件规则：items、generated、updates、applied、failed_generation、failed_apply、summary、remaining 和 logs 都放在 log\ai-note-keyword-update 或指定的 log\ai-note-keyword-update-YYYYMMDD-HHMM 目录；不要放在仓库根目录散文件、tmp\ 或临时 .workspace\... 运行目录中。失败、中断、等待复核或等待充值时保留本次 log 目录；确认全量完成并复核后才清理。
+
 关键词格式：
 领域/体系 | 机制/关键问题 | 性能优势/价值 | 可选先进表征方法 | 可选制备方法 | 可选理论 | 疑问：最大破绽
 
@@ -361,6 +366,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-ai-note-keyword-
 - 条目范围：本地 Zotero SQLite 中所有“至少有一个本地存在 PDF 附件”的父条目。
 - 索引方式：先维护 .workspace\full-library-pdf-rag\workspace.toml，再调用 uv run zot workspace index full-library-pdf-rag --extractor mineru。
 - 增量规则：workspace 只新增缺失 key；RAG index 只索引尚未进入 rag.idx.sqlite 的 item key；PDF 文本抽取复用 .zot\state\pdf_cache.sqlite。
+
+本指令独立包含运行文件规则，并区分持久状态和本次运行文件：.workspace\full-library-pdf-rag 和 .zot\state\pdf_cache.sqlite 是持久 workspace/index/cache，不是清理对象；inventory、临时脚本、运行日志和临时诊断文件放在 log\rag-full-library-YYYYMMDD-HHMMSS。不要把本次运行文件放在仓库根目录散文件、tmp\ 或额外临时 .workspace\... 目录中。完整成功并复核无误后清理本次 log 目录；失败、中断或需要审查时保留。
 
 默认 dry-run。运行文件默认放到 log\rag-full-library-YYYYMMDD-HHMMSS，dry-run 成功后会自动清理；如果要审查 inventory，加 -KeepLog：
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-rag-full-library.ps1 -DryRun -ScanLimit 100 -KeepLog
