@@ -25,7 +25,7 @@ from zotero_cli_agents.core.writer import ZoteroWriteError, ZoteroWriter
 from zotero_cli_agents.models import Item
 
 BOOK_ITEM_TYPE = "book"
-DEFAULT_TAG = "workflow/metadata_cleaned"
+DEFAULT_TAG = "workflow/metadata"
 GOOGLE_BOOKS_SCOPE = "https://www.googleapis.com/auth/books"
 BOOK_EXTRA_FIELDS = ("language", "publisher", "shortTitle", "ISBN", "numPages", "series", "edition", "place")
 PLAN_FIELDS = ("title", "date", "abstractNote", "language", "publisher", "ISBN", "numPages")

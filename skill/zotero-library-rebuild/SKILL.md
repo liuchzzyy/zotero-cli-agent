@@ -217,7 +217,7 @@ Planning rules:
 - Move confident project/topic items into the approved target buffers.
 - Keep uncertain items under `90_ARCHIVE/00_PRE_REBUILD_<date>/00_UNSURE_MANUAL_REVIEW`.
 - Keep uncertain tag decisions out of automatic tag updates.
-- Convert existing workflow-like tags additively: `update/metadata` -> `workflow/metadata_cleaned`, `update/AInote` -> `workflow/ai_note`, and `/reading` -> `status/reading`.
+- Convert existing workflow-like tags additively: `update/metadata` -> `workflow/metadata`, `update/AInote` -> `workflow/ai_note`, and `/reading` -> `status/reading`.
 - Keep all legacy tags in the first pass; do not remove `update/metadata`, `update/AInote`, or `/reading` until a later confirmed cleanup phase.
 - Treat `workflow/*` as process state from existing tags or explicit rebuild events, not as a title-keyword topic namespace.
 - Treat legacy trash items as `80_TRASH` movement plus separate delete candidates; do not delete them without separate approval.

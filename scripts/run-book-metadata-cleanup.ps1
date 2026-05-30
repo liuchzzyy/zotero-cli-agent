@@ -4,7 +4,7 @@ param(
     [int]$BatchSize = 25,
     [int]$Limit = 0,
     [string]$Profile = "",
-    [string]$AddTag = "workflow/metadata_cleaned",
+    [string]$AddTag = "workflow/metadata",
     [string]$Providers = "open_library,library_of_congress",
     [string]$GoogleApiKey = "",
     [string]$GoogleOAuthClientSecret = "",

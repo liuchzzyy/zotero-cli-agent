@@ -204,13 +204,13 @@ def test_external_resolution_builds_safe_operation_from_google() -> None:
         "errors": [],
     }
 
-    operation = build_operation_from_resolution(item, resolution, add_tag="workflow/metadata_cleaned")
+    operation = build_operation_from_resolution(item, resolution, add_tag="workflow/metadata")
 
     assert operation["provider"] == "google_books"
     assert operation["fields"]["date"] == "2001"
     assert operation["fields"]["publisher"] == "Wiley"
     assert operation["fields"]["numPages"] == "833"
-    assert operation["tags_to_add"] == ["workflow/metadata_cleaned"]
+    assert operation["tags_to_add"] == ["workflow/metadata"]
 
 
 def test_external_resolution_adds_only_single_workflow_tag() -> None:
@@ -230,9 +230,9 @@ def test_external_resolution_adds_only_single_workflow_tag() -> None:
         "errors": [],
     }
 
-    operation = build_operation_from_resolution(item, resolution, add_tag="workflow/metadata_cleaned")
+    operation = build_operation_from_resolution(item, resolution, add_tag="workflow/metadata")
 
-    assert operation["tags_to_add"] == ["workflow/metadata_cleaned"]
+    assert operation["tags_to_add"] == ["workflow/metadata"]
 
 
 def test_external_resolution_drops_bibliographic_fields_when_title_conflicts() -> None:

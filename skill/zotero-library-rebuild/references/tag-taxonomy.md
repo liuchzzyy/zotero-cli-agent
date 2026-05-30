@@ -111,7 +111,7 @@ tech/ai/llm_agent
 Workflow tags record process state and legacy workflow-tag migration. They should come from existing tags or explicit workflow events, not from title keyword inference.
 
 ```text
-workflow/metadata_cleaned
+workflow/metadata
 workflow/ai_note
 workflow/collection_rebuild_reviewed
 workflow/tag_rebuild_reviewed
@@ -124,7 +124,7 @@ workflow/needs_manual_review
 Convert these old tags additively in the tag plan:
 
 ```text
-update/metadata -> workflow/metadata_cleaned
+update/metadata -> workflow/metadata
 update/AInote -> workflow/ai_note
 /reading -> status/reading
 star emoji tags -> keep until manual review; do not convert automatically

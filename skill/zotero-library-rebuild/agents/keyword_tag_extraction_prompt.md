@@ -42,7 +42,7 @@ Rules:
 - Prefer precise phrases over short ambiguous tokens.
 - Allowed tag namespaces are `status/*`, `project/*`, `topic/*`, `tech/*`, and `workflow/*`.
 - Treat `workflow/*` as process state from existing tags or explicit workflow events, not as a title-keyword topic namespace.
-- Preserve deterministic legacy conversions unless there is a clear conflict: `update/metadata` -> `workflow/metadata_cleaned`, `update/AInote` -> `workflow/ai_note`, `/reading` -> `status/reading`.
+- Preserve deterministic legacy conversions unless there is a clear conflict: `update/metadata` -> `workflow/metadata`, `update/AInote` -> `workflow/ai_note`, `/reading` -> `status/reading`.
 - Keep old tags in the first pass; propose normalized additions only.
 - Do not propose `priority/*`, `origin/*`, `system/*`, or `role/*` tags.
 - Do not infer personal topics from generic scientific words.

@@ -158,7 +158,7 @@ TECH_KEYWORDS = {
 
 
 LEGACY_TAG_CONVERSIONS = {
-    "update/metadata": "workflow/metadata_cleaned",
+    "update/metadata": "workflow/metadata",
     "update/AInote": "workflow/ai_note",
     "/reading": "status/reading",
 }
@@ -1093,7 +1093,7 @@ def write_plan_md(
             "",
             "- Confirm the target collection tree is correct.",
             "- Review low-confidence items before any live write.",
-            "- Confirm deterministic legacy tag conversions: `update/metadata` -> `workflow/metadata_cleaned`, `update/AInote` -> `workflow/ai_note`, `/reading` -> `status/reading`.",
+            "- Confirm deterministic legacy tag conversions: `update/metadata` -> `workflow/metadata`, `update/AInote` -> `workflow/ai_note`, `/reading` -> `status/reading`.",
             "- Review proposed tags for overly broad keyword rules.",
             "- Confirm whether legacy `04_TRASH` should only move to `80_TRASH` or also become permanent-delete candidates.",
             "- Do not execute Web API writes until this plan is explicitly approved.",

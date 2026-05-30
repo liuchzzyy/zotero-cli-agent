@@ -48,7 +48,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File skill\zotero-library-rebuild
 - 不确定条目必须留在 90_ARCHIVE/00_PRE_REBUILD_<date>/00_UNSURE_MANUAL_REVIEW，不要强行塞进项目/topic 子集合。
 - legacy 04_TRASH 只映射到 80_TRASH 作为 holding collection；是否永久删除需要另行确认。
 - Zotero built-in trash 条目只导出为 delete candidates，不进入普通移动/tag 更新计划。
-- tag 第一轮只 additive：例如 update/metadata -> workflow/metadata_cleaned，update/AInote -> workflow/ai_note，/reading -> status/reading；不要删除旧 tag。
+- tag 第一轮只 additive：例如 update/metadata -> workflow/metadata，update/AInote -> workflow/ai_note，/reading -> status/reading；不要删除旧 tag。
 - 如果当前库显示框架需要调整，先更新 skill\zotero-library-rebuild\references 和 planner 规则，再重新生成 plan。
 
 正式写入前必须让我确认 plan.md。确认前不要执行 apply。
@@ -171,7 +171,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File E:\Desktop\CodingDaily\run-f
 该 wrapper 会默认排除 `80_TRASH` (`JJ6JSGT5`) 和 `90_ARCHIVE` (`6HREN2FT`)，并在 apply 时提供 `-ResumeMetadataApply` 续跑和实时 `[batch x/y] item a/b | overall c/d` 进度。
 
 如果在本仓库内单独执行 metadata cleanup，先读取 Zotero 条目 metadata。默认导出命令必须同时跳过已清理 tag 和不需要清理的 holding collections：
-uv run zot --json --detail full summarize-all --exclude-tag workflow/metadata_cleaned --exclude-tag update/metadata --exclude-collection-key JJ6JSGT5 --exclude-collection-key 6HREN2FT --limit 5000 > log\metadata-cleanup-YYYYMMDD-HHMM\metadata-export.json
+uv run zot --json --detail full summarize-all --exclude-tag workflow/metadata --exclude-tag update/metadata --exclude-collection-key JJ6JSGT5 --exclude-collection-key 6HREN2FT --limit 5000 > log\metadata-cleanup-YYYYMMDD-HHMM\metadata-export.json
 
 默认排除集合：
 - `80_TRASH` (`JJ6JSGT5`)：无关/丢弃 holding collection，不做 metadata cleanup。
@@ -179,7 +179,7 @@ uv run zot --json --detail full summarize-all --exclude-tag workflow/metadata_cl
 - `40_WORKSPACE` (`AFTJQCQA`) 默认不排除；只有明确不需要清理 workspace 条目时，才额外追加 `--exclude-collection-key AFTJQCQA`，或在总控 wrapper 中使用 `-ExcludeWorkspaceMetadata`。
 
 导出后检查 metadata-export.json 的 meta：
-- `excluded_tags` 应包含 `workflow/metadata_cleaned` 和 `update/metadata`。
+- `excluded_tags` 应包含 `workflow/metadata` 和 `update/metadata`。
 - `excluded_collection_keys` 应默认包含 `JJ6JSGT5` 和 `6HREN2FT`。
 - `count` 是本次需要交给代理判断的条目数；不要对已排除集合生成 cleaned-metadata.jsonl。
 
@@ -197,7 +197,7 @@ uv run zot --json --detail full summarize-all --exclude-tag workflow/metadata_cl
 - log\metadata-cleanup-YYYYMMDD-HHMM\metadata-cleanup-apply-batch-001.err.log
 
 正式写入命令：
-uv run zot --json update --from-jsonl log\metadata-cleanup-YYYYMMDD-HHMM\cleaned-metadata-batch-001.jsonl --add-tag workflow/metadata_cleaned > log\metadata-cleanup-YYYYMMDD-HHMM\metadata-cleanup-apply-batch-001.json 2> log\metadata-cleanup-YYYYMMDD-HHMM\metadata-cleanup-apply-batch-001.err.log
+uv run zot --json update --from-jsonl log\metadata-cleanup-YYYYMMDD-HHMM\cleaned-metadata-batch-001.jsonl --add-tag workflow/metadata > log\metadata-cleanup-YYYYMMDD-HHMM\metadata-cleanup-apply-batch-001.json 2> log\metadata-cleanup-YYYYMMDD-HHMM\metadata-cleanup-apply-batch-001.err.log
 
 不要静默等待长批次。`zot update --from-jsonl` 会在 stderr 输出结构化 progress；代理必须实时读取 stderr 或使用总控 wrapper，把进度转成类似：
 `[batch 3/13] item 41/50 | overall 141/630 | succeeded=... failed=...`
@@ -261,7 +261,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-book-metadata-cl
 - publisher 对 Douban HTML / 出品方 / 出版年 / 副标题杂项做图书专用清理，只保留出版社名。
 - language 根据图书标题、摘要、出版社、shortTitle 判断；中文书名应为 `zh`，英文书应为 `en`。
 - abstractNote 只做 HTML、空白、常见 mojibake 和破折号格式修复，不改写事实内容。
-- apply 时默认只给处理过的 book 添加一个 tag：`workflow/metadata_cleaned`。
+- apply 时默认只给处理过的 book 添加一个 tag：`workflow/metadata`。
 - 不再额外生成 `source/book_metadata/*` 之类的 provider 来源 tag。
 
 确认 dry-run 后正式写入：
