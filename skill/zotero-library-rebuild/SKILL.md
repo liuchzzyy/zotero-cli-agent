@@ -50,6 +50,8 @@ Use Zotero Web API-backed writes only through `zot`, `pyzotero`, or a reviewed r
 
 - Put all generated intermediate files under the repository root `log/` directory.
 - Use a run-specific subdirectory under `log/zotero-library-rebuild/`.
+- The bundled PowerShell wrappers default to opening a new PowerShell window. Keep the new window visible and use its output plus `run.log` / `progress.jsonl` as the primary progress evidence.
+- Use `-RunInCurrentWindow` only for debugging, CI, or when a parent wrapper has already opened the visible window.
 - On a successful confirmed run, delete the corresponding intermediate run directory.
 - On failure, preserve the run directory for debugging.
 - For a dry-run that needs user review, keep the output explicitly with `-KeepOutput`; treat it as temporary review evidence and remove it after approval or after the confirmed run succeeds.
@@ -63,6 +65,8 @@ Use the planner first. It reads local SQLite in read-only mode and writes review
 powershell -ExecutionPolicy Bypass -File skill\zotero-library-rebuild\scripts\run-zotero-library-rebuild.ps1 -OutputDir smoke -Limit 50 -TitleSampleSize 50 -KeepOutput
 ```
 
+The command above opens a new PowerShell window by default. The actual planner process runs in that new window; append `-RunInCurrentWindow` only for debugging or when called by another visible wrapper.
+
 Remove `-Limit` for the full dry-run after the smoke output looks coherent. The wrapper calls:
 
 ```text
@@ -74,6 +78,8 @@ The wrapper resolves relative output names under `log/zotero-library-rebuild/` a
 Each retained review run must include these root-level files:
 
 ```text
+run.log     human-readable wrapper log
+progress.jsonl structured wrapper progress events
 plan.md     human review entrypoint with approval checklist and links to detailed artifacts
 summary.md  compact count summary for quick inspection
 ```
@@ -92,6 +98,8 @@ powershell -ExecutionPolicy Bypass -File skill\zotero-library-rebuild\scripts\ap
 powershell -ExecutionPolicy Bypass -File skill\zotero-library-rebuild\scripts\apply-zotero-library-rebuild.ps1 -ReviewDir current-state-review -Phase items -BatchSize 25 -Apply
 powershell -ExecutionPolicy Bypass -File skill\zotero-library-rebuild\scripts\apply-zotero-library-rebuild.ps1 -ReviewDir current-state-review -Phase verify -BatchSize 25 -Apply
 ```
+
+Each apply command opens a new PowerShell window by default and writes wrapper logs under `50_execution_results`. Use `-RunInCurrentWindow` only for debugging or when called from another visible wrapper.
 
 Run phases separately unless the user explicitly wants `-Phase all`. Re-running `items` and `verify` is idempotent: already-applied rows should report `already_done`.
 

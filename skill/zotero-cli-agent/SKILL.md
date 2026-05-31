@@ -11,6 +11,17 @@ description: "Use when user mentions papers, references, citations, Zotero, lite
 
 For exhaustive flags / types / safety tier of any command, run `zot schema <cmd>` (e.g. `zot schema add`) — that's the canonical machine-readable surface.
 
+## Workflow Wrapper Rules
+
+For repository workflows, prefer the maintained PowerShell wrappers and the canonical runbook in `tools/Instructions.md` instead of hand-splicing long commands.
+
+- Run wrappers from `E:\Desktop\CodingDaily\zotero-cli-agent`.
+- `tools\*.ps1` wrappers default to opening a new PowerShell window; keep that window visible.
+- Primary progress evidence is the wrapper output plus `run.log`, `progress.jsonl`, and workflow summary files in the run directory.
+- Use `-RunInCurrentWindow` only for debugging, CI, or when a parent wrapper already opened the visible window.
+- Do not treat optional process/file checks as the primary progress source.
+- Keep generated workflow artifacts under `log\...`; do not scatter temporary files in the repo root, `tools\`, `tmp\`, or ad-hoc `.workspace\...` directories.
+
 ## Routing Rules
 
 | User Intent | Command | Why |

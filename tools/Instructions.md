@@ -2,6 +2,8 @@
 
 本文件中的 Zotero workflow 默认通过对应 `tools\*.ps1` wrapper 重新打开一个新的 PowerShell 窗口运行。wrapper 会在新窗口中输出阶段进度，写入运行目录中的 `run.log` 和 `progress.jsonl`；不要再依赖额外的 watch 命令作为主进度来源。
 
+以下规则也已分别内嵌到每个“推荐给代理的直接提示词”中，避免单独复制某一节时遗漏执行约束。
+
 推荐操作顺序：
 1. 在仓库根目录运行对应 wrapper，让它打开新的 PowerShell 窗口。
 2. 保留新窗口，进度以新窗口中的 wrapper 输出和 `run.log` / `progress.jsonl` 为主。
@@ -14,6 +16,12 @@
 
 ### 推荐给代理的直接提示词
 ```text
+执行与日志规则：
+- 默认通过对应 wrapper 重新打开新的 PowerShell 窗口运行；除非调试或 CI，不要追加 `-RunInCurrentWindow`。
+- 保留新窗口，进度以新窗口输出和运行目录中的 `run.log`、`progress.jsonl` 为主；不要把额外 watch 命令当作主进度来源。
+- 汇报进度必须基于 wrapper 输出、`run.log`、`progress.jsonl` 或实际产物变化，不要只说“已开始”。
+- 所有 stdout/stderr、中间文件和诊断日志都必须放在各自 `log\...` 运行目录；不要散落到仓库根目录、`tools\`、`src\zotero_cli_workflows\`、`tmp\` 或临时 `.workspace\...` 中。
+
 使用 skill zotero-library-rebuild。
 在 E:\Desktop\CodingDaily\zotero-cli-agent 下重构 Zotero library 的 collection tree 和 tag system。
 
@@ -77,6 +85,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File skill\zotero-library-rebuild
 
 ### 推荐给代理的直接提示词
 ```text
+执行与日志规则：
+- 默认通过对应 wrapper 重新打开新的 PowerShell 窗口运行；除非调试或 CI，不要追加 `-RunInCurrentWindow`。
+- 保留新窗口，进度以新窗口输出和运行目录中的 `run.log`、`progress.jsonl` 为主；不要把额外 watch 命令当作主进度来源。
+- 汇报进度必须基于 wrapper 输出、`run.log`、`progress.jsonl` 或实际产物变化，不要只说“已开始”。
+- 所有 stdout/stderr、中间文件和诊断日志都必须放在各自 `log\...` 运行目录；不要散落到仓库根目录、`tools\`、`src\zotero_cli_workflows\`、`tmp\` 或临时 `.workspace\...` 中。
+
 在 E:\Desktop\CodingDaily\zotero-cli-agent 下执行 Zotero library relevance cleanup，用于把与当前研究主题无关的期刊条目移动到 80_TRASH 集合。
 
 规则文件固定为：
@@ -164,6 +178,12 @@ Zotero Web API 写入后，需要 Zotero 桌面端同步，本地 zotero.sqlite 
 
 ### 推荐给代理的直接提示词
 ```text
+执行与日志规则：
+- 默认通过对应 wrapper 重新打开新的 PowerShell 窗口运行；除非调试或 CI，不要追加 `-RunInCurrentWindow`。
+- 保留新窗口，进度以新窗口输出和运行目录中的 `run.log`、`progress.jsonl` 为主；不要把额外 watch 命令当作主进度来源。
+- 汇报进度必须基于 wrapper 输出、`run.log`、`progress.jsonl` 或实际产物变化，不要只说“已开始”。
+- 所有 stdout/stderr、中间文件和诊断日志都必须放在各自 `log\...` 运行目录；不要散落到仓库根目录、`tools\`、`src\zotero_cli_workflows\`、`tmp\` 或临时 `.workspace\...` 中。
+
 使用 skill zotero-cli-agent。
 在 E:\Desktop\CodingDaily\zotero-cli-agent 下执行 metadata cleanup。先建立本次运行目录：log\metadata-cleanup-YYYYMMDD-HHMM。
 本指令独立包含运行文件规则：metadata-export、cleaned jsonl、dry-run/apply 输出、batch 文件、续跑文件和诊断记录都只放在本次 log\metadata-cleanup-YYYYMMDD-HHMM 目录；不要放在仓库根目录散文件、tmp\ 或临时 .workspace\... 运行目录中。失败、中断、等待确认或需要排查时保留该目录；复核无误后删除本次目录，如果 log\ 已空也删除 log\。
@@ -225,6 +245,12 @@ uv run zot --json update --from-jsonl log\metadata-cleanup-YYYYMMDD-HHMM\cleaned
 
 ### 推荐给代理的直接提示词
 ```text
+执行与日志规则：
+- 默认通过对应 wrapper 重新打开新的 PowerShell 窗口运行；除非调试或 CI，不要追加 `-RunInCurrentWindow`。
+- 保留新窗口，进度以新窗口输出和运行目录中的 `run.log`、`progress.jsonl` 为主；不要把额外 watch 命令当作主进度来源。
+- 汇报进度必须基于 wrapper 输出、`run.log`、`progress.jsonl` 或实际产物变化，不要只说“已开始”。
+- 所有 stdout/stderr、中间文件和诊断日志都必须放在各自 `log\...` 运行目录；不要散落到仓库根目录、`tools\`、`src\zotero_cli_workflows\`、`tmp\` 或临时 `.workspace\...` 中。
+
 在 E:\Desktop\CodingDaily\zotero-cli-agent 下执行图书条目 metadata cleanup。图书不要使用期刊论文 DOI / Crossref 清洗路径，也不要直接写 zotero.sqlite。
 
 图书专用 workflow 固定使用：
@@ -288,6 +314,12 @@ Zotero Web API 写入后，需要 Zotero 桌面端同步，本地 zotero.sqlite 
 
 ### 推荐给代理的直接提示词
 ```text
+执行与日志规则：
+- 默认通过对应 wrapper 重新打开新的 PowerShell 窗口运行；除非调试或 CI，不要追加 `-RunInCurrentWindow`。
+- 保留新窗口，进度以新窗口输出和运行目录中的 `run.log`、`progress.jsonl` 为主；不要把额外 watch 命令当作主进度来源。
+- 汇报进度必须基于 wrapper 输出、`run.log`、`progress.jsonl` 或实际产物变化，不要只说“已开始”。
+- 所有 stdout/stderr、中间文件和诊断日志都必须放在各自 `log\...` 运行目录；不要散落到仓库根目录、`tools\`、`src\zotero_cli_workflows\`、`tmp\` 或临时 `.workspace\...` 中。
+
 在 E:\Desktop\CodingDaily\zotero-cli-agent 下执行 Daily RSS DOI Import。
 
 本指令独立包含运行文件规则：route_plan、checkpoint、summary、failed_results、progress 和恢复审计文件都放在 log\rss-daily-doi-import_YYYY-MM-DD；不要放在仓库根目录散文件、tmp\ 或临时 .workspace\... 运行目录中。成功且 failed=0 时默认清理本次 log 目录；失败、中断或需要恢复时保留该目录。
@@ -326,6 +358,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-daily-rss-doi-impo
 
 ### 推荐给代理的直接提示词
 ```text
+执行与日志规则：
+- 默认通过对应 wrapper 重新打开新的 PowerShell 窗口运行；除非调试或 CI，不要追加 `-RunInCurrentWindow`。
+- 保留新窗口，进度以新窗口输出和运行目录中的 `run.log`、`progress.jsonl` 为主；不要把额外 watch 命令当作主进度来源。
+- 汇报进度必须基于 wrapper 输出、`run.log`、`progress.jsonl` 或实际产物变化，不要只说“已开始”。
+- 所有 stdout/stderr、中间文件和诊断日志都必须放在各自 `log\...` 运行目录；不要散落到仓库根目录、`tools\`、`src\zotero_cli_workflows\`、`tmp\` 或临时 `.workspace\...` 中。
+
 不要用 title 模糊匹配做去重。
 直接在 E:\Desktop\CodingDaily\zotero-cli-agent 下调用 tools\remove-newer-doi-duplicates.ps1。
 
@@ -350,6 +388,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File E:\Desktop\CodingDaily\run-f
 
 ### 推荐给代理的直接提示词
 ```text
+执行与日志规则：
+- 默认通过对应 wrapper 重新打开新的 PowerShell 窗口运行；除非调试或 CI，不要追加 `-RunInCurrentWindow`。
+- 保留新窗口，进度以新窗口输出和运行目录中的 `run.log`、`progress.jsonl` 为主；不要把额外 watch 命令当作主进度来源。
+- 汇报进度必须基于 wrapper 输出、`run.log`、`progress.jsonl` 或实际产物变化，不要只说“已开始”。
+- 所有 stdout/stderr、中间文件和诊断日志都必须放在各自 `log\...` 运行目录；不要散落到仓库根目录、`tools\`、`src\zotero_cli_workflows\`、`tmp\` 或临时 `.workspace\...` 中。
+
 使用 E:\Desktop\CodingDaily\zotero-cli-agent\tools\run-ai-note-generation.ps1 批量生成 Zotero AI note，不要手动拼长命令逐条跑。
 
 目标：
@@ -423,6 +467,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-ai-note-generation
 
 ### 推荐给代理的直接提示词
 ```text
+执行与日志规则：
+- 默认通过对应 wrapper 重新打开新的 PowerShell 窗口运行；除非调试或 CI，不要追加 `-RunInCurrentWindow`。
+- 保留新窗口，进度以新窗口输出和运行目录中的 `run.log`、`progress.jsonl` 为主；不要把额外 watch 命令当作主进度来源。
+- 汇报进度必须基于 wrapper 输出、`run.log`、`progress.jsonl` 或实际产物变化，不要只说“已开始”。
+- 所有 stdout/stderr、中间文件和诊断日志都必须放在各自 `log\...` 运行目录；不要散落到仓库根目录、`tools\`、`src\zotero_cli_workflows\`、`tmp\` 或临时 `.workspace\...` 中。
+
 使用 E:\Desktop\CodingDaily\zotero-cli-agent\tools\run-citation-key-update-from-ai-notes.ps1 更新已经带有 workflow/ai_note 的父条目 citationKey，不要手动逐条改 Zotero，不要直接写 zotero.sqlite。
 
 目标：
@@ -490,6 +540,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-citation-key-updat
 
 ### 推荐给代理的直接提示词
 ```text
+执行与日志规则：
+- 默认通过对应 wrapper 重新打开新的 PowerShell 窗口运行；除非调试或 CI，不要追加 `-RunInCurrentWindow`。
+- 保留新窗口，进度以新窗口输出和运行目录中的 `run.log`、`progress.jsonl` 为主；不要把额外 watch 命令当作主进度来源。
+- 汇报进度必须基于 wrapper 输出、`run.log`、`progress.jsonl` 或实际产物变化，不要只说“已开始”。
+- 所有 stdout/stderr、中间文件和诊断日志都必须放在各自 `log\...` 运行目录；不要散落到仓库根目录、`tools\`、`src\zotero_cli_workflows\`、`tmp\` 或临时 `.workspace\...` 中。
+
 使用 E:\Desktop\CodingDaily\zotero-cli-agent\tools\run-rag-full-library.ps1 为 Zotero 全库含 PDF 的父条目建立/更新 RAG 索引，不要手动逐条添加 workspace item。
 
 默认目标：

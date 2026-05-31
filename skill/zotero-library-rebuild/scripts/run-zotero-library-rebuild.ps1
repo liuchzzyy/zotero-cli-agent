@@ -7,12 +7,21 @@ param(
     [int]$TitleSampleSize = 200,
     [string]$ArchiveDate = "",
     [switch]$KeepOutput,
-    [switch]$HideProgressWatchCommands
+    [switch]$HideProgressWatchCommands,
+    [switch]$RunInCurrentWindow
 )
 
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..\..")
+$commonScript = Join-Path $repoRoot "tools\zotero-workflow-common.ps1"
+. $commonScript
+
+if (-not $RunInCurrentWindow) {
+    Start-WorkflowInNewWindow -ScriptPath $PSCommandPath -WorkingDirectory $repoRoot -BoundParameters $PSBoundParameters -DisplayName "Zotero Library Rebuild Planner"
+    return
+}
+
 $logRoot = [System.IO.Path]::GetFullPath((Join-Path $repoRoot "log"))
 $runRoot = Join-Path $logRoot "zotero-library-rebuild"
 $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
@@ -41,12 +50,14 @@ if (-not $isUnderLog) {
 
 function Write-ProgressWatchCommands([string]$OutputDirFull) {
     Write-Host ""
-    Write-Host "Progress watch from another PowerShell:" -ForegroundColor DarkGray
-    Write-Host "  Keep this PowerShell visible; use these checks for live progress instead of waiting silently." -ForegroundColor DarkGray
+    Write-Host "Optional progress checks from another PowerShell:" -ForegroundColor DarkGray
+    Write-Host "  Primary progress is this window plus run.log/progress.jsonl; use these checks only for diagnosis." -ForegroundColor DarkGray
     Write-Host '  Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match ''run-zotero-library-rebuild|plan_rebuild'' } | Select-Object ProcessId,Name,CommandLine'
     Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-ChildItem -LiteralPath '{0}' -Recurse -File | Sort-Object LastWriteTime -Descending | Select-Object -First 20 FullName,Length,LastWriteTime }}" -f $OutputDirFull)
     Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-Content -Raw -LiteralPath '{0}' }}" -f (Join-Path $OutputDirFull "summary.md"))
 }
+
+Start-WorkflowRunLog -RunDirectory $outputDirFull -WorkflowName "zotero-library-rebuild-plan" -RepoRoot $repoRoot
 
 Push-Location $repoRoot
 try {
@@ -75,7 +86,6 @@ try {
 
     Write-Host "Generating Zotero rebuild dry-run artifacts..."
     Write-Host "OutputDir: $outputDirFull"
-    Write-Host "Run mode: direct PowerShell with visible output and progress checks"
     if (-not $HideProgressWatchCommands) {
         Write-ProgressWatchCommands -OutputDirFull $outputDirFull
     }
@@ -84,11 +94,13 @@ try {
         throw "Dry-run planner failed with exit code $LASTEXITCODE"
     }
     if ($KeepOutput) {
+        Complete-WorkflowRunLog -Status "completed"
         Write-Host "Dry-run complete. Review plan and summary:"
         Write-Host (Join-Path $outputDirFull "plan.md")
         Write-Host (Join-Path $outputDirFull "summary.md")
     }
     else {
+        Complete-WorkflowRunLog -Status "completed"
         if (Test-Path -LiteralPath $outputDirFull) {
             $safeDelete = $outputDirFull.StartsWith($logRoot + $separator, [System.StringComparison]::OrdinalIgnoreCase)
             if (-not $safeDelete) {
