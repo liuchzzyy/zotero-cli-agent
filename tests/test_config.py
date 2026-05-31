@@ -1,7 +1,7 @@
 import sys
 from pathlib import Path
 
-from zotero_cli_agents.config import (
+from zotero_cli_agent.config import (
     AppConfig,
     config_file_path,
     detect_zotero_data_dir,
@@ -63,7 +63,7 @@ def test_config_has_write_credentials():
 
 
 def test_get_data_dir_env_override(tmp_path, monkeypatch):
-    from zotero_cli_agents.config import get_data_dir
+    from zotero_cli_agent.config import get_data_dir
 
     monkeypatch.setenv("ZOT_DATA_DIR", str(tmp_path))
     cfg = AppConfig(data_dir="/some/other/path")
@@ -72,12 +72,24 @@ def test_get_data_dir_env_override(tmp_path, monkeypatch):
 
 
 def test_get_data_dir_falls_back_to_config(monkeypatch, tmp_path):
-    from zotero_cli_agents.config import get_data_dir
+    from zotero_cli_agent.config import get_data_dir
 
     monkeypatch.delenv("ZOT_DATA_DIR", raising=False)
     cfg = AppConfig(data_dir=str(tmp_path))
     result = get_data_dir(cfg)
     assert result == tmp_path
+
+
+def test_config_file_path_ignores_env_override(monkeypatch, tmp_path):
+    monkeypatch.setenv("ZOT_CONFIG_PATH", str(tmp_path / "config.toml"))
+    root = project_root()
+    assert config_file_path() == root / ".zot" / "config.toml"
+
+
+def test_project_root_defaults_to_source_repo(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    assert project_root() != tmp_path
+    assert config_file_path() == project_root() / ".zot" / "config.toml"
 
 
 # --- Multi-profile tests ---
@@ -180,7 +192,7 @@ url = "https://api.jina.ai/v1/embeddings"
 api_key = "test-key"
 model = "jina-embeddings-v3"
 """)
-    from zotero_cli_agents.config import load_embedding_config
+    from zotero_cli_agent.config import load_embedding_config
 
     cfg = load_embedding_config(path=config_file)
     assert cfg.url == "https://api.jina.ai/v1/embeddings"
@@ -191,7 +203,7 @@ model = "jina-embeddings-v3"
 def test_load_embedding_config_defaults(tmp_path):
     config_file = tmp_path / "config.toml"
     config_file.write_text("[zotero]\ndata_dir = '/tmp'\n")
-    from zotero_cli_agents.config import load_embedding_config
+    from zotero_cli_agent.config import load_embedding_config
 
     cfg = load_embedding_config(path=config_file)
     assert cfg.url == "https://api.jina.ai/v1/embeddings"
@@ -205,7 +217,7 @@ def test_load_embedding_config_env_override(tmp_path, monkeypatch):
     monkeypatch.setenv("ZOT_EMBEDDING_URL", "http://localhost:11434/v1/embeddings")
     monkeypatch.setenv("ZOT_EMBEDDING_KEY", "local-key")
     monkeypatch.setenv("ZOT_EMBEDDING_MODEL", "custom-model")
-    from zotero_cli_agents.config import load_embedding_config
+    from zotero_cli_agent.config import load_embedding_config
 
     cfg = load_embedding_config(path=config_file, apply_env_overrides=True)
     assert cfg.url == "http://localhost:11434/v1/embeddings"
@@ -214,7 +226,7 @@ def test_load_embedding_config_env_override(tmp_path, monkeypatch):
 
 
 def test_embedding_config_is_configured():
-    from zotero_cli_agents.config import EmbeddingConfig
+    from zotero_cli_agent.config import EmbeddingConfig
 
     assert EmbeddingConfig(url="http://x", api_key="k", model="m").is_configured is True
     assert EmbeddingConfig(url="http://x", api_key="", model="m").is_configured is False

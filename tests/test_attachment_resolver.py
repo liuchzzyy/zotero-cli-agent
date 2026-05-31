@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
-from zotero_cli_agents.core.attachment_resolver import AttachmentResolver
+from zotero_cli_agent.core.attachment_resolver import AttachmentResolver
 
 
 class TestAttachmentResolver:
@@ -59,7 +59,7 @@ class TestAttachmentResolver:
         resolver = AttachmentResolver(db_path)
         with (
             patch("os.name", "nt"),
-            patch("zotero_cli_agents.core.attachment_resolver.is_wsl_environment", return_value=False),
+            patch("zotero_cli_agent.core.attachment_resolver.is_wsl_environment", return_value=False),
         ):
             result = resolver.resolve("ABC123", "file:///C:/Users/test/file.pdf")
         # On Windows, Path normalizes / to \; on Linux (where os.name is patched but Path
@@ -87,7 +87,7 @@ class TestAttachmentResolver:
         prefs.write_text(f'user_pref("extensions.zotero.baseAttachmentPath", "{attach_base}");')
 
         resolver = AttachmentResolver(db_path)
-        with patch("zotero_cli_agents.core.attachment_resolver.is_wsl_environment", return_value=False):
+        with patch("zotero_cli_agent.core.attachment_resolver.is_wsl_environment", return_value=False):
             result = resolver.resolve("ABC123", "attachments:papers/file.pdf")
         assert result == attach_base / "papers" / "file.pdf"
 
@@ -98,8 +98,27 @@ class TestAttachmentResolver:
         db_path.touch()
 
         resolver = AttachmentResolver(db_path)
-        with patch("glob.glob", return_value=[]):
+        result = resolver.resolve("ABC123", "attachments:papers/file.pdf")
+        assert result == tmp_path / "papers" / "file.pdf"
+
+    def test_resolve_attachments_does_not_scan_user_profiles(self, tmp_path):
+        storage = tmp_path / "storage"
+        storage.mkdir()
+        db_path = tmp_path / "zotero.sqlite"
+        db_path.touch()
+        home = tmp_path / "home"
+        user_profile = home / ".zotero" / "zotero" / "profile.default"
+        user_profile.mkdir(parents=True)
+        user_attach_base = tmp_path / "user_attachments"
+        user_attach_base.mkdir()
+        (user_profile / "prefs.js").write_text(
+            f'user_pref("extensions.zotero.baseAttachmentPath", "{user_attach_base}");'
+        )
+
+        resolver = AttachmentResolver(db_path)
+        with patch("zotero_cli_agent.core.attachment_resolver.Path.home", return_value=home):
             result = resolver.resolve("ABC123", "attachments:papers/file.pdf")
+
         assert result == tmp_path / "papers" / "file.pdf"
 
     def test_resolve_empty_path(self, tmp_path):

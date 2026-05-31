@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
 
-from zotero_cli_agents.core.metadata_resolver import (
+from zotero_cli_agent.config import AppConfig
+from zotero_cli_agent.core.metadata_resolver import (
     MetadataResolveError,
     _strip_jats,
     map_crossref_to_zotero,
@@ -97,7 +97,7 @@ class TestMapCrossrefToZotero:
 
 
 class TestResolveDoi:
-    @patch("zotero_cli_agents.core.metadata_resolver.httpx.get")
+    @patch("zotero_cli_agent.core.metadata_resolver.httpx.get")
     def test_success(self, mock_get: MagicMock) -> None:
         mock_get.return_value = _mock_response(
             200,
@@ -122,24 +122,24 @@ class TestResolveDoi:
         headers = mock_get.call_args.kwargs["headers"]
         assert "zotero-cli-agent" in headers["User-Agent"]
 
-    @patch("zotero_cli_agents.core.metadata_resolver.httpx.get")
+    @patch("zotero_cli_agent.core.metadata_resolver.httpx.get")
     def test_404_returns_none(self, mock_get: MagicMock) -> None:
         mock_get.return_value = _mock_response(404)
         assert resolve_doi("10.1/missing") is None
 
-    @patch("zotero_cli_agents.core.metadata_resolver.httpx.get")
+    @patch("zotero_cli_agent.core.metadata_resolver.httpx.get")
     def test_5xx_raises(self, mock_get: MagicMock) -> None:
         mock_get.return_value = _mock_response(503)
         with pytest.raises(MetadataResolveError, match="503"):
             resolve_doi("10.1/x")
 
-    @patch("zotero_cli_agents.core.metadata_resolver.httpx.get")
+    @patch("zotero_cli_agent.core.metadata_resolver.httpx.get")
     def test_network_error_raises(self, mock_get: MagicMock) -> None:
         mock_get.side_effect = httpx.ConnectError("DNS failure")
         with pytest.raises(MetadataResolveError, match="Crossref request failed"):
             resolve_doi("10.1/x")
 
-    @patch("zotero_cli_agents.core.metadata_resolver.httpx.get")
+    @patch("zotero_cli_agent.core.metadata_resolver.httpx.get")
     def test_malformed_json_raises(self, mock_get: MagicMock) -> None:
         resp = MagicMock(spec=httpx.Response)
         resp.status_code = 200
@@ -148,7 +148,7 @@ class TestResolveDoi:
         with pytest.raises(MetadataResolveError, match="invalid JSON"):
             resolve_doi("10.1/x")
 
-    @patch("zotero_cli_agents.core.metadata_resolver.httpx.get")
+    @patch("zotero_cli_agent.core.metadata_resolver.httpx.get")
     def test_response_missing_message_raises(self, mock_get: MagicMock) -> None:
         mock_get.return_value = _mock_response(200, {"status": "ok"})
         with pytest.raises(MetadataResolveError, match="message"):
@@ -158,13 +158,14 @@ class TestResolveDoi:
         with pytest.raises(MetadataResolveError, match="Empty DOI"):
             resolve_doi("  ")
 
-    @patch("zotero_cli_agents.core.metadata_resolver.httpx.get")
-    def test_mailto_added_to_user_agent(self, mock_get: MagicMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        config_path = tmp_path / "config.toml"
-        config_path.write_text('[integrations]\ncrossref_mailto = "test@example.com"\n', encoding="utf-8")
-        monkeypatch.setenv("ZOT_CONFIG_PATH", str(config_path))
+    @patch("zotero_cli_agent.core.metadata_resolver.httpx.get")
+    def test_mailto_added_to_user_agent(self, mock_get: MagicMock) -> None:
         mock_get.return_value = _mock_response(200, {"message": {"title": ["x"]}})
-        resolve_doi("10.1/x")
+        with patch(
+            "zotero_cli_agent.core.metadata_resolver.load_config",
+            return_value=AppConfig(crossref_mailto="test@example.com"),
+        ):
+            resolve_doi("10.1/x")
         ua = mock_get.call_args.kwargs["headers"]["User-Agent"]
         assert "mailto:test@example.com" in ua
 

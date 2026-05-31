@@ -9,8 +9,8 @@ from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
-from zotero_cli_agents.cli import main
-from zotero_cli_agents.core.pdf_cache import UnifiedPdfCache
+from zotero_cli_agent.cli import main
+from zotero_cli_agent.core.pdf_cache import UnifiedPdfCache
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -28,12 +28,12 @@ class TestPdfCmdWithExtractors:
         mock_extractor.extract_text.return_value = "pymupdf extracted text"
         mock_extractor.name.return_value = "pymupdf"
 
-        with patch("zotero_cli_agents.core.pdf_cache.PdfCache") as mock_cache_cls:
+        with patch("zotero_cli_agent.core.pdf_cache.PdfCache") as mock_cache_cls:
             mock_cache = MagicMock()
             mock_cache.get.return_value = None
             mock_cache_cls.return_value = mock_cache
 
-            with patch("zotero_cli_agents.commands.pdf.get_extractor", return_value=mock_extractor):
+            with patch("zotero_cli_agent.commands.pdf.get_extractor", return_value=mock_extractor):
                 result = _invoke(["pdf", "ATTN001", "--extractor", "pymupdf"])
 
         assert result.exit_code == 0
@@ -46,12 +46,12 @@ class TestPdfCmdWithExtractors:
         mock_extractor.extract_text.return_value = "mineru extracted text"
         mock_extractor.name.return_value = "mineru"
 
-        with patch("zotero_cli_agents.core.pdf_cache.PdfCache") as mock_cache_cls:
+        with patch("zotero_cli_agent.core.pdf_cache.PdfCache") as mock_cache_cls:
             mock_cache = MagicMock()
             mock_cache.get.return_value = None
             mock_cache_cls.return_value = mock_cache
 
-            with patch("zotero_cli_agents.commands.pdf.get_extractor", return_value=mock_extractor):
+            with patch("zotero_cli_agent.commands.pdf.get_extractor", return_value=mock_extractor):
                 result = _invoke(["pdf", "ATTN001", "--extractor", "mineru"])
 
         assert result.exit_code == 0
@@ -59,7 +59,7 @@ class TestPdfCmdWithExtractors:
         mock_extractor.extract_text.assert_called_once()
 
     def test_pdf_pymupdf_fallback_from_mineru(self):
-        from zotero_cli_agents.core.pdf_errors import PdfExtractionError
+        from zotero_cli_agent.core.pdf_errors import PdfExtractionError
 
         mock_mineru = MagicMock()
         mock_mineru.extract_text.side_effect = PdfExtractionError("mineru failed")
@@ -69,7 +69,7 @@ class TestPdfCmdWithExtractors:
         mock_pymupdf.extract_text.return_value = "pymupdf fallback text"
         mock_pymupdf.name.return_value = "pymupdf"
 
-        with patch("zotero_cli_agents.core.pdf_cache.PdfCache") as mock_cache_cls:
+        with patch("zotero_cli_agent.core.pdf_cache.PdfCache") as mock_cache_cls:
             mock_cache = MagicMock()
             mock_cache.get.return_value = None
             mock_cache_cls.return_value = mock_cache
@@ -79,7 +79,7 @@ class TestPdfCmdWithExtractors:
                     return mock_mineru
                 return mock_pymupdf
 
-            with patch("zotero_cli_agents.commands.pdf.get_extractor", side_effect=get_extractor_side_effect):
+            with patch("zotero_cli_agent.commands.pdf.get_extractor", side_effect=get_extractor_side_effect):
                 result = _invoke(["pdf", "ATTN001", "--extractor", "mineru"])
 
         assert result.exit_code == 0
@@ -88,12 +88,12 @@ class TestPdfCmdWithExtractors:
         mock_pymupdf.extract_text.assert_called_once()
 
     def test_pdf_uses_cache_when_available(self):
-        with patch("zotero_cli_agents.core.pdf_cache.PdfCache") as mock_cache_cls:
+        with patch("zotero_cli_agent.core.pdf_cache.PdfCache") as mock_cache_cls:
             mock_cache = MagicMock()
             mock_cache.get.return_value = "cached pymupdf text"
             mock_cache_cls.return_value = mock_cache
 
-            with patch("zotero_cli_agents.commands.pdf.get_extractor") as mock_get_extractor:
+            with patch("zotero_cli_agent.commands.pdf.get_extractor") as mock_get_extractor:
                 mock_extractor = MagicMock()
                 mock_get_extractor.return_value = mock_extractor
 
@@ -104,7 +104,7 @@ class TestPdfCmdWithExtractors:
         mock_extractor.extract_text.assert_not_called()
 
     def test_pdf_key_not_found(self):
-        with patch("zotero_cli_agents.core.pdf_cache.PdfCache"):
+        with patch("zotero_cli_agent.core.pdf_cache.PdfCache"):
             result = _invoke(["pdf", "NOTFOUND", "--extractor", "pymupdf"])
 
         # Exit 4 (NOT_FOUND) per the agent contract.
@@ -116,12 +116,12 @@ class TestPdfCmdWithExtractors:
         mock_extractor.extract_text.return_value = "json test text"
         mock_extractor.name.return_value = "pymupdf"
 
-        with patch("zotero_cli_agents.core.pdf_cache.PdfCache") as mock_cache_cls:
+        with patch("zotero_cli_agent.core.pdf_cache.PdfCache") as mock_cache_cls:
             mock_cache = MagicMock()
             mock_cache.get.return_value = None
             mock_cache_cls.return_value = mock_cache
 
-            with patch("zotero_cli_agents.commands.pdf.get_extractor", return_value=mock_extractor):
+            with patch("zotero_cli_agent.commands.pdf.get_extractor", return_value=mock_extractor):
                 result = _invoke(["pdf", "ATTN001", "--extractor", "pymupdf"], json_output=True)
 
         assert result.exit_code == 0
@@ -135,12 +135,12 @@ class TestPdfCmdWithExtractors:
 class TestWorkspaceIndexWithExtractor:
     def test_workspace_index_with_pymupdf_extractor(self, tmp_path):
         with ExitStack() as stack:
-            stack.enter_context(patch("zotero_cli_agents.core.workspace.workspaces_dir", return_value=tmp_path))
-            stack.enter_context(patch("zotero_cli_agents.commands.workspace.workspaces_dir", return_value=tmp_path))
+            stack.enter_context(patch("zotero_cli_agent.core.workspace.workspaces_dir", return_value=tmp_path))
+            stack.enter_context(patch("zotero_cli_agent.commands.workspace.workspaces_dir", return_value=tmp_path))
             _invoke(["workspace", "new", "test-ext"])
             _invoke(["workspace", "add", "test-ext", "ATTN001"])
 
-            with patch("zotero_cli_agents.commands.workspace.convert_pdf_to_text") as mock_convert:
+            with patch("zotero_cli_agent.commands.workspace.convert_pdf_to_text") as mock_convert:
                 mock_convert.return_value = ""
                 result = _invoke(["workspace", "index", "test-ext", "--extractor", "pymupdf"])
 
@@ -153,12 +153,12 @@ class TestWorkspaceIndexWithExtractor:
 
     def test_workspace_index_with_mineru_extractor(self, tmp_path):
         with ExitStack() as stack:
-            stack.enter_context(patch("zotero_cli_agents.core.workspace.workspaces_dir", return_value=tmp_path))
-            stack.enter_context(patch("zotero_cli_agents.commands.workspace.workspaces_dir", return_value=tmp_path))
+            stack.enter_context(patch("zotero_cli_agent.core.workspace.workspaces_dir", return_value=tmp_path))
+            stack.enter_context(patch("zotero_cli_agent.commands.workspace.workspaces_dir", return_value=tmp_path))
             _invoke(["workspace", "new", "test-ext-m"])
             _invoke(["workspace", "add", "test-ext-m", "ATTN001"])
 
-            with patch("zotero_cli_agents.commands.workspace.convert_pdf_to_text") as mock_convert:
+            with patch("zotero_cli_agent.commands.workspace.convert_pdf_to_text") as mock_convert:
                 mock_convert.return_value = ""
                 result = _invoke(["workspace", "index", "test-ext-m", "--extractor", "mineru"])
 
@@ -207,7 +207,7 @@ class TestPdfCacheIsolationIntegration:
 
 class TestPdfAndWorkspaceIntegration:
     def test_pdf_then_workspace_index_uses_same_cache(self):
-        with patch("zotero_cli_agents.core.pdf_cache.PdfCache") as mock_cache_cls:
+        with patch("zotero_cli_agent.core.pdf_cache.PdfCache") as mock_cache_cls:
             mock_cache = MagicMock()
             mock_cache.get.return_value = None
             mock_cache_cls.return_value = mock_cache
@@ -216,14 +216,14 @@ class TestPdfAndWorkspaceIntegration:
             mock_extractor.extract_text.return_value = "shared content"
             mock_extractor.name.return_value = "pymupdf"
 
-            with patch("zotero_cli_agents.commands.pdf.get_extractor", return_value=mock_extractor):
+            with patch("zotero_cli_agent.commands.pdf.get_extractor", return_value=mock_extractor):
                 result = _invoke(["pdf", "ATTN001", "--extractor", "pymupdf"])
 
             assert result.exit_code == 0
             assert mock_cache.put.called
 
     def test_pdf_command_missing_key(self):
-        with patch("zotero_cli_agents.core.pdf_cache.PdfCache"):
+        with patch("zotero_cli_agent.core.pdf_cache.PdfCache"):
             result = _invoke(["pdf", "NONEXISTENT", "--extractor", "pymupdf"])
 
         # Exit 4 (NOT_FOUND) per the agent contract.

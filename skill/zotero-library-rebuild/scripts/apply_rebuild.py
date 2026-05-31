@@ -13,7 +13,7 @@ import httpx
 from pyzotero import zotero
 from pyzotero.zotero_errors import PyZoteroError, ResourceNotFoundError
 
-from zotero_cli_agents.config import load_config, project_root, resolve_write_credentials
+from zotero_cli_agent.config import load_config, project_root, resolve_write_credentials
 
 API_TIMEOUT = 300.0
 DEFAULT_BATCH_SIZE = 25

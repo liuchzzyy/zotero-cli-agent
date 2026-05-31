@@ -25,7 +25,7 @@ uv sync --dev --extra mcp
 
 # Lint / type-check / test
 uv run ruff check src tests
-uv run mypy src/zotero_cli_agents
+uv run mypy src/zotero_cli_agent
 uv run pytest -q
 
 # Run a single test / file / node
@@ -59,31 +59,31 @@ Never write to `zotero.sqlite` directly. That would bypass Zotero's sync model a
 
 ### CLI shape
 
-- `src/zotero_cli_agents/cli.py` is the Click root group.
-- `src/zotero_cli_agents/commands/*.py` are self-contained commands or command groups.
-- `src/zotero_cli_agents/formatter.py` implements the dual output contract:
+- `src/zotero_cli_agent/cli.py` is the Click root group.
+- `src/zotero_cli_agent/commands/*.py` are self-contained commands or command groups.
+- `src/zotero_cli_agent/formatter.py` implements the dual output contract:
   - Rich / human-readable output for TTY use
   - JSON envelope when piped or when `--json` is enabled
-- `src/zotero_cli_agents/exit_codes.py` defines typed exit behavior. Errors should go through `emit_error(...)`.
+- `src/zotero_cli_agent/exit_codes.py` defines typed exit behavior. Errors should go through `emit_error(...)`.
 - `zot schema` reflects the Click tree for agent consumption.
 
 When adding a command, register it in `cli.py` and place it in the correct safety tier set. Otherwise help output and schema reporting drift.
 
 ### Core subsystems
 
-- `src/zotero_cli_agents/core/reader.py`: SQLite read layer.
-- `src/zotero_cli_agents/core/writer.py`: Web API write layer.
-- `src/zotero_cli_agents/core/pdf_extractor.py` and `pdf_cache.py`: PDF extraction and caching.
-- `src/zotero_cli_agents/core/workspace.py`: repo-local workspaces under `.workspace/`.
-- `src/zotero_cli_agents/core/rag.py` and `rag_index.py`: workspace retrieval / indexing.
-- `src/zotero_cli_agents/core/embedding_router.py`: embedding provider routing.
-- `src/zotero_cli_agents/core/idempotency.py`: retry-safe mutation support.
-- `src/zotero_cli_agents/core/semantic_scholar.py`: preprint-to-published lookups for `update-status`.
-- `src/zotero_cli_agents/core/version_check.py`: version notice logic.
+- `src/zotero_cli_agent/core/reader.py`: SQLite read layer.
+- `src/zotero_cli_agent/core/writer.py`: Web API write layer.
+- `src/zotero_cli_agent/core/pdf_extractor.py` and `pdf_cache.py`: PDF extraction and caching.
+- `src/zotero_cli_agent/core/workspace.py`: repo-local workspaces under `.workspace/`.
+- `src/zotero_cli_agent/core/rag.py` and `rag_index.py`: workspace retrieval / indexing.
+- `src/zotero_cli_agent/core/embedding_router.py`: embedding provider routing.
+- `src/zotero_cli_agent/core/idempotency.py`: retry-safe mutation support.
+- `src/zotero_cli_agent/core/semantic_scholar.py`: preprint-to-published lookups for `update-status`.
+- `src/zotero_cli_agent/core/version_check.py`: version notice logic.
 
 ### MCP server
 
-`src/zotero_cli_agents/mcp_server.py` exposes CLI functionality as MCP tools through `zot mcp serve`.
+`src/zotero_cli_agent/mcp_server.py` exposes CLI functionality as MCP tools through `zot mcp serve`.
 
 If a CLI command should also be available to MCP clients, mirror it here.
 
@@ -121,14 +121,14 @@ Zotero data dir auto-detects when not configured, but this checkout now treats r
 
 Current local config is expected at:
 
-- `E:\Desktop\CodingDaily\zotero-cli-agents\.zot\config.toml`
+- `E:\Desktop\CodingDaily\zotero-cli-agent\.zot\config.toml`
 - active default profile `zotero-cil`
 - real local database at `C:\Users\chengliu\Zotero\zotero.sqlite`
 - working Web API credentials for writes
 
 ## Conventions
 
-- Type hints are required. `mypy` is enforced on `src/zotero_cli_agents`.
+- Type hints are required. `mypy` is enforced on `src/zotero_cli_agent`.
 - Ruff target is Python 3.10 with line length 120.
 - Keep changes surgical. Do not refactor unrelated areas.
 - Preserve the current license metadata (`CC-BY-NC-4.0`) unless explicitly asked to change it.
@@ -144,7 +144,7 @@ When adding or refactoring a CLI command, preserve the agent-native surface:
 - idempotency behavior
 - schema visibility
 
-Every top-level command must be placed in exactly one safety bucket in `src/zotero_cli_agents/cli.py`:
+Every top-level command must be placed in exactly one safety bucket in `src/zotero_cli_agent/cli.py`:
 
 - read
 - write
@@ -157,7 +157,7 @@ This affects both `zot --help` grouping and `zot schema` output consumed by agen
 Before closing substantial changes, run the smallest relevant checks first, then broader ones as needed:
 
 1. Targeted `pytest` for touched behavior
-2. `uv run mypy src/zotero_cli_agents`
+2. `uv run mypy src/zotero_cli_agent`
 3. `uv run ruff check src tests`
 4. `uv run pytest -q`
 

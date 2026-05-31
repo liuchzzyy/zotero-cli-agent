@@ -11,7 +11,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from zotero_cli_agents.config import get_data_dir, load_config, project_root
+from zotero_cli_agent.config import get_data_dir, load_config, project_root
 
 TARGET_COLLECTION_PATHS = [
     "00_INBOX",

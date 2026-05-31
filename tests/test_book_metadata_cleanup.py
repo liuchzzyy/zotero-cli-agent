@@ -1,13 +1,8 @@
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-
-from book_metadata_cleanup import (  # noqa: E402
+from zotero_cli_extensions.book_metadata_cleanup import (
     build_operation,
     build_operation_from_resolution,
     clean_publisher,
@@ -19,7 +14,7 @@ from book_metadata_cleanup import (  # noqa: E402
     resolve_open_library,
 )
 
-from zotero_cli_agents.models import Item  # noqa: E402
+from zotero_cli_agent.models import Item
 
 
 class FakeResponse:
@@ -293,7 +288,7 @@ def test_google_oauth_uses_fresh_cached_access_token_without_client_secret(tmp_p
 def test_provider_parser_rejects_crossref_and_unknown(provider: str) -> None:
     import argparse
 
-    from book_metadata_cleanup import _parse_providers
+    from zotero_cli_extensions.book_metadata_cleanup import _parse_providers
 
     with pytest.raises(argparse.ArgumentTypeError):
         _parse_providers(provider)

@@ -32,9 +32,9 @@ provider = "jina"
 
 [ai_notes]
 api_key = ""
-base_url = ""
-model = "gpt-5.5"
-reasoning_effort = ""
+base_url = "http://127.0.0.1:8317/v1"
+model = "gpt-5.4"
+reasoning_effort = "high"
 pdf_input_mode = ""
 api_mode = "auto"
 chat_token_param = "auto"

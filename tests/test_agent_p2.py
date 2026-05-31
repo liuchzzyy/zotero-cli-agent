@@ -7,8 +7,8 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
-from zotero_cli_agents.cli import main
-from zotero_cli_agents.exit_codes import EXIT_OK
+from zotero_cli_agent.cli import main
+from zotero_cli_agent.exit_codes import EXIT_OK
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -96,7 +96,7 @@ class TestEmitProgress:
         import sys
         from io import StringIO
 
-        from zotero_cli_agents.formatter import emit_progress, request_scope
+        from zotero_cli_agent.formatter import emit_progress, request_scope
 
         captured = StringIO()
         old = sys.stderr
