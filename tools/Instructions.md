@@ -1,13 +1,14 @@
 ## 通用执行规则
 
-本文件中的所有 Zotero workflow 都默认直接在 PowerShell 中运行对应 `*.ps1` wrapper，然后查看真实进度；这条规则也适用于本次没有运行到的指令、参数组合、恢复命令和 apply 阶段。
+本文件中的 Zotero workflow 默认通过对应 `tools\*.ps1` wrapper 重新打开一个新的 PowerShell 窗口运行。wrapper 会在新窗口中输出阶段进度，写入运行目录中的 `run.log` 和 `progress.jsonl`；不要再依赖额外的 watch 命令作为主进度来源。
 
 推荐操作顺序：
-1. 直接在 `E:\Desktop\CodingDaily\zotero-cli-agent` 下运行对应 wrapper，保留当前 PowerShell 输出。
-2. 长任务运行时，另开 PowerShell 或使用 wrapper 打印的 progress watch 命令查看进程、`log\...` 目录、`progress.ndjson`、`summary.json`、`import_summary.json`、`run.out.log`、batch 日志或 Web API postcheck 文件。
-3. 汇报进度必须引用实际证据，例如已处理数量、batch 编号、failed 数、输出文件修改时间、checkpoint/summary 内容；不要只说“正在运行”。
-4. 如果 workflow 尚未实际执行，也要在说明和脚本里保留同样的直接运行和进度检查要求。
-5. 对应 wrapper 默认打印 progress watch 命令；只有在输出过多时才使用 `-HideProgressWatchCommands` 隐藏提示。
+1. 在仓库根目录运行对应 wrapper，让它打开新的 PowerShell 窗口。
+2. 保留新窗口，进度以新窗口中的 wrapper 输出和 `run.log` / `progress.jsonl` 为主。
+3. 必要时再检查 `log\...`、`summary.json`、`import_summary.json`、batch 日志或 Web API postcheck 文件。
+4. 汇报进度必须基于 wrapper 输出、`run.log`、`progress.jsonl` 或实际产物变化；不要只说“已开始”。
+5. 所有 stdout/stderr 和中间日志都放在对应 `log\...` 运行目录；不要散落在仓库根目录、`tools\`、`src\zotero_cli_workflows\`、`tmp\` 或临时 `.workspace\...` 中。
+6. 仅限调试/CI 时使用 `-RunInCurrentWindow` 在当前 PowerShell 中运行实际流程。
 
 ## Zotero Library Rebuild
 
@@ -87,13 +88,14 @@ tools\relevance-cleanup-rules.json
 - `90_ARCHIVE` (`6HREN2FT`)：归档 holding collection，不参与日常 relevance cleanup。
 如需排除其他持有集合，先更新 `tools\relevance-cleanup-rules.json`，不要手改 CSV 或临时过滤输出。
 
-本指令独立包含运行文件规则：classification preview、summary、cleanup plan、CSV 清单、progress、apply 结果和 postcheck 都放在本次 log\zotero-cleanup\YYYYMMDD-HHMMSS 目录；不要放在仓库根目录散文件、tmp\ 或临时 .workspace\... 运行目录中。失败、中断、等待确认或需要审计时保留该目录；确认完成且无需审计后再清理。
+本指令独立包含运行文件规则：classification preview、summary、cleanup plan、CSV 清单、progress、apply 结果和 postcheck 都放在本次 log\relevance-cleanup\YYYYMMDD-HHMMSS 目录；不要放在仓库根目录散文件、tmp\ 或临时 .workspace\... 运行目录中。失败、中断、等待确认或需要审计时保留该目录；确认完成且无需审计后再清理。
 
 先执行 dry-run，只生成预览和计划，不写 Zotero：
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-relevance-cleanup.ps1
+该命令会立即打开一个新的 PowerShell 窗口，实际 cleanup 在新窗口中运行；原窗口只显示新窗口 PID。调试时才追加 `-RunInCurrentWindow`。
 
 dry-run 输出目录默认是：
-log\zotero-cleanup\YYYYMMDD-HHMMSS
+log\relevance-cleanup\YYYYMMDD-HHMMSS
 
 检查本次目录中的：
 - classification-preview.md
@@ -102,8 +104,8 @@ log\zotero-cleanup\YYYYMMDD-HHMMSS
 - reject-candidates.csv
 - unsure.csv
 - keep.csv
-- run.out.log
-- progress.ndjson
+- run.log
+- progress.jsonl
 
 边界：
 - 只分类和处理 journalArticle。
@@ -136,7 +138,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-relevance-cleanup.
 - Web API 写入阶段耗时约 640 秒（约 10 分 40 秒）；多数 50 条批次耗时约 16-20 秒。不要因为 10-20 秒没有新行就判断卡死。
 - postcheck 额外耗时约 47 秒；本次结果为 checked=1852、only_target_count=1852、not_only_target_count=0、missing_count=0。
 - dry-run 和 -Apply 如果都不指定 -OutputDir，会生成两个不同的时间戳目录；正式结果以 -Apply 运行目录为准。
-- completed-keys.txt 的行数应等于 apply-summary.json 中的 completed。progress.ndjson 的最后应包含 apply_complete 和 postcheck 事件。
+- completed-keys.txt 的行数应等于 apply-summary.json 中的 completed。`progress.jsonl` 和 apply-summary.json 应能对应到 apply_complete 和 postcheck 结果。
 
 如果执行中断或网络/API 失败，不要重建计划后盲目全量重跑。使用同一个输出目录继续：
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-relevance-cleanup.ps1 -Apply -Resume -OutputDir log\relevance-cleanup\YYYYMMDD-HHMMSS
@@ -155,7 +157,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-relevance-cleanup.
 Zotero Web API 写入后，需要 Zotero 桌面端同步，本地 zotero.sqlite 才会完全反映新的集合归属。验证正式执行结果优先看 postcheck-web-api.json，不要立即用本地 SQLite 判断失败。
 同理，刚执行完时 `zot collection items JJ6JSGT5` 可能仍读取本地旧库，不能代替 Web API postcheck。
 
-本工作流的运行目录使用 log\zotero-cleanup\YYYYMMDD-HHMMSS。失败、中断、等待确认或需要审计时保留该目录；确认完成且无需审计后再清理。
+本工作流的运行目录使用 log\relevance-cleanup\YYYYMMDD-HHMMSS。失败、中断、等待确认或需要审计时保留该目录；确认完成且无需审计后再清理。
 ```
 
 ## Clean-up all metadata
@@ -227,6 +229,7 @@ uv run zot --json update --from-jsonl log\metadata-cleanup-YYYYMMDD-HHMM\cleaned
 
 图书专用 workflow 固定使用：
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-book-metadata-update.ps1
+默认会打开新 PowerShell 窗口；调试时才追加 `-RunInCurrentWindow`。
 
 dry-run 会生成本次目录：
 log\book-metadata-cleanup\YYYYMMDD-HHMMSS
@@ -289,18 +292,16 @@ Zotero Web API 写入后，需要 Zotero 桌面端同步，本地 zotero.sqlite 
 
 本指令独立包含运行文件规则：route_plan、checkpoint、summary、failed_results、progress 和恢复审计文件都放在 log\rss-daily-doi-import_YYYY-MM-DD；不要放在仓库根目录散文件、tmp\ 或临时 .workspace\... 运行目录中。成功且 failed=0 时默认清理本次 log 目录；失败、中断或需要恢复时保留该目录。
 
-日常运行不要手动拆开清洗/导入步骤，直接调用 wrapper。wrapper 默认把本次 route_plan、checkpoint、summary、failed_results 等运行文件放到 log\rss-daily-doi-import_YYYY-MM-DD，并在 failed=0 成功完成后自动删除本次 log 目录：
+日常运行不要手动拆开清洗/导入步骤，直接调用 wrapper。默认调用会重新打开一个新的 PowerShell 窗口，实际 import 在新窗口中运行；wrapper 把本次 route_plan、checkpoint、summary、failed_results、`run.log`、`progress.jsonl` 等运行文件放到 log\rss-daily-doi-import_YYYY-MM-DD，并在 failed=0 成功完成后自动删除本次 log 目录：
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-daily-rss-doi-import.ps1 -Date YYYY-MM-DD -ProgressIntervalSeconds 5
 
-推荐直接在 PowerShell 中运行 wrapper，保留终端输出；如需旁路查看进度，另开 PowerShell 查询 import 进程和 import_summary.json：
-Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'run-daily-rss-doi-import|import_rss_doi_route_plan' } | Select-Object ProcessId,Name,CommandLine
-Get-Content -Raw log\rss-daily-doi-import_YYYY-MM-DD\rss_doi_import\import_summary.json
+推荐直接在 PowerShell 中运行 wrapper，保留新窗口输出；进度以新窗口输出、`run.log`、`progress.jsonl` 和 import_summary.json 为准。只有调试/CI 才追加 `-RunInCurrentWindow`。
 
 默认读取：
-E:\Desktop\CodingDaily\rss-cli-agent\storage\exports\daily\YYYY-MM-DD.selected.json
+E:\Desktop\CodingDaily\rss-cli-agent\storage\exports\daily_exports\YYYY-MM-DD.selected.json
 
 如果 RSS selected JSON 在非默认位置，必须显式传入完整路径：
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-daily-rss-doi-import.ps1 -Date YYYY-MM-DD -SelectedJson "E:\Desktop\CodingDaily\rss-cli-agent\storage\exports\daily\YYYY-MM-DD.selected.json" -ProgressIntervalSeconds 5
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-daily-rss-doi-import.ps1 -Date YYYY-MM-DD -SelectedJson "E:\Desktop\CodingDaily\rss-cli-agent\storage\exports\daily_exports\YYYY-MM-DD.selected.json" -ProgressIntervalSeconds 5
 
 如果需要保留成功运行记录用于审查，加 `-KeepLog`；否则不要保留成功运行的 log 目录。
 
@@ -339,10 +340,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File E:\Desktop\CodingDaily\run-f
 powershell -NoProfile -ExecutionPolicy Bypass -File E:\Desktop\CodingDaily\run-full-library-cleanup.ps1 -RunName full-library-cleanup-YYYYMMDD-HHMMSS -SkipRelevance -SkipMetadataExport -ApplyDuplicates
 如果 dry-run 显示 0 groups found，不需要进入 apply。
 
-如果需要保存终端输出，先建立 log\remove-newer-doi-duplicates-YYYYMMDD-HHMM，并用 Tee-Object 同时显示和记录；不要把计划文件或日志放到根目录散文件：
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\remove-newer-doi-duplicates.ps1 2>&1 | Tee-Object -FilePath log\remove-newer-doi-duplicates-YYYYMMDD-HHMM\dry-run.log
+默认调用会重新打开一个新的 PowerShell 窗口，实际去重在新窗口中运行；wrapper 会在 `log\remove-newer-doi-duplicates-YYYYMMDD-HHMMSS` 写入 `run.log` 和 `progress.jsonl`。只有调试/CI 才追加 `-RunInCurrentWindow`。
 
-先执行默认 dry-run 看 keep/delete 计划；我确认后，再加 -Apply 正式删除，并把 apply 输出写到同一个 log\remove-newer-doi-duplicates-YYYYMMDD-HHMM\apply.log。
+先执行默认 dry-run 看 keep/delete 计划；我确认后，再加 -Apply 正式删除。dry-run 和 apply 默认会各自生成一个时间戳运行目录；正式结果以 apply 运行目录为准。
 复核删除结果无误后，删除本次 log\remove-newer-doi-duplicates-YYYYMMDD-HHMM 目录；如果失败或等待我确认，保留该目录。
 ```
 
@@ -359,6 +359,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\remove-newer-doi-dupli
 
 默认命令。wrapper 默认把 checkpoint、preview、results、failures、notes、MinerU 临时资产和 batch logs 放到 log\ai-note-analysis-batch-YYYYMMDD-HHMMSS，并在完整成功后自动清理本次 log 目录：
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-ai-note-generation.ps1 -BatchSize 3
+默认会打开新 PowerShell 窗口；调试时才追加 `-RunInCurrentWindow`。
 
 先验证候选条目时用 dry-run；dry-run 成功结束后也会清理本次 log 目录，等待审查时可加 -KeepLog：
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-ai-note-generation.ps1 -DryRun -BatchSize 3 -ScanLimit 100 -KeepLog
@@ -443,6 +444,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-ai-note-generation
 推荐 wrapper。默认不写 Zotero，只刷新 status；完整运行需要显式 -FullRun：
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-citation-key-update-from-ai-notes.ps1 -Status
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-citation-key-update-from-ai-notes.ps1 -FullRun
+默认会打开新 PowerShell 窗口；调试时才追加 `-RunInCurrentWindow`。
 
 分步运行时用：
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-citation-key-update-from-ai-notes.ps1 -Generate
@@ -500,6 +502,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-citation-key-updat
 
 默认 dry-run。运行文件默认放到 log\rag-full-library-YYYYMMDD-HHMMSS，dry-run 成功后会自动清理；如果要审查 inventory，加 -KeepLog：
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -DryRun -ScanLimit 100 -KeepLog
+默认会打开新 PowerShell 窗口；调试时才追加 `-RunInCurrentWindow`。
 
 正式增量运行。成功后自动删除本次 log\rag-full-library-YYYYMMDD-HHMMSS 运行目录；持久 workspace/index 仍保留在 .workspace\full-library-pdf-rag：
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1

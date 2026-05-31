@@ -1,15 +1,35 @@
 [CmdletBinding()]
 param(
-    [string]$ZoteroRepoRoot = $PSScriptRoot,
+    [string]$ZoteroRepoRoot = "",
     [string]$Library = "user",
     [string]$Profile = "",
     [int]$BatchSize = 25,
     [switch]$Apply,
-    [switch]$HideProgressWatchCommands
+    [switch]$HideProgressWatchCommands,
+    [switch]$RunInCurrentWindow
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+$commonScript = Join-Path $PSScriptRoot "zotero-workflow-common.ps1"
+. $commonScript
+
+if (-not $RunInCurrentWindow) {
+    $windowRoot = if ($ZoteroRepoRoot) { (Resolve-Path $ZoteroRepoRoot).Path } else { Get-ZoteroRepoRootPath -ScriptPath $PSCommandPath }
+    Start-WorkflowInNewWindow -ScriptPath $PSCommandPath -WorkingDirectory $windowRoot -BoundParameters $PSBoundParameters -DisplayName "Remove Newer DOI Duplicates"
+    return
+}
+
+if ($ZoteroRepoRoot) {
+    $ZoteroRepoRoot = (Resolve-Path $ZoteroRepoRoot).Path
+}
+else {
+    $ZoteroRepoRoot = Get-ZoteroRepoRootPath -ScriptPath $PSCommandPath
+}
+
+$runOutputDir = Join-Path $ZoteroRepoRoot ("log\remove-newer-doi-duplicates-{0:yyyyMMdd-HHmmss}" -f (Get-Date))
+Start-WorkflowRunLog -RunDirectory $runOutputDir -WorkflowName "remove-newer-doi-duplicates" -RepoRoot $ZoteroRepoRoot
 
 function Write-Stage {
     param(
@@ -39,8 +59,8 @@ function Write-ProgressWatchCommands {
         [string]$WorkingDirectory
     )
     Write-Host ""
-    Write-Host "Progress watch from another PowerShell:" -ForegroundColor DarkGray
-    Write-Host "  Keep this PowerShell visible; use these checks for live progress instead of waiting silently." -ForegroundColor DarkGray
+    Write-Host "Optional progress checks from another PowerShell:" -ForegroundColor DarkGray
+    Write-Host "  Primary progress is this window plus run.log/progress.jsonl; use these checks only for diagnosis." -ForegroundColor DarkGray
     Write-Host '  Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match ''remove-newer-doi-duplicates|zot.*duplicates|zot.*delete'' } | Select-Object ProcessId,Name,CommandLine'
     Write-Host ("  Get-Item -LiteralPath '{0}' | Select-Object FullName,LastWriteTime" -f $WorkingDirectory)
 }
@@ -262,7 +282,6 @@ if ($Profile) {
 }
 $duplicatesArgs += @("duplicates", "--by", "doi")
 
-Write-Host "Run mode: direct PowerShell with visible output and progress checks"
 if (-not $HideProgressWatchCommands) {
     Write-ProgressWatchCommands -WorkingDirectory $ZoteroRepoRoot
 }
@@ -287,6 +306,7 @@ Write-Stage ("DOI duplicate query finished. Groups found: {0}" -f $groups.Count)
 
 if ($groups.Count -eq 0) {
     Write-Host "No DOI duplicates found."
+    Complete-WorkflowRunLog -Status "completed"
     exit 0
 }
 
@@ -298,6 +318,7 @@ $keysToDelete = @($plan | ForEach-Object { $_.Delete } | ForEach-Object { [strin
 if (-not $Apply) {
     Write-Host ""
     Write-Host "Dry run only. Re-run with -Apply to move the newer items to trash."
+    Complete-WorkflowRunLog -Status "completed"
     exit 0
 }
 
@@ -305,3 +326,4 @@ Invoke-DeleteBatches -Keys $keysToDelete -WorkingDirectory $ZoteroRepoRoot -Libr
 
 Write-Host ""
 Write-Host "Done. Deleted newer DOI-duplicate items by date_added."
+Complete-WorkflowRunLog -Status "completed"

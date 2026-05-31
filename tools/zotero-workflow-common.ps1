@@ -1,0 +1,187 @@
+Set-StrictMode -Version Latest
+
+function Get-ZoteroRepoRootPath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ScriptPath
+    )
+
+    $current = Resolve-Path (Split-Path -Parent $ScriptPath)
+    while ($true) {
+        $candidate = $current.Path
+        if ((Test-Path (Join-Path $candidate "pyproject.toml")) -and (Test-Path (Join-Path $candidate "src\zotero_cli_agent"))) {
+            return $candidate
+        }
+
+        $parent = Split-Path -Parent $candidate
+        if (-not $parent -or $parent -eq $candidate) {
+            throw "Could not locate Zotero repository root from $ScriptPath."
+        }
+
+        $current = Resolve-Path $parent
+    }
+}
+
+function ConvertTo-WorkflowArgument {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Value
+    )
+
+    if ($Value -notmatch '[\s"]') {
+        return $Value
+    }
+
+    return '"' + $Value.Replace('"', '\"') + '"'
+}
+
+function Get-ForwardedWorkflowArguments {
+    param(
+        [Parameter(Mandatory = $true)]
+        [hashtable]$BoundParameters
+    )
+
+    $arguments = [System.Collections.Generic.List[string]]::new()
+    $arguments.Add("-RunInCurrentWindow")
+
+    foreach ($item in $BoundParameters.GetEnumerator() | Sort-Object Name) {
+        if ($item.Key -eq "RunInCurrentWindow") {
+            continue
+        }
+
+        if ($item.Value -is [System.Management.Automation.SwitchParameter]) {
+            if ($item.Value.IsPresent) {
+                $arguments.Add("-$($item.Key)")
+            }
+            continue
+        }
+
+        if ($null -ne $item.Value -and "$($item.Value)" -ne "") {
+            if ($item.Value -is [array]) {
+                foreach ($value in @($item.Value)) {
+                    $arguments.Add("-$($item.Key)")
+                    $arguments.Add([string]$value)
+                }
+                continue
+            }
+
+            $arguments.Add("-$($item.Key)")
+            $arguments.Add([string]$item.Value)
+        }
+    }
+
+    return @($arguments)
+}
+
+function Start-WorkflowInNewWindow {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ScriptPath,
+        [Parameter(Mandatory = $true)]
+        [string]$WorkingDirectory,
+        [Parameter(Mandatory = $true)]
+        [hashtable]$BoundParameters,
+        [Parameter(Mandatory = $true)]
+        [string]$DisplayName
+    )
+
+    $forwardedArguments = Get-ForwardedWorkflowArguments -BoundParameters $BoundParameters
+    $processArguments = [System.Collections.Generic.List[string]]::new()
+    $processArguments.Add("-NoProfile")
+    $processArguments.Add("-ExecutionPolicy")
+    $processArguments.Add("Bypass")
+    $processArguments.Add("-NoExit")
+    $processArguments.Add("-File")
+    $processArguments.Add((ConvertTo-WorkflowArgument -Value $ScriptPath))
+    foreach ($argument in $forwardedArguments) {
+        $processArguments.Add((ConvertTo-WorkflowArgument -Value $argument))
+    }
+
+    $process = Start-Process `
+        -FilePath "powershell.exe" `
+        -ArgumentList @($processArguments) `
+        -WorkingDirectory $WorkingDirectory `
+        -WindowStyle Normal `
+        -PassThru
+
+    Write-Host ("Started {0} in a new PowerShell window. PID: {1}" -f $DisplayName, $process.Id) -ForegroundColor Cyan
+    Write-Host "Close the new window only after the workflow finishes." -ForegroundColor DarkGray
+}
+
+function Start-WorkflowRunLog {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RunDirectory,
+        [Parameter(Mandatory = $true)]
+        [string]$WorkflowName,
+        [Parameter(Mandatory = $true)]
+        [string]$RepoRoot
+    )
+
+    New-Item -ItemType Directory -Force -Path $RunDirectory | Out-Null
+    $script:WorkflowRunLog = Join-Path $RunDirectory "run.log"
+    $script:WorkflowProgressJsonl = Join-Path $RunDirectory "progress.jsonl"
+    $script:WorkflowStartedAt = Get-Date
+    $script:WorkflowName = $WorkflowName
+
+    Add-Content -LiteralPath $script:WorkflowRunLog -Encoding UTF8 -Value ("[{0}] {1} started" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $WorkflowName)
+    Write-WorkflowEvent -EventData ([ordered]@{
+        event = "run_started"
+        workflow = $WorkflowName
+        repo_root = $RepoRoot
+        run_dir = $RunDirectory
+    })
+
+    Write-WorkflowLine -Message ("Run mode: new-window workflow wrapper with built-in logs") -Color Cyan
+    Write-WorkflowLine -Message ("Run logs: {0}" -f $RunDirectory) -Color DarkGray
+    Write-WorkflowLine -Message ("Summary log: {0}" -f $script:WorkflowRunLog) -Color DarkGray
+    Write-WorkflowLine -Message ("Progress JSONL: {0}" -f $script:WorkflowProgressJsonl) -Color DarkGray
+}
+
+function Write-WorkflowLine {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Message,
+        [ConsoleColor]$Color = [ConsoleColor]::White
+    )
+
+    Write-Host $Message -ForegroundColor $Color
+    if ($script:WorkflowRunLog) {
+        Add-Content -LiteralPath $script:WorkflowRunLog -Encoding UTF8 -Value ("[{0}] {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $Message)
+    }
+}
+
+function Write-WorkflowEvent {
+    param(
+        [Parameter(Mandatory = $true)]
+        [hashtable]$EventData
+    )
+
+    if (-not $script:WorkflowProgressJsonl) {
+        return
+    }
+
+    $payload = [ordered]@{
+        timestamp = (Get-Date).ToString("o")
+    }
+    foreach ($key in $EventData.Keys) {
+        $payload[$key] = $EventData[$key]
+    }
+    Add-Content -LiteralPath $script:WorkflowProgressJsonl -Encoding UTF8 -Value ($payload | ConvertTo-Json -Compress -Depth 8)
+}
+
+function Complete-WorkflowRunLog {
+    param(
+        [string]$Status = "completed"
+    )
+
+    $finishedAt = Get-Date
+    $elapsedSeconds = if ($script:WorkflowStartedAt) { [int](($finishedAt - $script:WorkflowStartedAt).TotalSeconds) } else { 0 }
+    Write-WorkflowEvent -EventData ([ordered]@{
+        event = "run_finished"
+        workflow = $script:WorkflowName
+        status = $Status
+        elapsed_seconds = $elapsedSeconds
+    })
+    Write-WorkflowLine -Message ("Finished with status={0}; elapsed={1}" -f $Status, ([TimeSpan]::FromSeconds($elapsedSeconds).ToString("hh\:mm\:ss"))) -Color Green
+}

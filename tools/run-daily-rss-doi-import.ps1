@@ -10,11 +10,21 @@ param(
     [int]$ProgressIntervalSeconds = 10,
     [string]$OutputDir = "",
     [switch]$KeepLog,
-    [switch]$HideProgressWatchCommands
+    [switch]$HideProgressWatchCommands,
+    [switch]$RunInCurrentWindow
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+$commonScript = Join-Path $PSScriptRoot "zotero-workflow-common.ps1"
+. $commonScript
+
+if (-not $RunInCurrentWindow) {
+    $windowRoot = if ($ZoteroRepoRoot) { (Resolve-Path $ZoteroRepoRoot).Path } else { Get-ZoteroRepoRootPath -ScriptPath $PSCommandPath }
+    Start-WorkflowInNewWindow -ScriptPath $PSCommandPath -WorkingDirectory $windowRoot -BoundParameters $PSBoundParameters -DisplayName "Zotero Daily RSS DOI Import"
+    return
+}
 
 function Get-RepoRoot {
     $scriptDir = Split-Path -Parent $PSCommandPath
@@ -78,8 +88,8 @@ function Write-ProgressWatchCommands {
         [string]$RunOutputDir
     )
     Write-Host ""
-    Write-Host "Progress watch from another PowerShell:" -ForegroundColor DarkGray
-    Write-Host "  Keep this PowerShell visible; use these checks for live progress instead of waiting silently." -ForegroundColor DarkGray
+    Write-Host "Optional progress checks from another PowerShell:" -ForegroundColor DarkGray
+    Write-Host "  Primary progress is this window plus run.log/progress.jsonl; use these checks only for diagnosis." -ForegroundColor DarkGray
     Write-Host '  Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match ''run-daily-rss-doi-import|import_rss_doi_route_plan'' } | Select-Object ProcessId,Name,CommandLine'
     Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-Content -Raw -LiteralPath '{0}' }}" -f $ImportSummaryPath)
     Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-ChildItem -LiteralPath '{0}' -Recurse -File | Sort-Object LastWriteTime -Descending | Select-Object -First 20 FullName,Length,LastWriteTime }}" -f $RunOutputDir)
@@ -296,7 +306,7 @@ function Export-FailedDois {
 
 $selectedJson = $SelectedJson
 if (-not $selectedJson) {
-    $selectedJson = Join-Path $RssRepoRoot ("storage\exports\daily\{0}.selected.json" -f $Date)
+    $selectedJson = Join-Path $RssRepoRoot ("storage\exports\daily_exports\{0}.selected.json" -f $Date)
 }
 else {
     $selectedJson = (Resolve-Path $selectedJson).Path
@@ -332,7 +342,7 @@ try {
 
     Write-Host ("Selected JSON: {0}" -f $selectedJson)
     Write-Host ("Run output: {0}" -f $runOutputDir)
-    Write-Host "Run mode: direct PowerShell with visible output and progress checks"
+    Start-WorkflowRunLog -RunDirectory $runOutputDir -WorkflowName "daily-rss-doi-import" -RepoRoot $ZoteroRepoRoot
     if (-not $HideProgressWatchCommands) {
         Write-ProgressWatchCommands -ImportSummaryPath $importSummaryPath -RunOutputDir $runOutputDir
     }
@@ -461,9 +471,13 @@ finally {
         $failedCount = Export-FailedDois -FailedResultsPath $failedResultsPath -OutputTxtPath $failedTxtPath -Date $Date
     }
     if ($completed -and (-not $KeepLog) -and (Test-Path -LiteralPath $runOutputDir)) {
+        Complete-WorkflowRunLog -Status "completed"
         Remove-Item -LiteralPath $runOutputDir -Recurse -Force
         Write-Host ""
         Write-Host "Removed run log directory: $runOutputDir"
         Remove-EmptyLogRoot -RunOutputDir $runOutputDir
+    }
+    elseif ($completed) {
+        Complete-WorkflowRunLog -Status "completed"
     }
 }

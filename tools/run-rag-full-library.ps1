@@ -10,10 +10,20 @@ param(
     [switch]$KeepInventory,
     [switch]$StopOnError,
     [switch]$KeepLog,
-    [switch]$HideProgressWatchCommands
+    [switch]$HideProgressWatchCommands,
+    [switch]$RunInCurrentWindow
 )
 
 $ErrorActionPreference = "Stop"
+
+$commonScript = Join-Path $PSScriptRoot "zotero-workflow-common.ps1"
+. $commonScript
+
+if (-not $RunInCurrentWindow) {
+    $windowRoot = Get-ZoteroRepoRootPath -ScriptPath $PSCommandPath
+    Start-WorkflowInNewWindow -ScriptPath $PSCommandPath -WorkingDirectory $windowRoot -BoundParameters $PSBoundParameters -DisplayName "Full Library RAG Index"
+    return
+}
 
 function Get-RepoRoot {
     $scriptDir = Split-Path -Parent $PSCommandPath
@@ -50,8 +60,8 @@ function Write-ProgressWatchCommands([string]$RunOutputDir) {
     $inventoryPath = Join-Path $RunOutputDir "inventory.json"
     $logsDir = Join-Path $RunOutputDir "logs"
     Write-Host ""
-    Write-Host "Progress watch from another PowerShell:" -ForegroundColor DarkGray
-    Write-Host "  Keep this PowerShell visible; use these checks for live progress instead of waiting silently." -ForegroundColor DarkGray
+    Write-Host "Optional progress checks from another PowerShell:" -ForegroundColor DarkGray
+    Write-Host "  Primary progress is this window plus run.log/progress.jsonl; use these checks only for diagnosis." -ForegroundColor DarkGray
     Write-Host '  Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match ''run-rag-full-library|workspace index|mineru|inventory_full_pdf_workspace'' } | Select-Object ProcessId,Name,CommandLine'
     Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-ChildItem -LiteralPath '{0}' -File | Sort-Object LastWriteTime -Descending | Select-Object -First 5 FullName,Length,LastWriteTime }}" -f $logsDir)
     Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-Content -Raw -LiteralPath '{0}' }}" -f $inventoryPath)
@@ -234,6 +244,7 @@ $inventoryScript = Join-Path $runOutputDir "inventory_full_pdf_workspace.py"
 
 New-Item -ItemType Directory -Force -Path $runOutputDir | Out-Null
 Write-InventoryScript -ScriptPath $inventoryScript
+Start-WorkflowRunLog -RunDirectory $runOutputDir -WorkflowName "rag-full-library" -RepoRoot $repoRoot
 
 Write-Host "Repo:       $repoRoot"
 Write-Host "Workspace:  $WorkspaceName"
@@ -243,7 +254,6 @@ Write-Host "DryRun:     $DryRun"
 Write-Host "NoIndex:    $NoIndex"
 Write-Host "Force:      $ForceRebuild"
 Write-Host "KeepLog:    $KeepLog"
-Write-Host "Run mode:   direct PowerShell with visible output and progress checks"
 if (-not $HideProgressWatchCommands) {
     Write-ProgressWatchCommands -RunOutputDir $runOutputDir
 }
@@ -320,9 +330,13 @@ finally {
         Remove-Item -LiteralPath $inventoryScript -Force -ErrorAction SilentlyContinue
     }
     if ($completed -and -not $KeepLog -and -not $KeepInventory) {
+        Complete-WorkflowRunLog -Status "completed"
         Remove-Item -LiteralPath $runOutputDir -Recurse -Force
         Write-Host "Removed run log directory: $runOutputDir"
         Remove-EmptyLogRoot -RunOutputDir $runOutputDir
+    }
+    elseif ($completed) {
+        Complete-WorkflowRunLog -Status "completed"
     }
 }
 

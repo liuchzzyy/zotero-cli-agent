@@ -6,11 +6,21 @@ param(
     [string]$Profile = "",
     [switch]$Apply,
     [switch]$Resume,
-    [switch]$HideProgressWatchCommands
+    [switch]$HideProgressWatchCommands,
+    [switch]$RunInCurrentWindow
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+$commonScript = Join-Path $PSScriptRoot "zotero-workflow-common.ps1"
+. $commonScript
+
+if (-not $RunInCurrentWindow) {
+    $windowRoot = Get-ZoteroRepoRootPath -ScriptPath $PSCommandPath
+    Start-WorkflowInNewWindow -ScriptPath $PSCommandPath -WorkingDirectory $windowRoot -BoundParameters $PSBoundParameters -DisplayName "Zotero Relevance Cleanup"
+    return
+}
 
 function Get-RepoRoot {
     $scriptDir = Split-Path -Parent $PSCommandPath
@@ -77,8 +87,8 @@ function Write-ProgressWatchCommands {
     $summaryPath = Join-Path $RunOutputDir "classification-summary.json"
     $applySummaryPath = Join-Path $RunOutputDir "apply-summary.json"
     Write-Host ""
-    Write-Host "Progress watch from another PowerShell:" -ForegroundColor DarkGray
-    Write-Host "  Keep this PowerShell visible; use these checks for live progress instead of waiting silently." -ForegroundColor DarkGray
+    Write-Host "Optional progress checks from another PowerShell:" -ForegroundColor DarkGray
+    Write-Host "  Primary progress is this window plus run.log/progress.jsonl; use these checks only for diagnosis." -ForegroundColor DarkGray
     Write-Host '  Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match ''run-relevance-cleanup|run_relevance_cleanup'' } | Select-Object ProcessId,Name,CommandLine'
     Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-Content -Tail 20 -LiteralPath '{0}' }}" -f $progressPath)
     Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-Content -Raw -LiteralPath '{0}' }}" -f $summaryPath)
@@ -104,6 +114,7 @@ if ($BatchSize -lt 1 -or $BatchSize -gt 50) {
 $runOutputDir = New-RunOutputDir -RepoRoot $repoRoot -RequestedOutputDir $OutputDir
 New-Item -ItemType Directory -Force -Path $runOutputDir | Out-Null
 $runOutputDir = (Resolve-Path -LiteralPath $runOutputDir).Path
+Start-WorkflowRunLog -RunDirectory $runOutputDir -WorkflowName "relevance-cleanup" -RepoRoot $repoRoot
 
 Write-RunMetadata -RunOutputDir $runOutputDir -RepoRoot $repoRoot -RulesPath $RulesPath
 
@@ -128,7 +139,6 @@ if ($Profile) {
 
 ("uv " + ($arguments -join " ")) | Set-Content -LiteralPath $commandFile -Encoding UTF8
 Write-Host ("Run output dir: {0}" -f $runOutputDir)
-Write-Host "Run mode: direct PowerShell with visible output and progress checks"
 if (-not $HideProgressWatchCommands) {
     Write-ProgressWatchCommands -RunOutputDir $runOutputDir
 }
@@ -147,4 +157,5 @@ if ($exitCode -ne 0) {
     throw "Zotero relevance cleanup failed with exit code $exitCode. See: $runLog"
 }
 
+Complete-WorkflowRunLog -Status "completed"
 Write-Host ("Done. Logs and outputs: {0}" -f $runOutputDir)

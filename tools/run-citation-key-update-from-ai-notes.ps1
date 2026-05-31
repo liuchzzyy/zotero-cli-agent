@@ -1,6 +1,6 @@
 param(
     [string]$Workspace = "log\ai-note-keyword-update",
-    [string]$Model = "deepseek-v4-pro",
+    [string]$Model = "deepseek-v4-flash",
     [int]$BatchSize = 4,
     [int]$RetryBatchSize = 1,
     [int]$ZoteroTimeout = 90,
@@ -13,10 +13,20 @@ param(
     [switch]$Status,
     [switch]$FullRun,
     [switch]$NoSkipDoneTag,
-    [switch]$HideProgressWatchCommands
+    [switch]$HideProgressWatchCommands,
+    [switch]$RunInCurrentWindow
 )
 
 $ErrorActionPreference = "Stop"
+
+$commonScript = Join-Path $PSScriptRoot "zotero-workflow-common.ps1"
+. $commonScript
+
+if (-not $RunInCurrentWindow) {
+    $windowRoot = Get-ZoteroRepoRootPath -ScriptPath $PSCommandPath
+    Start-WorkflowInNewWindow -ScriptPath $PSCommandPath -WorkingDirectory $windowRoot -BoundParameters $PSBoundParameters -DisplayName "Citation Key Update From AI Notes"
+    return
+}
 
 function Get-RepoRoot {
     $scriptDir = Split-Path -Parent $PSCommandPath
@@ -74,8 +84,8 @@ function Write-ProgressWatchCommands([string]$WorkspacePath) {
     $remainingPath = Join-Path $WorkspacePath "remaining.jsonl"
     $logsDir = Join-Path $WorkspacePath "logs"
     Write-Host ""
-    Write-Host "Progress watch from another PowerShell:" -ForegroundColor DarkGray
-    Write-Host "  Keep this PowerShell visible; use these checks for live progress instead of waiting silently." -ForegroundColor DarkGray
+    Write-Host "Optional progress checks from another PowerShell:" -ForegroundColor DarkGray
+    Write-Host "  Primary progress is this window plus run.log/progress.jsonl; use these checks only for diagnosis." -ForegroundColor DarkGray
     Write-Host '  Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match ''run-citation-key-update-from-ai-notes|update_citation_keys_from_ai_notes'' } | Select-Object ProcessId,Name,CommandLine'
     Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-ChildItem -LiteralPath '{0}' -File | Sort-Object LastWriteTime -Descending | Select-Object -First 5 FullName,Length,LastWriteTime }}" -f $logsDir)
     Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-Content -Raw -LiteralPath '{0}' }}" -f $summaryPath)
@@ -86,6 +96,7 @@ $repoRoot = Get-RepoRoot
 $workspacePath = Resolve-RunPath -RepoRoot $repoRoot -PathValue $Workspace
 $logsDir = Join-Path $workspacePath "logs"
 New-Item -ItemType Directory -Force -Path $logsDir | Out-Null
+Start-WorkflowRunLog -RunDirectory $workspacePath -WorkflowName "citation-key-update-from-ai-notes" -RepoRoot $repoRoot
 
 if ($FullRun) {
     $Generate = $true
@@ -105,7 +116,6 @@ $base = New-BaseCommand -WorkspacePath $workspacePath
 Write-Host "Repo:      $repoRoot"
 Write-Host "Workspace: $workspacePath"
 Write-Host "Model:     $Model"
-Write-Host "Run mode:  direct PowerShell with visible output and progress checks"
 if ($PromptPath) {
     Write-Host "Prompt:    $(Resolve-RunPath -RepoRoot $repoRoot -PathValue $PromptPath)"
 }
@@ -140,3 +150,5 @@ if ($Status) {
     $cmd = $base + @("status")
     Invoke-LoggedCommand -RepoRoot $repoRoot -LogPath (Join-Path $logsDir "status-$stamp.log") -Command $cmd
 }
+
+Complete-WorkflowRunLog -Status "completed"

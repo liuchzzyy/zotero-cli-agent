@@ -20,11 +20,21 @@ param(
     [switch]$StopOnError,
     [switch]$RefreshMineruCache,
     [switch]$KeepLog,
-    [switch]$HideProgressWatchCommands
+    [switch]$HideProgressWatchCommands,
+    [switch]$RunInCurrentWindow
 )
 
 $ErrorActionPreference = "Stop"
 $script:UseCliProxyAuth = $false
+
+$commonScript = Join-Path $PSScriptRoot "zotero-workflow-common.ps1"
+. $commonScript
+
+if (-not $RunInCurrentWindow) {
+    $windowRoot = Get-ZoteroRepoRootPath -ScriptPath $PSCommandPath
+    Start-WorkflowInNewWindow -ScriptPath $PSCommandPath -WorkingDirectory $windowRoot -BoundParameters $PSBoundParameters -DisplayName "AI Note Generation"
+    return
+}
 
 function Get-RepoRoot {
     $scriptDir = Split-Path -Parent $PSCommandPath
@@ -81,8 +91,8 @@ function Write-ProgressWatchCommands([string]$RunOutputDir) {
     $failuresPath = Join-Path $RunOutputDir "failures.json"
     $logsDir = Join-Path $RunOutputDir "logs"
     Write-Host ""
-    Write-Host "Progress watch from another PowerShell:" -ForegroundColor DarkGray
-    Write-Host "  Keep this PowerShell visible; use these checks for live progress instead of waiting silently." -ForegroundColor DarkGray
+    Write-Host "Optional progress checks from another PowerShell:" -ForegroundColor DarkGray
+    Write-Host "  Primary progress is this window plus run.log/progress.jsonl; use these checks only for diagnosis." -ForegroundColor DarkGray
     Write-Host '  Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match ''run-ai-note-batch|batch_ai_note_analysis|mineru|zot.*note'' } | Select-Object ProcessId,Name,CommandLine'
     Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-ChildItem -LiteralPath '{0}' -File | Sort-Object LastWriteTime -Descending | Select-Object -First 5 FullName,Length,LastWriteTime }}" -f $logsDir)
     Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-Content -Raw -LiteralPath '{0}' }}" -f $summaryPath)
@@ -185,8 +195,10 @@ function Remove-IntermediateAssets([string]$RunOutputDir) {
 $repoRoot = Get-RepoRoot
 $runOutputDir = New-RunOutputDir -RepoRoot $repoRoot -RequestedOutputDir $OutputDir
 New-Item -ItemType Directory -Force -Path $runOutputDir | Out-Null
+Start-WorkflowRunLog -RunDirectory $runOutputDir -WorkflowName "ai-note-generation" -RepoRoot $repoRoot
 
-$normalizedBaseUrl = ($BaseUrl ?? "").Trim().ToLowerInvariant()
+$baseUrlValue = if ($null -eq $BaseUrl) { "" } else { $BaseUrl }
+$normalizedBaseUrl = $baseUrlValue.Trim().ToLowerInvariant()
 $script:UseCliProxyAuth = $normalizedBaseUrl -match '^https?://(127\.0\.0\.1|localhost):8317(/v1)?/?$'
 if ($script:UseCliProxyAuth) {
     $env:CLIPROXYAPI_KEY = Read-CliProxyApiKey
@@ -195,7 +207,6 @@ if ($script:UseCliProxyAuth) {
 Write-Host "Repo:   $repoRoot"
 Write-Host "Output: $runOutputDir"
 Write-Host "DryRun: $DryRun"
-Write-Host "Run mode: direct PowerShell with visible output and progress checks"
 Write-Host "Clean intermediate assets after successful batches: $(-not $NoCleanIntermediate)"
 Write-Host "Keep log after successful completion: $KeepLog"
 if (-not $HideProgressWatchCommands) {
@@ -255,11 +266,15 @@ while ($true) {
 
 Write-Host ""
 if ($completed -and -not $KeepLog -and -not $NoCleanIntermediate) {
+    Complete-WorkflowRunLog -Status "completed"
     Remove-Item -LiteralPath $runOutputDir -Recurse -Force
     Write-Host "Removed run log directory: $runOutputDir"
     Remove-EmptyLogRoot -RunOutputDir $runOutputDir
 }
 else {
+    if ($completed) {
+        Complete-WorkflowRunLog -Status "completed"
+    }
     Write-Host "Final output directory:"
     Write-Host $runOutputDir
 }

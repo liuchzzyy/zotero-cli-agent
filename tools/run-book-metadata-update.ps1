@@ -15,11 +15,21 @@ param(
     [switch]$Apply,
     [switch]$Resume,
     [switch]$LocalNormalization,
-    [switch]$HideProgressWatchCommands
+    [switch]$HideProgressWatchCommands,
+    [switch]$RunInCurrentWindow
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+$commonScript = Join-Path $PSScriptRoot "zotero-workflow-common.ps1"
+. $commonScript
+
+if (-not $RunInCurrentWindow) {
+    $windowRoot = Get-ZoteroRepoRootPath -ScriptPath $PSCommandPath
+    Start-WorkflowInNewWindow -ScriptPath $PSCommandPath -WorkingDirectory $windowRoot -BoundParameters $PSBoundParameters -DisplayName "Zotero Book Metadata Update"
+    return
+}
 
 function Get-RepoRoot {
     $scriptDir = Split-Path -Parent $PSCommandPath
@@ -93,8 +103,8 @@ function Write-ProgressWatchCommands {
     $planPath = Join-Path $RunOutputDir "book-metadata-plan.json"
     $verificationPath = Join-Path $RunOutputDir "book-metadata-web-api-verification.json"
     Write-Host ""
-    Write-Host "Progress watch from another PowerShell:" -ForegroundColor DarkGray
-    Write-Host "  Keep this PowerShell visible; use these checks for live progress instead of waiting silently." -ForegroundColor DarkGray
+    Write-Host "Optional progress checks from another PowerShell:" -ForegroundColor DarkGray
+    Write-Host "  Primary progress is this window plus run.log/progress.jsonl; use these checks only for diagnosis." -ForegroundColor DarkGray
     Write-Host '  Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match ''run-book-metadata-update|update_book_metadata'' } | Select-Object ProcessId,Name,CommandLine'
     Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-Content -Tail 30 -LiteralPath '{0}' }}" -f $runLog)
     Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-Item -LiteralPath '{0}' | Select-Object FullName,Length,LastWriteTime }}" -f $planPath)
@@ -109,6 +119,7 @@ $repoRoot = Get-RepoRoot
 $runOutputDir = New-RunOutputDir -RepoRoot $repoRoot -RequestedOutputDir $OutputDir
 New-Item -ItemType Directory -Force -Path $runOutputDir | Out-Null
 $runOutputDir = (Resolve-Path -LiteralPath $runOutputDir).Path
+Start-WorkflowRunLog -RunDirectory $runOutputDir -WorkflowName "book-metadata-update" -RepoRoot $repoRoot
 
 Write-RunMetadata -RunOutputDir $runOutputDir -RepoRoot $repoRoot
 
@@ -156,7 +167,6 @@ if ($LocalNormalization) {
 
 ("uv " + ($arguments -join " ")) | Set-Content -LiteralPath $commandFile -Encoding UTF8
 Write-Host ("Run output dir: {0}" -f $runOutputDir)
-Write-Host "Run mode: direct PowerShell with visible output and progress checks"
 if (-not $HideProgressWatchCommands) {
     Write-ProgressWatchCommands -RunOutputDir $runOutputDir
 }
@@ -175,4 +185,5 @@ if ($exitCode -ne 0) {
     throw "Book metadata cleanup failed with exit code $exitCode. See: $runLog"
 }
 
+Complete-WorkflowRunLog -Status "completed"
 Write-Host ("Done. Logs and outputs: {0}" -f $runOutputDir)
