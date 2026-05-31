@@ -58,7 +58,7 @@ class TestPdfCmdWithExtractors:
         assert "mineru extracted text" in result.output
         mock_extractor.extract_text.assert_called_once()
 
-    def test_pdf_pymupdf_fallback_from_mineru(self):
+    def test_pdf_mineru_failure_does_not_fallback_to_pymupdf(self):
         from zotero_cli_agent.core.pdf_errors import PdfExtractionError
 
         mock_mineru = MagicMock()
@@ -66,7 +66,7 @@ class TestPdfCmdWithExtractors:
         mock_mineru.name.return_value = "mineru"
 
         mock_pymupdf = MagicMock()
-        mock_pymupdf.extract_text.return_value = "pymupdf fallback text"
+        mock_pymupdf.extract_text.return_value = "unexpected pymupdf text"
         mock_pymupdf.name.return_value = "pymupdf"
 
         with patch("zotero_cli_agent.core.pdf_cache.PdfCache") as mock_cache_cls:
@@ -82,10 +82,10 @@ class TestPdfCmdWithExtractors:
             with patch("zotero_cli_agent.commands.pdf.get_extractor", side_effect=get_extractor_side_effect):
                 result = _invoke(["pdf", "ATTN001", "--extractor", "mineru"])
 
-        assert result.exit_code == 0
-        assert "pymupdf fallback text" in result.output
+        assert result.exit_code == 1
+        assert "mineru failed" in result.output
         mock_mineru.extract_text.assert_called_once()
-        mock_pymupdf.extract_text.assert_called_once()
+        mock_pymupdf.extract_text.assert_not_called()
 
     def test_pdf_uses_cache_when_available(self):
         with patch("zotero_cli_agent.core.pdf_cache.PdfCache") as mock_cache_cls:

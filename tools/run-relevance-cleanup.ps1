@@ -43,7 +43,7 @@ function New-RunOutputDir {
     }
 
     $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-    return Join-Path $RepoRoot ("log\zotero-cleanup\{0}" -f $stamp)
+    return Join-Path $RepoRoot ("log\relevance-cleanup\{0}" -f $stamp)
 }
 
 function Write-RunMetadata {
@@ -79,7 +79,7 @@ function Write-ProgressWatchCommands {
     Write-Host ""
     Write-Host "Progress watch from another PowerShell:" -ForegroundColor DarkGray
     Write-Host "  Keep this PowerShell visible; use these checks for live progress instead of waiting silently." -ForegroundColor DarkGray
-    Write-Host '  Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match ''run-zotero-cleanup|zotero_cleanup'' } | Select-Object ProcessId,Name,CommandLine'
+    Write-Host '  Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match ''run-relevance-cleanup|run_relevance_cleanup'' } | Select-Object ProcessId,Name,CommandLine'
     Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-Content -Tail 20 -LiteralPath '{0}' }}" -f $progressPath)
     Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-Content -Raw -LiteralPath '{0}' }}" -f $summaryPath)
     Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-Content -Raw -LiteralPath '{0}' }}" -f $applySummaryPath)
@@ -87,7 +87,7 @@ function Write-ProgressWatchCommands {
 
 $repoRoot = Get-RepoRoot
 if (-not $RulesPath) {
-    $RulesPath = Join-Path $repoRoot "tools\zotero-cleanup-rules.json"
+    $RulesPath = Join-Path $repoRoot "tools\relevance-cleanup-rules.json"
 }
 else {
     $RulesPath = Resolve-InRepoPath -RepoRoot $repoRoot -Path $RulesPath
@@ -111,7 +111,7 @@ $runLog = Join-Path $runOutputDir "run.out.log"
 $commandFile = Join-Path $runOutputDir "run-command.txt"
 
 $arguments = @(
-    "run", "python", "-u", "src/zotero_cli_extensions/zotero_cleanup.py",
+    "run", "python", "-u", "src/zotero_cli_workflows/run_relevance_cleanup.py",
     "--rules", $RulesPath,
     "--output-dir", $runOutputDir,
     "--batch-size", "$BatchSize"
@@ -144,7 +144,7 @@ finally {
 }
 
 if ($exitCode -ne 0) {
-    throw "Zotero cleanup failed with exit code $exitCode. See: $runLog"
+    throw "Zotero relevance cleanup failed with exit code $exitCode. See: $runLog"
 }
 
 Write-Host ("Done. Logs and outputs: {0}" -f $runOutputDir)

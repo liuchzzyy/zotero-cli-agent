@@ -39,16 +39,21 @@ def completions_cmd(shell: str) -> None:
 
     env = os.environ.copy()
     env[SHELLS[shell]["var"].split("=")[0]] = SHELLS[shell]["var"].split("=")[1]
-    result = subprocess.run(
-        ["zot"],
-        env=env,
-        capture_output=True,
-        text=True,
-    )
-    if result.stdout:
+    try:
+        result = subprocess.run(
+            ["zot"],
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        result = None
+    if result and result.stdout:
         click.echo(result.stdout)
-    else:
-        # Fallback: print the eval one-liner
-        info = SHELLS[shell]
-        click.echo(f"# Add this to {info['file']}:")
-        click.echo(info["script"])
+        return
+
+    # Fallback: print the eval one-liner when the installed `zot` executable is
+    # unavailable, which is common while running tests from a source checkout.
+    info = SHELLS[shell]
+    click.echo(f"# Add this to {info['file']}:")
+    click.echo(info["script"])

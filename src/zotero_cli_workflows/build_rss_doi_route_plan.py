@@ -182,7 +182,7 @@ def _write_json(path: Path, payload: Any) -> None:
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
-def build_outputs(
+def build_rss_doi_route_plan_outputs(
     *,
     selected_json: Path,
     output_dir: Path,
@@ -268,13 +268,13 @@ def build_outputs(
 def parse_args() -> argparse.Namespace:
     repo_root = Path(__file__).resolve().parents[2]
     parser = argparse.ArgumentParser(
-        description="Clean RSS selected items into a DOI-only inbox import plan for zotero-cli-agent."
+        description="Build a DOI route plan from RSS selected items for zotero-cli-agent."
     )
     parser.add_argument("--selected-json", type=Path, required=True, help="Path to the RSS selected JSON array.")
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=repo_root / "log" / "rss_inbox_plan",
+        default=repo_root / "log" / "rss_doi_route_plan",
         help="Directory for generated plan files.",
     )
     parser.add_argument(
@@ -289,7 +289,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     repo_root = Path(__file__).resolve().parents[2]
-    summary = build_outputs(
+    summary = build_rss_doi_route_plan_outputs(
         selected_json=args.selected_json.resolve(),
         output_dir=args.output_dir.resolve(),
         repo_root=repo_root,

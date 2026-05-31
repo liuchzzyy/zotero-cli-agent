@@ -95,7 +95,7 @@ function Write-ProgressWatchCommands {
     Write-Host ""
     Write-Host "Progress watch from another PowerShell:" -ForegroundColor DarkGray
     Write-Host "  Keep this PowerShell visible; use these checks for live progress instead of waiting silently." -ForegroundColor DarkGray
-    Write-Host '  Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match ''run-book-metadata-cleanup|book_metadata_cleanup'' } | Select-Object ProcessId,Name,CommandLine'
+    Write-Host '  Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match ''run-book-metadata-update|update_book_metadata'' } | Select-Object ProcessId,Name,CommandLine'
     Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-Content -Tail 30 -LiteralPath '{0}' }}" -f $runLog)
     Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-Item -LiteralPath '{0}' | Select-Object FullName,Length,LastWriteTime }}" -f $planPath)
     Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-Content -Raw -LiteralPath '{0}' }}" -f $verificationPath)
@@ -116,7 +116,7 @@ $runLog = Join-Path $runOutputDir "run.out.log"
 $commandFile = Join-Path $runOutputDir "run-command.txt"
 
 $arguments = @(
-    "run", "python", "-u", "src/zotero_cli_extensions/book_metadata_cleanup.py",
+    "run", "python", "-u", "src/zotero_cli_workflows/update_book_metadata.py",
     "--output-dir", $runOutputDir,
     "--batch-size", "$BatchSize",
     "--providers", $Providers,

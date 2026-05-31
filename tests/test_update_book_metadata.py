@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from zotero_cli_extensions.book_metadata_cleanup import (
+from zotero_cli_workflows.update_book_metadata import (
     build_operation,
     build_operation_from_resolution,
     clean_publisher,
@@ -288,7 +288,7 @@ def test_google_oauth_uses_fresh_cached_access_token_without_client_secret(tmp_p
 def test_provider_parser_rejects_crossref_and_unknown(provider: str) -> None:
     import argparse
 
-    from zotero_cli_extensions.book_metadata_cleanup import _parse_providers
+    from zotero_cli_workflows.update_book_metadata import _parse_providers
 
     with pytest.raises(argparse.ArgumentTypeError):
         _parse_providers(provider)

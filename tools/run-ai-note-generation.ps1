@@ -89,7 +89,7 @@ function Write-ProgressWatchCommands([string]$RunOutputDir) {
     Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-Content -Raw -LiteralPath '{0}' }}" -f $failuresPath)
 }
 
-function Invoke-AiNoteBatch {
+function Invoke-AiNoteGenerationBatch {
     param(
         [string]$RepoRoot,
         [string]$RunOutputDir,
@@ -101,7 +101,7 @@ function Invoke-AiNoteBatch {
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $logPath) | Out-Null
 
     $cmd = @(
-        "run", "python", "-u", "src/zotero_cli_extensions/analyze_ai_notes.py",
+        "run", "python", "-u", "src/zotero_cli_workflows/generate_ai_notes.py",
         "--limit", "$BatchSize",
         "--scan-limit", "$ScanLimit",
         "--pdf-input-mode", $PdfInputMode,
@@ -140,7 +140,7 @@ function Invoke-AiNoteBatch {
     }
 
     Write-Host ""
-    Write-Host ("========== AI note batch {0} ==========" -f $Iteration)
+    Write-Host ("========== AI note generation batch {0} ==========" -f $Iteration)
     Write-Host "Output: $RunOutputDir"
     Write-Host "Log:    $logPath"
     Write-Host "Mode:   $PdfInputMode -> $Model"
@@ -205,7 +205,7 @@ if (-not $HideProgressWatchCommands) {
 $iteration = 1
 $completed = $false
 while ($true) {
-    Invoke-AiNoteBatch -RepoRoot $repoRoot -RunOutputDir $runOutputDir -Iteration $iteration
+    Invoke-AiNoteGenerationBatch -RepoRoot $repoRoot -RunOutputDir $runOutputDir -Iteration $iteration
     $summary = Read-BatchSummary -RunOutputDir $runOutputDir
     if ($null -eq $summary) {
         throw "No summary or preview file found under $runOutputDir"

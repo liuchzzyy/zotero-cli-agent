@@ -66,7 +66,7 @@ else {
 
 function Get-ImportProcesses {
     Get-CimInstance Win32_Process |
-        Where-Object { $_.CommandLine -like "*src/zotero_cli_extensions/import_rss_inbox_plan.py*" } |
+        Where-Object { $_.CommandLine -like "*src/zotero_cli_workflows/import_rss_doi_route_plan.py*" } |
         Select-Object ProcessId, Name, CommandLine
 }
 
@@ -80,7 +80,7 @@ function Write-ProgressWatchCommands {
     Write-Host ""
     Write-Host "Progress watch from another PowerShell:" -ForegroundColor DarkGray
     Write-Host "  Keep this PowerShell visible; use these checks for live progress instead of waiting silently." -ForegroundColor DarkGray
-    Write-Host '  Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match ''run-rss-daily-doi-import|import_rss_inbox_plan'' } | Select-Object ProcessId,Name,CommandLine'
+    Write-Host '  Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match ''run-daily-rss-doi-import|import_rss_doi_route_plan'' } | Select-Object ProcessId,Name,CommandLine'
     Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-Content -Raw -LiteralPath '{0}' }}" -f $ImportSummaryPath)
     Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-ChildItem -LiteralPath '{0}' -Recurse -File | Sort-Object LastWriteTime -Descending | Select-Object -First 20 FullName,Length,LastWriteTime }}" -f $RunOutputDir)
 }
@@ -308,14 +308,14 @@ if (-not (Test-Path -LiteralPath $selectedJson)) {
 $runningImports = @(Get-ImportProcesses)
 if ($runningImports.Count -gt 0) {
     $details = $runningImports | Format-Table -AutoSize | Out-String
-    throw "Detected running import_rss_inbox_plan.py process(es). Stop them before rerunning.`n$details"
+    throw "Detected running import_rss_doi_route_plan.py process(es). Stop them before rerunning.`n$details"
 }
 
 $runOutputDir = New-RunOutputDir -RepoRoot $ZoteroRepoRoot -Date $Date -RequestedOutputDir $OutputDir
-$planDir = Join-Path $runOutputDir "rss_inbox_plan"
-$importDir = Join-Path $runOutputDir "rss_inbox_import"
+$planDir = Join-Path $runOutputDir "rss_doi_route_plan"
+$importDir = Join-Path $runOutputDir "rss_doi_import"
 $routePlan = Join-Path $planDir "route_plan.json"
-$cleanSummaryPath = Join-Path $planDir "summary.json"
+$routePlanSummaryPath = Join-Path $planDir "summary.json"
 $importSummaryPath = Join-Path $importDir "import_summary.json"
 $failedResultsPath = Join-Path $importDir "failed_results.json"
 $failedTxtPath = Join-Path $runOutputDir ("rss_failed_dois_{0}.txt" -f $Date)
@@ -337,32 +337,32 @@ try {
         Write-ProgressWatchCommands -ImportSummaryPath $importSummaryPath -RunOutputDir $runOutputDir
     }
 
-    $cleanArgs = @(
-        "run", "python", "src/zotero_cli_extensions/clean_rss_selected_for_inbox.py",
+    $routePlanArgs = @(
+        "run", "python", "src/zotero_cli_workflows/build_rss_doi_route_plan.py",
         "--selected-json", $selectedJson,
         "--output-dir", $planDir
     )
-    Invoke-UvCommand -Arguments $cleanArgs -WorkingDirectory $ZoteroRepoRoot
+    Invoke-UvCommand -Arguments $routePlanArgs -WorkingDirectory $ZoteroRepoRoot
 
     if (-not (Test-Path -LiteralPath $routePlan)) {
         throw "route_plan.json was not created: $routePlan"
     }
 
-    $cleanSummary = Read-JsonFile -Path $cleanSummaryPath
-    $totalToImport = [int]$cleanSummary.new_dois
+    $routePlanSummary = Read-JsonFile -Path $routePlanSummaryPath
+    $totalToImport = [int]$routePlanSummary.new_dois
 
     Write-Host ""
-    Write-Host "Clean summary:"
-    Write-Host ("  total_selected_rows      : {0}" -f $cleanSummary.total_selected_rows)
-    Write-Host ("  unique_selected_dois     : {0}" -f $cleanSummary.unique_selected_dois)
-    Write-Host ("  already_in_library       : {0}" -f $cleanSummary.already_in_library)
-    Write-Host ("  new_dois                 : {0}" -f $cleanSummary.new_dois)
-    Write-Host ("  author_routed_new_dois   : {0}" -f $cleanSummary.author_routed_new_dois)
+    Write-Host "Route plan summary:"
+    Write-Host ("  total_selected_rows      : {0}" -f $routePlanSummary.total_selected_rows)
+    Write-Host ("  unique_selected_dois     : {0}" -f $routePlanSummary.unique_selected_dois)
+    Write-Host ("  already_in_library       : {0}" -f $routePlanSummary.already_in_library)
+    Write-Host ("  new_dois                 : {0}" -f $routePlanSummary.new_dois)
+    Write-Host ("  author_routed_new_dois   : {0}" -f $routePlanSummary.author_routed_new_dois)
 
     if ($totalToImport -le 0) {
         New-Item -ItemType Directory -Force -Path $importDir | Out-Null
         Write-Host ""
-        Write-Host "No new DOIs to import; skipping import_rss_inbox_plan.py." -ForegroundColor Yellow
+        Write-Host "No new DOIs to import; skipping import_rss_doi_route_plan.py." -ForegroundColor Yellow
         $previewPath = Join-Path $importDir "import_plan_preview.json"
         $resumeStatePath = Join-Path $importDir "resume_state.json"
         $checkpointPath = Join-Path $importDir "checkpoint.json"
@@ -415,7 +415,7 @@ try {
     }
     else {
         $importArgs = @(
-            "run", "python", "src/zotero_cli_extensions/import_rss_inbox_plan.py",
+            "run", "python", "src/zotero_cli_workflows/import_rss_doi_route_plan.py",
             "--route-plan", $routePlan,
             "--output-dir", $importDir,
             "--library", $Library,

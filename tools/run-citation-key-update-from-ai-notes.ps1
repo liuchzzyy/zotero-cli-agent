@@ -58,7 +58,7 @@ function Invoke-LoggedCommand {
 }
 
 function New-BaseCommand([string]$WorkspacePath) {
-    $cmd = @("uv", "run", "python", "src/zotero_cli_extensions/update_ai_note_keywords.py", "--workspace", $WorkspacePath)
+    $cmd = @("uv", "run", "python", "src/zotero_cli_workflows/update_citation_keys_from_ai_notes.py", "--workspace", $WorkspacePath)
     if ($PromptPath) {
         $resolvedPromptPath = Resolve-RunPath -RepoRoot $repoRoot -PathValue $PromptPath
         $cmd += @("--prompt-path", $resolvedPromptPath)
@@ -76,7 +76,7 @@ function Write-ProgressWatchCommands([string]$WorkspacePath) {
     Write-Host ""
     Write-Host "Progress watch from another PowerShell:" -ForegroundColor DarkGray
     Write-Host "  Keep this PowerShell visible; use these checks for live progress instead of waiting silently." -ForegroundColor DarkGray
-    Write-Host '  Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match ''run-ai-note-keyword-update|update_ai_note_keywords'' } | Select-Object ProcessId,Name,CommandLine'
+    Write-Host '  Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match ''run-citation-key-update-from-ai-notes|update_citation_keys_from_ai_notes'' } | Select-Object ProcessId,Name,CommandLine'
     Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-ChildItem -LiteralPath '{0}' -File | Sort-Object LastWriteTime -Descending | Select-Object -First 5 FullName,Length,LastWriteTime }}" -f $logsDir)
     Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-Content -Raw -LiteralPath '{0}' }}" -f $summaryPath)
     Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-Content -Tail 20 -LiteralPath '{0}' }}" -f $remainingPath)

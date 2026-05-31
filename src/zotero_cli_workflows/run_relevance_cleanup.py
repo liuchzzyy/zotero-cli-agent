@@ -234,7 +234,7 @@ def classify_item(row: dict[str, Any], rules: dict[str, Any]) -> tuple[str, str,
     return "reject", "no_rule_match", high_hits, medium_hits, guard_hits
 
 
-def build_classification_outputs(
+def build_relevance_classification_outputs(
     *,
     rules: dict[str, Any],
     rules_path: Path,
@@ -315,7 +315,7 @@ def build_classification_outputs(
         "move_needed_count": len(reject_rows_to_move),
         "reject_item_keys": [row["key"] for row in reject_rows_to_move],
     }
-    write_json(output_dir / "cleanup-plan.json", plan)
+    write_json(output_dir / "relevance-cleanup-plan.json", plan)
 
     summary = {
         "status": "generated",
@@ -347,7 +347,7 @@ def build_classification_outputs(
             "keep_csv": str(output_dir / "keep.csv"),
             "unsure_csv": str(output_dir / "unsure.csv"),
             "reject_candidates_csv": str(output_dir / "reject-candidates.csv"),
-            "cleanup_plan_json": str(output_dir / "cleanup-plan.json"),
+            "relevance_cleanup_plan_json": str(output_dir / "relevance-cleanup-plan.json"),
         },
         "sample_unsure": unsure_rows[:30],
         "sample_reject": reject_rows[:30],
@@ -355,7 +355,7 @@ def build_classification_outputs(
     write_json(output_dir / "classification-summary.json", summary)
 
     md_lines = [
-        "# Zotero Cleanup Classification Preview",
+        "# Zotero Relevance Cleanup Classification Preview",
         "",
         "Status: generated. No Zotero item is deleted by this workflow.",
         "",
@@ -426,7 +426,7 @@ def update_items_batch(zot: zotero.Zotero, items: list[dict[str, Any]]) -> None:
     zot.update_items(items)
 
 
-def apply_cleanup(
+def apply_relevance_cleanup(
     *,
     keys: list[str],
     rules: dict[str, Any],
@@ -646,7 +646,7 @@ def main() -> int:
     log(f"[preflight] output_dir={output_dir}")
     log(f"[preflight] local_db={db_path}")
 
-    keys, summary = build_classification_outputs(
+    keys, summary = build_relevance_classification_outputs(
         rules=rules,
         rules_path=rules_path,
         db_path=db_path,
@@ -663,7 +663,7 @@ def main() -> int:
         log("[dry-run] no Zotero Web API writes were performed. Re-run with -Apply to move candidates.")
         return 0
 
-    apply_summary = apply_cleanup(
+        apply_summary = apply_relevance_cleanup(
         keys=keys,
         rules=rules,
         output_dir=output_dir,

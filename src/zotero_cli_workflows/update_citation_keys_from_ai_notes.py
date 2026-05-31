@@ -20,7 +20,7 @@ from zotero_cli_agent.core.writer import ZoteroWriteError, ZoteroWriter
 AI_NOTE_TAG = "workflow/ai_note"
 KEYWORD_DONE_TAG = "workflow/keyword"
 DEFAULT_WORKSPACE = Path("log") / "ai-note-keyword-update"
-DEFAULT_PROMPT_PATH = Path(__file__).resolve().parents[2] / "tools" / "update_ai_note_keywords_prompt.json"
+DEFAULT_PROMPT_PATH = Path(__file__).resolve().parents[2] / "tools" / "citation-key-from-ai-notes-prompt.json"
 
 CONTEXT_PATTERNS = (
     "研究问题",
@@ -704,7 +704,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--prompt-path",
         type=Path,
         default=DEFAULT_PROMPT_PATH,
-        help="JSON prompt file. Default: tools/update_ai_note_keywords_prompt.json.",
+        help="JSON prompt file. Default: tools/citation-key-from-ai-notes-prompt.json.",
     )
     parser.add_argument("--profile", default=None)
 

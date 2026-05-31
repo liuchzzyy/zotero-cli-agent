@@ -79,18 +79,18 @@ powershell -NoProfile -ExecutionPolicy Bypass -File skill\zotero-library-rebuild
 在 E:\Desktop\CodingDaily\zotero-cli-agent 下执行 Zotero library relevance cleanup，用于把与当前研究主题无关的期刊条目移动到 80_TRASH 集合。
 
 规则文件固定为：
-tools\zotero-cleanup-rules.json
+tools\relevance-cleanup-rules.json
 
 不要使用旧的 aa.json、aa_* 预览文件或 TODO 中间文件；这些只是早期临时命名，不再是正式接口。
 规则文件中的 `zotero_scope.exclude_collections` 默认跳过持有集合：
 - `80_TRASH` (`JJ6JSGT5`)：已经判为无关或待丢弃的 holding collection，不重复分类。
 - `90_ARCHIVE` (`6HREN2FT`)：归档 holding collection，不参与日常 relevance cleanup。
-如需排除其他持有集合，先更新 `tools\zotero-cleanup-rules.json`，不要手改 CSV 或临时过滤输出。
+如需排除其他持有集合，先更新 `tools\relevance-cleanup-rules.json`，不要手改 CSV 或临时过滤输出。
 
 本指令独立包含运行文件规则：classification preview、summary、cleanup plan、CSV 清单、progress、apply 结果和 postcheck 都放在本次 log\zotero-cleanup\YYYYMMDD-HHMMSS 目录；不要放在仓库根目录散文件、tmp\ 或临时 .workspace\... 运行目录中。失败、中断、等待确认或需要审计时保留该目录；确认完成且无需审计后再清理。
 
 先执行 dry-run，只生成预览和计划，不写 Zotero：
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-zotero-cleanup.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-relevance-cleanup.ps1
 
 dry-run 输出目录默认是：
 log\zotero-cleanup\YYYYMMDD-HHMMSS
@@ -98,7 +98,7 @@ log\zotero-cleanup\YYYYMMDD-HHMMSS
 检查本次目录中的：
 - classification-preview.md
 - classification-summary.json
-- cleanup-plan.json
+- relevance-cleanup-plan.json
 - reject-candidates.csv
 - unsure.csv
 - keep.csv
@@ -111,19 +111,19 @@ log\zotero-cleanup\YYYYMMDD-HHMMSS
 - 已在 Zotero 自带回收站中的条目跳过。
 - 已在 `80_TRASH` 或 `90_ARCHIVE` 的条目默认跳过，不再重复分类。
 - keep 和 unsure 不动。
-- reject 才作为移动候选；`cleanup-plan.json` 中的 `reject_item_keys` 只包含还需要实际移动的条目。
+- reject 才作为移动候选；`relevance-cleanup-plan.json` 中的 `reject_item_keys` 只包含还需要实际移动的条目。
 - 不调用 zot delete，不删除 Zotero 条目。
 - 不直接写 zotero.sqlite；读操作来自本地 SQLite，写操作必须走 Zotero Web API。
 
 正式执行前必须让我确认 dry-run 结果。确认后再运行：
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-zotero-cleanup.ps1 -Apply
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-relevance-cleanup.ps1 -Apply
 
 “移动到 80_TRASH”的语义是：把 reject 候选条目的 collections 设置为仅 80_TRASH，使它们不再分散在原来的文件夹中。不是追加到 80_TRASH，也不是删除条目。
 
 执行时必须实时显示进度。关注：
 - preflight 中的 active journalArticle / keep / unsure / move_candidates
 - classification-summary.json 中的 classification_scope.excluded_by_collection_count / excluded_collection_keys
-- cleanup-plan.json 中的 reject_count / already_only_target_count / move_needed_count
+- relevance-cleanup-plan.json 中的 reject_count / already_only_target_count / move_needed_count
 - 每批 batch 的 fetched、moved、already、failed、completed/total、elapsed
 - postcheck 中的 only_target、not_only_target、missing
 
@@ -139,7 +139,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-zotero-cleanup.ps1
 - completed-keys.txt 的行数应等于 apply-summary.json 中的 completed。progress.ndjson 的最后应包含 apply_complete 和 postcheck 事件。
 
 如果执行中断或网络/API 失败，不要重建计划后盲目全量重跑。使用同一个输出目录继续：
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-zotero-cleanup.ps1 -Apply -Resume -OutputDir log\zotero-cleanup\YYYYMMDD-HHMMSS
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-relevance-cleanup.ps1 -Apply -Resume -OutputDir log\relevance-cleanup\YYYYMMDD-HHMMSS
 
 恢复逻辑：
 - completed-keys.txt 中已有的 key 会跳过。
@@ -226,7 +226,7 @@ uv run zot --json update --from-jsonl log\metadata-cleanup-YYYYMMDD-HHMM\cleaned
 在 E:\Desktop\CodingDaily\zotero-cli-agent 下执行图书条目 metadata cleanup。图书不要使用期刊论文 DOI / Crossref 清洗路径，也不要直接写 zotero.sqlite。
 
 图书专用 workflow 固定使用：
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-book-metadata-cleanup.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-book-metadata-update.ps1
 
 dry-run 会生成本次目录：
 log\book-metadata-cleanup\YYYYMMDD-HHMMSS
@@ -254,7 +254,7 @@ log\book-metadata-cleanup\YYYYMMDD-HHMMSS
 默认外部来源顺序是 `open_library,library_of_congress`。如果要用 Google Books：
 - 已有可用 token cache 时，直接传 `-GoogleOAuthTokenCache` 即可。
 - 只有首次授权或 token 过期且无法刷新时，才需要再传 `-GoogleOAuthClientSecret`。
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-book-metadata-cleanup.ps1 -Providers google_books,open_library,library_of_congress -GoogleOAuthTokenCache E:\Desktop\CodingDaily\zotero-cli-agent\.zot\state\google-books-oauth-token.json
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-book-metadata-update.ps1 -Providers google_books,open_library,library_of_congress -GoogleOAuthTokenCache E:\Desktop\CodingDaily\zotero-cli-agent\.zot\state\google-books-oauth-token.json
 
 图书字段规则：
 - date 清理 Zotero/Crossref 异常重复日期，例如 `2016-00-00 2016` -> `2016`，`2018-02-00 2018-02` -> `2018-02`。
@@ -265,10 +265,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-book-metadata-clea
 - 不再额外生成 `source/book_metadata/*` 之类的 provider 来源 tag。
 
 确认 dry-run 后正式写入：
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-book-metadata-cleanup.ps1 -OutputDir log\book-metadata-cleanup\YYYYMMDD-HHMMSS -Apply
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-book-metadata-update.ps1 -OutputDir log\book-metadata-update\YYYYMMDD-HHMMSS -Apply
 
 如果中断或需要复核，使用同一个目录续跑：
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-book-metadata-cleanup.ps1 -OutputDir log\book-metadata-cleanup\YYYYMMDD-HHMMSS -Apply -Resume
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-book-metadata-update.ps1 -OutputDir log\book-metadata-update\YYYYMMDD-HHMMSS -Apply -Resume
 
 正式写入后必须看 Web API postcheck：
 - book-metadata-web-api-verification.json
@@ -290,22 +290,22 @@ Zotero Web API 写入后，需要 Zotero 桌面端同步，本地 zotero.sqlite 
 本指令独立包含运行文件规则：route_plan、checkpoint、summary、failed_results、progress 和恢复审计文件都放在 log\rss-daily-doi-import_YYYY-MM-DD；不要放在仓库根目录散文件、tmp\ 或临时 .workspace\... 运行目录中。成功且 failed=0 时默认清理本次 log 目录；失败、中断或需要恢复时保留该目录。
 
 日常运行不要手动拆开清洗/导入步骤，直接调用 wrapper。wrapper 默认把本次 route_plan、checkpoint、summary、failed_results 等运行文件放到 log\rss-daily-doi-import_YYYY-MM-DD，并在 failed=0 成功完成后自动删除本次 log 目录：
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-rss-daily-doi-import.ps1 -Date YYYY-MM-DD -ProgressIntervalSeconds 5
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-daily-rss-doi-import.ps1 -Date YYYY-MM-DD -ProgressIntervalSeconds 5
 
 推荐直接在 PowerShell 中运行 wrapper，保留终端输出；如需旁路查看进度，另开 PowerShell 查询 import 进程和 import_summary.json：
-Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'run-rss-daily-doi-import|import_rss_inbox_plan' } | Select-Object ProcessId,Name,CommandLine
-Get-Content -Raw log\rss-daily-doi-import_YYYY-MM-DD\rss_inbox_import\import_summary.json
+Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'run-daily-rss-doi-import|import_rss_doi_route_plan' } | Select-Object ProcessId,Name,CommandLine
+Get-Content -Raw log\rss-daily-doi-import_YYYY-MM-DD\rss_doi_import\import_summary.json
 
 默认读取：
 E:\Desktop\CodingDaily\rss-cli-agent\storage\exports\daily\YYYY-MM-DD.selected.json
 
 如果 RSS selected JSON 在非默认位置，必须显式传入完整路径：
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-rss-daily-doi-import.ps1 -Date YYYY-MM-DD -SelectedJson "E:\Desktop\CodingDaily\rss-cli-agent\storage\exports\daily\YYYY-MM-DD.selected.json" -ProgressIntervalSeconds 5
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-daily-rss-doi-import.ps1 -Date YYYY-MM-DD -SelectedJson "E:\Desktop\CodingDaily\rss-cli-agent\storage\exports\daily\YYYY-MM-DD.selected.json" -ProgressIntervalSeconds 5
 
 如果需要保留成功运行记录用于审查，加 `-KeepLog`；否则不要保留成功运行的 log 目录。
 
-运行时必须显示实时进度。关注 processed/total、created_new、reused_existing、already_routed、failed。长时间停在 preflight/import starting 时，检查 log\rss-daily-doi-import_YYYY-MM-DD\rss_inbox_import\import_summary.json 和是否仍有 import_rss_inbox_plan.py 进程，不要凭表面输出判断卡死。
-如果 clean summary 显示 new_dois=0，wrapper 应直接写出 created_new=0、reused_existing=0、already_routed=0、failed=0 的 summary，并跳过 import_rss_inbox_plan.py；不要为 0 个 DOI 启动空导入进程。
+运行时必须显示实时进度。关注 processed/total、created_new、reused_existing、already_routed、failed。长时间停在 preflight/import starting 时，检查 log\rss-daily-doi-import_YYYY-MM-DD\rss_doi_import\import_summary.json 和是否仍有 import_rss_doi_route_plan.py 进程，不要凭表面输出判断卡死。
+如果 route plan summary 显示 new_dois=0，wrapper 应直接写出 created_new=0、reused_existing=0、already_routed=0、failed=0 的 summary，并跳过 import_rss_doi_route_plan.py；不要为 0 个 DOI 启动空导入进程。
 
 如果 wrapper 已经完成且 failed=0：
 - 本次 log\rss-daily-doi-import_YYYY-MM-DD 应该已被自动删除；如果使用过 -KeepLog，复核无误后手动删除。
@@ -314,9 +314,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-rss-daily-doi-impo
 
 如果中途失败或被中断且 log\rss-daily-doi-import_YYYY-MM-DD 还在：
 - 不要立刻重跑 wrapper；wrapper 会重建本次输出目录，可能丢掉 checkpoint。
-- 先确认没有残留 import_rss_inbox_plan.py 进程。
+- 先确认没有残留 import_rss_doi_route_plan.py 进程。
 - 用同一个 route_plan 和 output_dir 恢复：
-  .\.venv\Scripts\python.exe src\zotero_cli_extensions\import_rss_inbox_plan.py --route-plan log\rss-daily-doi-import_YYYY-MM-DD\rss_inbox_plan\route_plan.json --output-dir log\rss-daily-doi-import_YYYY-MM-DD\rss_inbox_import --library user --apply
+.\.venv\Scripts\python.exe src\zotero_cli_workflows\import_rss_doi_route_plan.py --route-plan log\rss-daily-doi-import_YYYY-MM-DD\rss_doi_route_plan\route_plan.json --output-dir log\rss-daily-doi-import_YYYY-MM-DD\rss_doi_import --library user --apply
 - 恢复完成后检查 failed_results.json；若为空且 checkpoint 覆盖全部 route_plan entries，再删除旧版本残留的根目录 rss_failed_dois_YYYY-MM-DD.txt，并清理本次 log\rss-daily-doi-import_YYYY-MM-DD。
 - 如果失败来自 metadata/Crossref 解析异常，先修复代码并补测试，再基于原 checkpoint 恢复；不要清空本次 log 目录。
 ```
@@ -350,7 +350,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\remove-newer-doi-dupli
 
 ### 推荐给代理的直接提示词
 ```text
-使用 E:\Desktop\CodingDaily\zotero-cli-agent\tools\run-ai-note-batch.ps1 批量生成 Zotero AI note，不要手动拼长命令逐条跑。
+使用 E:\Desktop\CodingDaily\zotero-cli-agent\tools\run-ai-note-generation.ps1 批量生成 Zotero AI note，不要手动拼长命令逐条跑。
 
 目标：
 对尚未带有 `workflow/ai_note` 或旧 `update/AInote` 的非书籍条目，读取所有本地 PDF 附件，使用 MinerU 抽取 Markdown 和图片，经 CLIProxyAPI 的 gpt-5.4（reasoning effort=`high`）生成“AI条目分析 - <title>”note，写回 Zotero Web API，并给父条目打 tag `workflow/ai_note`。
@@ -358,13 +358,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\remove-newer-doi-dupli
 本指令独立包含运行文件规则：checkpoint、preview、results、failures、notes、MinerU 临时资产和 batch logs 都放在 log\ai-note-analysis-batch-YYYYMMDD-HHMMSS；不要放在仓库根目录散文件、tmp\ 或临时 .workspace\... 运行目录中。完整成功并复核无误后清理本次目录；失败、中断、等待审查或需要保留 MinerU 原始材料时保留。
 
 默认命令。wrapper 默认把 checkpoint、preview、results、failures、notes、MinerU 临时资产和 batch logs 放到 log\ai-note-analysis-batch-YYYYMMDD-HHMMSS，并在完整成功后自动清理本次 log 目录：
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-ai-note-batch.ps1 -BatchSize 3
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-ai-note-generation.ps1 -BatchSize 3
 
 先验证候选条目时用 dry-run；dry-run 成功结束后也会清理本次 log 目录，等待审查时可加 -KeepLog：
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-ai-note-batch.ps1 -DryRun -BatchSize 3 -ScanLimit 100 -KeepLog
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-ai-note-generation.ps1 -DryRun -BatchSize 3 -ScanLimit 100 -KeepLog
 
 只处理指定条目时用：
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-ai-note-batch.ps1 -Keys VH4PXB5G -BatchSize 1
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-ai-note-generation.ps1 -Keys VH4PXB5G -BatchSize 1
 
 边界和跳过规则：
 - 已有 `workflow/ai_note` 或旧 `update/AInote` 的父条目默认完全跳过，不重复生成 note。
@@ -403,26 +403,26 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-ai-note-batch.ps1 
 ### 常用参数
 ```powershell
 # 小批量正式运行，推荐默认；成功后自动清理本次 log 目录
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-ai-note-batch.ps1 -BatchSize 3
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-ai-note-generation.ps1 -BatchSize 3
 
 # 保留 MinerU 中间 Markdown 和图片，便于检查
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-ai-note-batch.ps1 -BatchSize 1 -NoCleanIntermediate
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-ai-note-generation.ps1 -BatchSize 1 -NoCleanIntermediate
 
 # 复用同一个 log 输出目录继续跑，避免本地 Zotero 未同步时重复
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-ai-note-batch.ps1 -BatchSize 3 -OutputDir log\ai-note-analysis-batch-YYYYMMDD-HHMMSS
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-ai-note-generation.ps1 -BatchSize 3 -OutputDir log\ai-note-generation-YYYYMMDD-HHMMSS
 
 # 成功后也保留运行目录用于审查
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-ai-note-batch.ps1 -BatchSize 3 -KeepLog
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-ai-note-generation.ps1 -BatchSize 3 -KeepLog
 
 # 切到 DeepSeek 时只能用文本模式，不要使用 mineru-markdown-images
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-ai-note-batch.ps1 -BatchSize 3 -Model deepseek-v4-flash -BaseUrl https://api.deepseek.com -PdfInputMode mineru-text
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-ai-note-generation.ps1 -BatchSize 3 -Model deepseek-v4-flash -BaseUrl https://api.deepseek.com -PdfInputMode mineru-text
 ```
 
 ## Update AI Note Citation Keywords
 
 ### 推荐给代理的直接提示词
 ```text
-使用 E:\Desktop\CodingDaily\zotero-cli-agent\tools\run-ai-note-keyword-update.ps1 更新已经带有 workflow/ai_note 的父条目 citationKey，不要手动逐条改 Zotero，不要直接写 zotero.sqlite。
+使用 E:\Desktop\CodingDaily\zotero-cli-agent\tools\run-citation-key-update-from-ai-notes.ps1 更新已经带有 workflow/ai_note 的父条目 citationKey，不要手动逐条改 Zotero，不要直接写 zotero.sqlite。
 
 目标：
 读取本地 Zotero SQLite 中带 workflow/ai_note 的父条目及其 AI note，对比现有 citationKey，生成统一的引用关键词，并通过 Zotero Web API 写回父条目 citationKey；写入成功后给父条目添加 tag workflow/keyword。
@@ -438,33 +438,33 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-ai-note-batch.ps1 
 - 可选槽按“先进表征方法 | 制备方法 | 理论/模型”的语义顺序追加，每类最多一个短槽，可以用逗号合并同类术语。
 - 引用关键词必须指出这篇文章最大的破绽、最弱证据、最值得追问的假设或外推风险，不要泛写“无明显破绽”。
 - 统一通用术语；例如“液态Na-K合金负极”“Na-K液态合金负极”“液态Na-K合金”“Na-K液态合金”都简写为 Na-K。
-- 具体 prompt 不再写死在 Python 中，保存在 tools\update_ai_note_keywords_prompt.json；修改格式要求或术语统一时优先改这个 JSON。
+- 具体 prompt 不再写死在 Python 中，保存在 tools\citation-key-from-ai-notes-prompt.json；修改格式要求或术语统一时优先改这个 JSON。
 
 推荐 wrapper。默认不写 Zotero，只刷新 status；完整运行需要显式 -FullRun：
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-ai-note-keyword-update.ps1 -Status
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-ai-note-keyword-update.ps1 -FullRun
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-citation-key-update-from-ai-notes.ps1 -Status
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-citation-key-update-from-ai-notes.ps1 -FullRun
 
 分步运行时用：
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-ai-note-keyword-update.ps1 -Generate
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-ai-note-keyword-update.ps1 -RetryFailed
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-ai-note-keyword-update.ps1 -DryRunApply
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-ai-note-keyword-update.ps1 -Apply
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-ai-note-keyword-update.ps1 -Status
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-citation-key-update-from-ai-notes.ps1 -Generate
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-citation-key-update-from-ai-notes.ps1 -RetryFailed
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-citation-key-update-from-ai-notes.ps1 -DryRunApply
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-citation-key-update-from-ai-notes.ps1 -Apply
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-citation-key-update-from-ai-notes.ps1 -Status
 
 当前推荐模型是 deepseek-v4-flash；不要再用 deepseek-v4-pro 做这个关键词流程，pro 在本流程里明显更慢。wrapper 默认 Model=deepseek-v4-flash。如果临时用 Python 子命令，显式指定 flash：
-uv run python src\zotero_cli_extensions\update_ai_note_keywords.py generate --skip-done-tag --model deepseek-v4-flash
+uv run python src\zotero_cli_workflows\update_citation_keys_from_ai_notes.py generate --skip-done-tag --model deepseek-v4-flash
 
 Python 子命令仍可用于调试。默认工作目录是 log\ai-note-keyword-update，不再使用 .workspace\ai-note-keyword-update：
-uv run python src\zotero_cli_extensions\update_ai_note_keywords.py generate --skip-done-tag --model deepseek-v4-flash
-uv run python src\zotero_cli_extensions\update_ai_note_keywords.py generate --retry-failed --batch-size 1 --model deepseek-v4-flash
-uv run python src\zotero_cli_extensions\update_ai_note_keywords.py apply --dry-run
-uv run python src\zotero_cli_extensions\update_ai_note_keywords.py apply --zotero-timeout 90
-uv run python src\zotero_cli_extensions\update_ai_note_keywords.py status
+uv run python src\zotero_cli_workflows\update_citation_keys_from_ai_notes.py generate --skip-done-tag --model deepseek-v4-flash
+uv run python src\zotero_cli_workflows\update_citation_keys_from_ai_notes.py generate --retry-failed --batch-size 1 --model deepseek-v4-flash
+uv run python src\zotero_cli_workflows\update_citation_keys_from_ai_notes.py apply --dry-run
+uv run python src\zotero_cli_workflows\update_citation_keys_from_ai_notes.py apply --zotero-timeout 90
+uv run python src\zotero_cli_workflows\update_citation_keys_from_ai_notes.py status
 
 如果要临时测试另一版 prompt：
-uv run python src\zotero_cli_extensions\update_ai_note_keywords.py --prompt-path tools\update_ai_note_keywords_prompt.json generate --skip-done-tag --model deepseek-v4-flash
+uv run python src\zotero_cli_workflows\update_citation_keys_from_ai_notes.py --prompt-path tools\citation-key-from-ai-notes-prompt.json generate --skip-done-tag --model deepseek-v4-flash
 或用 wrapper：
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-ai-note-keyword-update.ps1 -Generate -PromptPath tools\update_ai_note_keywords_prompt.json
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-citation-key-update-from-ai-notes.ps1 -Generate -PromptPath tools\citation-key-from-ai-notes-prompt.json
 
 中间文件和续跑：
 - 默认中间文件保存在 log\ai-note-keyword-update，包括 items.jsonl、generated.jsonl、updates.jsonl、applied.jsonl、failed_generation.jsonl、failed_apply.jsonl、summary.json、remaining.jsonl，以及 logs\*.log。

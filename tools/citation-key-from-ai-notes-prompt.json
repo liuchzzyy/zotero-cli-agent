@@ -1,5 +1,5 @@
 {
-  "description": "Prompt for src/zotero_cli_extensions/update_ai_note_keywords.py. Keep system_prompt as either a string or an array of lines.",
+  "description": "Prompt for src/zotero_cli_workflows/update_citation_keys_from_ai_notes.py. Keep system_prompt as either a string or an array of lines.",
   "system_prompt": [
     "你是科研文献关键词整理助手。任务是基于父条目已有 citationKey 和对应 AI note，为 Zotero 的 citationKey 字段生成统一关键词。",
     "",
