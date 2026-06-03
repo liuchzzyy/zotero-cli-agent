@@ -64,6 +64,23 @@ def test_add_note_network_error(mock_zotero_cls):
 
 
 @patch("zotero_cli_agent.core.writer.zotero.Zotero")
+def test_add_item_read_error_is_retryable(mock_zotero_cls):
+    mock_zot = MagicMock()
+    mock_zotero_cls.return_value = mock_zot
+    mock_zot.item_template.return_value = {"itemType": "journalArticle", "DOI": ""}
+    from httpx import ReadError
+
+    mock_zot.create_items.side_effect = ReadError("Connection reset")
+
+    writer = ZoteroWriter(library_id="123", api_key="abc")
+    with pytest.raises(ZoteroWriteError, match="Network error") as exc_info:
+        writer.add_item(doi="10.1234/test")
+
+    assert exc_info.value.code == "network_error"
+    assert exc_info.value.retryable is True
+
+
+@patch("zotero_cli_agent.core.writer.zotero.Zotero")
 def test_add_note_api_failure(mock_zotero_cls):
     mock_zot = MagicMock()
     mock_zotero_cls.return_value = mock_zot

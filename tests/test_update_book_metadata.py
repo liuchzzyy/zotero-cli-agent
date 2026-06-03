@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
+from zotero_cli_agent.models import Item
 from zotero_cli_workflows.update_book_metadata import (
     build_operation,
     build_operation_from_resolution,
@@ -13,8 +16,6 @@ from zotero_cli_workflows.update_book_metadata import (
     resolve_google_books,
     resolve_open_library,
 )
-
-from zotero_cli_agent.models import Item
 
 
 class FakeResponse:

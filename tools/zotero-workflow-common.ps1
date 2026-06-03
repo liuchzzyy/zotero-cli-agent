@@ -108,6 +108,51 @@ function Start-WorkflowInNewWindow {
     Write-Host "Close the new window only after the workflow finishes." -ForegroundColor DarkGray
 }
 
+function New-SharedUtf8AppendWriter {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    $directory = Split-Path -Parent $Path
+    if ($directory) {
+        New-Item -ItemType Directory -Force -Path $directory | Out-Null
+    }
+
+    $stream = [System.IO.File]::Open($Path, [System.IO.FileMode]::Append, [System.IO.FileAccess]::Write, [System.IO.FileShare]::ReadWrite)
+    $writer = [System.IO.StreamWriter]::new($stream, [System.Text.UTF8Encoding]::new($false))
+    $writer.AutoFlush = $true
+    return $writer
+}
+
+function Write-SharedFileLine {
+    param(
+        [System.IO.StreamWriter]$Writer,
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [Parameter(Mandatory = $true)]
+        [string]$Message
+    )
+
+    $attempt = 0
+    while ($true) {
+        try {
+            if ($Writer) {
+                $Writer.WriteLine($Message)
+            } else {
+                Add-Content -LiteralPath $Path -Encoding UTF8 -Value $Message
+            }
+            return
+        } catch [System.IO.IOException] {
+            if ($attempt -ge 4) {
+                throw
+            }
+            Start-Sleep -Milliseconds (100 * [math]::Pow(2, $attempt))
+            $attempt += 1
+        }
+    }
+}
+
 function Start-WorkflowRunLog {
     param(
         [Parameter(Mandatory = $true)]
@@ -121,10 +166,12 @@ function Start-WorkflowRunLog {
     New-Item -ItemType Directory -Force -Path $RunDirectory | Out-Null
     $script:WorkflowRunLog = Join-Path $RunDirectory "run.log"
     $script:WorkflowProgressJsonl = Join-Path $RunDirectory "progress.jsonl"
+    $script:WorkflowRunWriter = New-SharedUtf8AppendWriter -Path $script:WorkflowRunLog
+    $script:WorkflowProgressWriter = New-SharedUtf8AppendWriter -Path $script:WorkflowProgressJsonl
     $script:WorkflowStartedAt = Get-Date
     $script:WorkflowName = $WorkflowName
 
-    Add-Content -LiteralPath $script:WorkflowRunLog -Encoding UTF8 -Value ("[{0}] {1} started" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $WorkflowName)
+    Write-SharedFileLine -Writer $script:WorkflowRunWriter -Path $script:WorkflowRunLog -Message ("[{0}] {1} started" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $WorkflowName)
     Write-WorkflowEvent -EventData ([ordered]@{
         event = "run_started"
         workflow = $WorkflowName
@@ -147,7 +194,7 @@ function Write-WorkflowLine {
 
     Write-Host $Message -ForegroundColor $Color
     if ($script:WorkflowRunLog) {
-        Add-Content -LiteralPath $script:WorkflowRunLog -Encoding UTF8 -Value ("[{0}] {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $Message)
+        Write-SharedFileLine -Writer $script:WorkflowRunWriter -Path $script:WorkflowRunLog -Message ("[{0}] {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $Message)
     }
 }
 
@@ -167,7 +214,7 @@ function Write-WorkflowEvent {
     foreach ($key in $EventData.Keys) {
         $payload[$key] = $EventData[$key]
     }
-    Add-Content -LiteralPath $script:WorkflowProgressJsonl -Encoding UTF8 -Value ($payload | ConvertTo-Json -Compress -Depth 8)
+    Write-SharedFileLine -Writer $script:WorkflowProgressWriter -Path $script:WorkflowProgressJsonl -Message ($payload | ConvertTo-Json -Compress -Depth 8)
 }
 
 function Complete-WorkflowRunLog {
