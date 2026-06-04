@@ -299,15 +299,21 @@ def convert_pdfs_to_text(
     results: dict[Path, str | Exception] = {}
     uncached: list[Path] = []
 
-    for pdf_path in pdf_paths:
+    total_paths = len(pdf_paths)
+    for idx, pdf_path in enumerate(pdf_paths, 1):
         cached_text = cache.get(pdf_path, extractor_name)
         if cached_text is not None:
             results[pdf_path] = cached_text
         else:
             uncached.append(pdf_path)
+        if progress_callback and (idx % 25 == 0 or idx == total_paths):
+            progress_callback("cache", idx, total_paths, 0)
 
     if not uncached:
         return results
+
+    if progress_callback:
+        progress_callback("cache-miss", len(uncached), total_paths, 0)
 
     if extractor_name == "mineru" and len(uncached) > 1:
         extractor = get_extractor(extractor_name)

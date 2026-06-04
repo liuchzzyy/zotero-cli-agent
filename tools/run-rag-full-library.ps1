@@ -1,5 +1,6 @@
 param(
     [string]$WorkspaceName = "full-library-pdf-rag",
+    [string]$Collections = "",
     [string]$Extractor = "mineru",
     [int]$ScanLimit = 100000,
     [int]$ProgressEvery = 100,
@@ -53,6 +54,22 @@ function Remove-EmptyLogRoot([string]$RunOutputDir) {
     if ($children.Count -eq 0) {
         Remove-Item -LiteralPath $parent -Force
         Write-Host "Removed empty log directory: $parent"
+    }
+}
+
+function Remove-RunOutputDirWithRetry([string]$RunOutputDir) {
+    for ($attempt = 0; $attempt -lt 5; $attempt += 1) {
+        try {
+            Remove-Item -LiteralPath $RunOutputDir -Recurse -Force
+            Write-Host "Removed run log directory: $RunOutputDir"
+            return
+        }
+        catch [System.IO.IOException] {
+            if ($attempt -eq 4) {
+                throw
+            }
+            Start-Sleep -Milliseconds (250 * [math]::Pow(2, $attempt))
+        }
     }
 }
 
@@ -116,6 +133,7 @@ def main() -> None:
     parser.add_argument("--scan-limit", type=int, required=True)
     parser.add_argument("--progress-every", type=int, default=100)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--collection", action="append", default=[])
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
@@ -128,7 +146,23 @@ def main() -> None:
 
     try:
         print(f"[inventory] reading local Zotero DB {db_path}", flush=True)
-        items = reader.search("", limit=args.scan_limit).items
+        collection_item_counts: dict[str, int] = {}
+        if args.collection:
+            item_by_key = {}
+            for collection in args.collection:
+                print(f"[inventory] scanning collection {collection}", flush=True)
+                result = reader.search("", collection=collection, limit=args.scan_limit)
+                collection_item_counts[collection] = result.total
+                for item in result.items:
+                    item_by_key.setdefault(item.key, item)
+            items = list(item_by_key.values())
+            print(
+                "[inventory] "
+                f"collection_scope={','.join(args.collection)} unique_items={len(items)}",
+                flush=True,
+            )
+        else:
+            items = reader.search("", limit=args.scan_limit).items
         total = len(items)
         pdf_items: list[dict[str, object]] = []
         skipped_no_local_pdf = 0
@@ -177,7 +211,11 @@ def main() -> None:
             ws = Workspace(
                 name=args.workspace,
                 created=utc_now(),
-                description="Auto-maintained workspace containing all local Zotero parent items with existing PDF attachments.",
+                description=(
+                    "Auto-maintained workspace containing selected Zotero collection parent items with existing PDF attachments."
+                    if args.collection
+                    else "Auto-maintained workspace containing all local Zotero parent items with existing PDF attachments."
+                ),
             )
             workspace_created = True
 
@@ -205,6 +243,8 @@ def main() -> None:
         payload = {
             "created_at": utc_now(),
             "workspace": args.workspace,
+            "collections": args.collection,
+            "collection_item_counts": collection_item_counts,
             "dry_run": args.dry_run,
             "db_path": str(db_path),
             "scanned_items": total,
@@ -241,6 +281,14 @@ $runOutputDir = New-RunOutputDir -RepoRoot $repoRoot -RequestedOutputDir $Output
 $logsDir = Join-Path $runOutputDir "logs"
 $inventoryPath = Join-Path $runOutputDir "inventory.json"
 $inventoryScript = Join-Path $runOutputDir "inventory_full_pdf_workspace.py"
+$collectionNames = @()
+if ($Collections) {
+    $collectionNames = @(
+        $Collections -split "," |
+            ForEach-Object { $_.Trim() } |
+            Where-Object { $_ }
+    )
+}
 
 New-Item -ItemType Directory -Force -Path $runOutputDir | Out-Null
 Write-InventoryScript -ScriptPath $inventoryScript
@@ -248,6 +296,9 @@ Start-WorkflowRunLog -RunDirectory $runOutputDir -WorkflowName "rag-full-library
 
 Write-Host "Repo:       $repoRoot"
 Write-Host "Workspace:  $WorkspaceName"
+if ($collectionNames.Count -gt 0) {
+    Write-Host ("Collections: {0}" -f ($collectionNames -join ", "))
+}
 Write-Host "Extractor:  $Extractor"
 Write-Host "Output:     $runOutputDir"
 Write-Host "DryRun:     $DryRun"
@@ -268,6 +319,9 @@ $inventoryCmd = @(
 if ($DryRun) {
     $inventoryCmd += "--dry-run"
 }
+foreach ($collectionName in $collectionNames) {
+    $inventoryCmd += @("--collection", $collectionName)
+}
 
 $completed = $false
 try {
@@ -276,6 +330,10 @@ try {
     $inventory = Get-Content -LiteralPath $inventoryPath -Raw | ConvertFrom-Json
     Write-Host ""
     Write-Host "Inventory summary:"
+    $inventoryCollections = @($inventory.collections)
+    if ($inventoryCollections.Count -gt 0) {
+        Write-Host ("  collections:                  {0}" -f ($inventoryCollections -join ", "))
+    }
     Write-Host ("  scanned_items:                {0}" -f $inventory.scanned_items)
     Write-Host ("  local_pdf_items:              {0}" -f $inventory.local_pdf_items)
     Write-Host ("  pdf_but_missing_local_file:   {0}" -f $inventory.pdf_but_missing_local_file)
@@ -307,7 +365,7 @@ try {
         return
     }
 
-    $indexCmd = @("uv", "run", "zot", "workspace", "index", $WorkspaceName, "--extractor", $Extractor)
+    $indexCmd = @("uv", "run", "zot", "workspace", "index", $WorkspaceName, "--extractor", $Extractor, "--progress-lines", "--item-progress")
     if ($ForceRebuild) {
         $indexCmd += "--force"
     }
@@ -331,8 +389,7 @@ finally {
     }
     if ($completed -and -not $KeepLog -and -not $KeepInventory) {
         Complete-WorkflowRunLog -Status "completed"
-        Remove-Item -LiteralPath $runOutputDir -Recurse -Force
-        Write-Host "Removed run log directory: $runOutputDir"
+        Remove-RunOutputDirWithRetry -RunOutputDir $runOutputDir
         Remove-EmptyLogRoot -RunOutputDir $runOutputDir
     }
     elseif ($completed) {

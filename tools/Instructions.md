@@ -543,18 +543,24 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-citation-key-updat
 执行与日志规则：
 - 默认通过对应 wrapper 重新打开新的 PowerShell 窗口运行；除非调试或 CI，不要追加 `-RunInCurrentWindow`。
 - 保留新窗口，进度以新窗口输出和运行目录中的 `run.log`、`progress.jsonl` 为主；不要把额外 watch 命令当作主进度来源。
-- 汇报进度必须基于 wrapper 输出、`run.log`、`progress.jsonl` 或实际产物变化，不要只说“已开始”。
+- 汇报进度必须基于 wrapper 输出、`run.log`、`progress.jsonl`、`logs\index.log`、`rag.idx.sqlite` 实际产物变化，不要只说“已开始”。
 - 所有 stdout/stderr、中间文件和诊断日志都必须放在各自 `log\...` 运行目录；不要散落到仓库根目录、`tools\`、`src\zotero_cli_workflows\`、`tmp\` 或临时 `.workspace\...` 中。
 
-使用 E:\Desktop\CodingDaily\zotero-cli-agent\tools\run-rag-full-library.ps1 为 Zotero 全库含 PDF 的父条目建立/更新 RAG 索引，不要手动逐条添加 workspace item。
+使用 E:\Desktop\CodingDaily\zotero-cli-agent\tools\run-rag-full-library.ps1 为 Zotero 含 PDF 的父条目建立/更新 RAG 索引，不要手动逐条添加 workspace item，不直接写 rag.idx.sqlite。
 
 默认目标：
 - workspace 名称：full-library-pdf-rag。
 - 条目范围：本地 Zotero SQLite 中所有“至少有一个本地存在 PDF 附件”的父条目。
-- 索引方式：先维护 .workspace\full-library-pdf-rag\workspace.toml，再调用 uv run zot workspace index full-library-pdf-rag --extractor mineru。
+- 索引方式：先维护 .workspace\full-library-pdf-rag\workspace.toml，再调用 uv run zot workspace index full-library-pdf-rag --extractor mineru --progress-lines --item-progress。
 - 增量规则：workspace 只新增缺失 key；RAG index 只索引尚未进入 rag.idx.sqlite 的 item key；PDF 文本抽取复用 .zot\state\pdf_cache.sqlite。
+- index 阶段按 Zotero 父条目逐个处理、逐个 commit；中断后重跑会跳过已进入 rag.idx.sqlite 的 item key，继续剩余条目。
 
-本指令独立包含运行文件规则，并区分持久状态和本次运行文件：.workspace\full-library-pdf-rag 和 .zot\state\pdf_cache.sqlite 是持久 workspace/index/cache，不是清理对象；inventory、临时脚本、运行日志和临时诊断文件放在 log\rag-full-library-YYYYMMDD-HHMMSS。不要把本次运行文件放在仓库根目录散文件、tmp\ 或额外临时 .workspace\... 目录中。完整成功并复核无误后清理本次 log 目录；失败、中断或需要审查时保留。
+集合限定目标：
+- wrapper 支持 `-Collections`，值为逗号分隔的 collection 名称或 key；inventory 阶段会对这些集合取并集并去重，再筛选“至少有一个本地存在 PDF 附件”的父条目。
+- 当前 00_PROJECT_INBOX + 00_TOPIC_INBOX 的推荐 workspace 名称：full-library-rag。
+- 当前集合限定命令会维护 .workspace\full-library-rag\workspace.toml，并索引到 .workspace\full-library-rag\rag.idx.sqlite。
+
+本指令独立包含运行文件规则，并区分持久状态和本次运行文件：.workspace\full-library-pdf-rag、.workspace\full-library-rag 和 .zot\state\pdf_cache.sqlite 是持久 workspace/index/cache，不是清理对象；inventory、临时脚本、运行日志和临时诊断文件放在 log\rag-full-library-YYYYMMDD-HHMMSS。不要把本次运行文件放在仓库根目录散文件、tmp\ 或额外临时 .workspace\... 目录中。完整成功并复核无误后可清理本次 log 目录；失败、中断或需要审查时保留。
 
 默认 dry-run。运行文件默认放到 log\rag-full-library-YYYYMMDD-HHMMSS，dry-run 成功后会自动清理；如果要审查 inventory，加 -KeepLog：
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -DryRun -ScanLimit 100 -KeepLog
@@ -563,17 +569,22 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.p
 正式增量运行。成功后自动删除本次 log\rag-full-library-YYYYMMDD-HHMMSS 运行目录；持久 workspace/index 仍保留在 .workspace\full-library-pdf-rag：
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1
 
+00_PROJECT_INBOX + 00_TOPIC_INBOX 集合限定正式运行。长任务建议加 -KeepLog，方便完成后复核 index.log：
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -WorkspaceName full-library-rag -Collections "00_PROJECT_INBOX,00_TOPIC_INBOX" -KeepLog
+
 边界：
 - 默认不排除 book/bookSection，因为 RAG 的目标是“全库含 PDF”，不是 AI note 论文分析。
 - 无本地 PDF 文件的条目不进入 workspace；有 Zotero PDF 记录但本地文件缺失的条目会统计为 pdf_but_missing_local_file。
 - 现有 workspace index 的增量粒度是 item key。已索引条目的 PDF 或 metadata 后续变化不会自动重建；如果确认大量 PDF/metadata 已变更，用 -ForceRebuild 全量重建。
 - 不直接写 rag.idx.sqlite；RAG index 只通过 zot workspace index 生成，避免破坏索引结构。
-- 不删除 .workspace\full-library-pdf-rag，也不删除 .zot\state\pdf_cache.sqlite；它们是持久 workspace/index/cache，不是运行中间文件。
+- 不删除 .workspace\full-library-pdf-rag、.workspace\full-library-rag，也不删除 .zot\state\pdf_cache.sqlite；它们是持久 workspace/index/cache，不是运行中间文件。
 
 实时进度：
 - inventory 阶段会显示 scanned/local_pdf_items/pdf_but_missing。
-- index 阶段会显示 Extracting、MinerU upload/process/download、Chunking、Indexing、Embedding 等现有 CLI 进度。
+- index 阶段默认使用 `--progress-lines --item-progress`，按条目输出 `[item:start]`、`[item:N:extract:cache]`、`[item:N:extract:upload]`、`[item:N:extract:process]`、`[item:N:extract:download]`、`[item:pdf-error]`、`[item:done]` 等逐行进度。
+- `[item:done]` 表示该 item 已写入并 commit 到 rag.idx.sqlite；中断重跑时这类 key 会被跳过。
 - 所有运行日志写入 log\rag-full-library-YYYYMMDD-HHMMSS\logs\inventory.log 和 log\rag-full-library-YYYYMMDD-HHMMSS\logs\index.log。
+- 可用 rag.idx.sqlite 中的 distinct item_key 数和 chunks 数复核实际进展；不要直接修改该 SQLite。
 
 中间文件清理：
 - 默认会删除临时 inventory_full_pdf_workspace.py。
@@ -585,6 +596,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.p
 常用命令：
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -DryRun -ScanLimit 500 -KeepLog
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -DryRun -WorkspaceName full-library-rag -Collections "00_PROJECT_INBOX,00_TOPIC_INBOX" -KeepLog
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -WorkspaceName full-library-rag -Collections "00_PROJECT_INBOX,00_TOPIC_INBOX" -KeepLog
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -NoIndex
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -ForceRebuild
 ```

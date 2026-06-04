@@ -113,6 +113,11 @@ class RagIndex:
             self._conn.execute("UPDATE chunks SET embedding = ? WHERE id = ?", (blob, chunk_id))
         self._conn.commit()
 
+    def set_embeddings_bulk_no_commit(self, chunk_ids: list[int], embeddings: list[list[float]]) -> None:
+        for chunk_id, embedding in zip(chunk_ids, embeddings):
+            blob = struct.pack(f"{len(embedding)}f", *embedding)
+            self._conn.execute("UPDATE chunks SET embedding = ? WHERE id = ?", (blob, chunk_id))
+
     def get_embedding(self, chunk_id: int) -> list[float]:
         row = self._conn.execute("SELECT embedding FROM chunks WHERE id = ?", (chunk_id,)).fetchone()
         if row is None or row["embedding"] is None:

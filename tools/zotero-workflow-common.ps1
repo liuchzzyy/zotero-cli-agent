@@ -222,13 +222,24 @@ function Complete-WorkflowRunLog {
         [string]$Status = "completed"
     )
 
-    $finishedAt = Get-Date
-    $elapsedSeconds = if ($script:WorkflowStartedAt) { [int](($finishedAt - $script:WorkflowStartedAt).TotalSeconds) } else { 0 }
-    Write-WorkflowEvent -EventData ([ordered]@{
-        event = "run_finished"
-        workflow = $script:WorkflowName
-        status = $Status
-        elapsed_seconds = $elapsedSeconds
-    })
-    Write-WorkflowLine -Message ("Finished with status={0}; elapsed={1}" -f $Status, ([TimeSpan]::FromSeconds($elapsedSeconds).ToString("hh\:mm\:ss"))) -Color Green
+    try {
+        $finishedAt = Get-Date
+        $elapsedSeconds = if ($script:WorkflowStartedAt) { [int](($finishedAt - $script:WorkflowStartedAt).TotalSeconds) } else { 0 }
+        Write-WorkflowEvent -EventData ([ordered]@{
+            event = "run_finished"
+            workflow = $script:WorkflowName
+            status = $Status
+            elapsed_seconds = $elapsedSeconds
+        })
+        Write-WorkflowLine -Message ("Finished with status={0}; elapsed={1}" -f $Status, ([TimeSpan]::FromSeconds($elapsedSeconds).ToString("hh\:mm\:ss"))) -Color Green
+    }
+    finally {
+        foreach ($writerName in @("WorkflowRunWriter", "WorkflowProgressWriter")) {
+            $writerVar = Get-Variable -Scope Script -Name $writerName -ErrorAction SilentlyContinue
+            if ($writerVar -and $writerVar.Value) {
+                $writerVar.Value.Dispose()
+                Set-Variable -Scope Script -Name $writerName -Value $null
+            }
+        }
+    }
 }

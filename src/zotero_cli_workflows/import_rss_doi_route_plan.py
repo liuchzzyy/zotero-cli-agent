@@ -744,12 +744,16 @@ def import_rss_doi_route_plan(
     )
 
     for index, entry in enumerate(all_entries, 1):
+        failure_key: str | None = None
+        failure_completed_collections: list[str] = []
         try:
             known_for_doi = known_items.get(entry.doi)
             if known_for_doi:
                 key = _choose_best_known_key(known_for_doi, entry.target_collections)
+                failure_key = key
                 target_paths = list(entry.target_collections)
                 completed_paths = set(known_for_doi[key].collections)
+                failure_completed_collections = sorted(completed_paths)
                 moved_to: list[str] = []
                 for collection_path in target_paths:
                     collection_key = _ensure_collection_path(
@@ -763,6 +767,7 @@ def import_rss_doi_route_plan(
                         continue
                     writer.move_to_collection(key, collection_key)
                     completed_paths.add(collection_path)
+                    failure_completed_collections = sorted(completed_paths)
                     moved_to.append(collection_path)
                     known_for_doi[key].collections.add(collection_path)
                     _update_checkpoint(
@@ -813,6 +818,7 @@ def import_rss_doi_route_plan(
 
             extra_fields, resolve_warning = _resolve_metadata(entry.doi)
             key = writer.add_item(doi=entry.doi, extra_fields=extra_fields)
+            failure_key = key
             _record_known_item(
                 known_items,
                 doi=entry.doi,
@@ -841,6 +847,7 @@ def import_rss_doi_route_plan(
                 )
                 writer.move_to_collection(key, collection_key)
                 completed_paths.append(collection_path)
+                failure_completed_collections = list(completed_paths)
                 known_items[entry.doi][key].collections.add(collection_path)
                 _update_checkpoint(
                     checkpoint,
@@ -882,6 +889,8 @@ def import_rss_doi_route_plan(
                 "title": entry.title,
                 "target_collections": entry.target_collections,
                 "tracked_authors": entry.tracked_authors,
+                "key": failure_key,
+                "completed_collections": failure_completed_collections,
                 "error": {
                     "code": exc.code,
                     "message": str(exc),
@@ -895,7 +904,36 @@ def import_rss_doi_route_plan(
                 checkpoint_path,
                 doi=entry.doi,
                 status="failed",
-                completed_collections=[],
+                key=failure_key,
+                completed_collections=failure_completed_collections,
+                target_collections=entry.target_collections,
+                error=failure["error"],
+            )
+        except Exception as exc:
+            failure = {
+                "index": index,
+                "doi": entry.doi,
+                "title": entry.title,
+                "target_collections": entry.target_collections,
+                "tracked_authors": entry.tracked_authors,
+                "key": failure_key,
+                "completed_collections": failure_completed_collections,
+                "error": {
+                    "code": "unexpected_exception",
+                    "type": type(exc).__name__,
+                    "message": str(exc),
+                    "retryable": True,
+                },
+            }
+            failed_results.append(failure)
+            counts["failed"] += 1
+            _update_checkpoint(
+                checkpoint,
+                checkpoint_path,
+                doi=entry.doi,
+                status="failed",
+                key=failure_key,
+                completed_collections=failure_completed_collections,
                 target_collections=entry.target_collections,
                 error=failure["error"],
             )

@@ -617,8 +617,9 @@ class MinerUExtractor(BasePdfExtractor):
         download_count = 0
         completed_count = 0
 
-        for batch_idx, i in enumerate(range(0, len(valid_batch_args), 50)):
+        for i in range(0, len(valid_batch_args), 50):
             batch = valid_batch_args[i : i + 50]
+            do_progress("batch", min(i + len(batch), total_chunks), total_chunks, total_pages)
 
             def upload_progress(idx: int) -> None:
                 nonlocal upload_count
@@ -629,7 +630,7 @@ class MinerUExtractor(BasePdfExtractor):
 
             def poll_progress(done: int, _batch_total: int) -> None:
                 nonlocal completed_count
-                completed_count = done
+                completed_count = i + done
                 do_progress("process", completed_count, total_chunks, total_pages)
 
             state_map = self._poll_batch_results(batch_id, len(batch), poll_progress)

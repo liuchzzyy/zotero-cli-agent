@@ -473,8 +473,17 @@ def _resolve_collection_key(reader: ZoteroReader, name_or_key: str) -> str | Non
 @click.argument("name")
 @click.option("--force", is_flag=True, help="Rebuild index from scratch")
 @click.option("--extractor", default=None, help="PDF text extractor to use. Defaults to the configured MinerU extractor.")
+@click.option("--progress-lines", is_flag=True, help="Write progress as newline records for log-friendly real-time output.")
+@click.option("--item-progress", is_flag=True, help="Index and commit one workspace item at a time with per-item progress.")
 @click.pass_context
-def workspace_index(ctx: click.Context, name: str, force: bool, extractor: str | None) -> None:
+def workspace_index(
+    ctx: click.Context,
+    name: str,
+    force: bool,
+    extractor: str | None,
+    progress_lines: bool,
+    item_progress: bool,
+) -> None:
     """Build RAG index for a workspace."""
     json_out = ctx.obj.get("json", False)
     if extractor is None:
@@ -517,6 +526,163 @@ def workspace_index(ctx: click.Context, name: str, force: bool, extractor: str |
 
         t0 = time.monotonic()
 
+        def progress_message(phase: str, current: int, total: int, pages: int = 0) -> str:
+            percent = (current / total * 100) if total else 0.0
+            page_text = f" pages={pages}" if pages else ""
+            elapsed = time.monotonic() - t0
+            return f"  [{phase}] {current}/{total} ({percent:.1f}%){page_text} elapsed={elapsed:.1f}s"
+
+        def emit_progress_line(phase: str, current: int, total: int, pages: int = 0) -> None:
+            click.echo(progress_message(phase, current, total, pages))
+
+        def emit_progress_status(phase: str, current: int, total: int, pages: int = 0) -> None:
+            sys.stderr.write(f"\r{' ' * 100}\r{progress_message(phase, current, total, pages)}")
+            sys.stderr.flush()
+
+        def emit_progress(phase: str, current: int, total: int, pages: int = 0) -> None:
+            if progress_lines:
+                emit_progress_line(phase, current, total, pages)
+            else:
+                emit_progress_status(phase, current, total, pages)
+
+        def clear_progress_status() -> None:
+            if not progress_lines:
+                sys.stderr.write(f"\r{' ' * 100}\r")
+                sys.stderr.flush()
+
+        def update_index_meta() -> None:
+            row = idx._conn.execute("SELECT COUNT(*), COALESCE(AVG(doc_len), 1.0) FROM chunks").fetchone()
+            total_docs = int(row[0] or 0)
+            avg_doc_len = float(row[1] or 1.0)
+            idx._conn.executemany(
+                "INSERT OR REPLACE INTO index_meta (key, value) VALUES (?, ?)",
+                [
+                    ("total_docs", str(total_docs)),
+                    ("avg_doc_len", str(avg_doc_len)),
+                    ("chunk_count", str(total_docs)),
+                    ("indexed_at", datetime.now(timezone.utc).isoformat()),
+                ],
+            )
+            idx.commit()
+
+        def compact_title(value: str, limit: int = 90) -> str:
+            cleaned = " ".join(value.split())
+            return cleaned if len(cleaned) <= limit else cleaned[: limit - 3] + "..."
+
+        if item_progress:
+            emb_cfg = load_embedding_config()
+            mode_label = "BM25 + embeddings" if emb_cfg.is_configured else "BM25"
+            indexed_items = 0
+            total_chunks = 0
+            pdf_error_count = 0
+
+            click.echo(f"  Indexing {len(to_index)} item(s) one by one with {extractor}...")
+
+            for item_idx, ws_item in enumerate(to_index, 1):
+                item_t0 = time.monotonic()
+                item = reader.get_item(ws_item.key)
+                if item is None:
+                    click.echo(f"  [item:skip] {item_idx}/{len(to_index)} key={ws_item.key} reason=not_found")
+                    continue
+
+                click.echo(
+                    f"  [item:start] {item_idx}/{len(to_index)} key={ws_item.key} title=\"{compact_title(item.title)}\"",
+                )
+
+                local_pdf_refs: list[tuple[str, str, Path]] = []
+                for att in reader.get_pdf_attachments(ws_item.key):
+                    if att.path is None or not att.path.exists():
+                        continue
+                    local_pdf_refs.append((att.key, att.filename or att.key, att.path))
+
+                note_refs: list[tuple[str, str]] = []
+                for note in reader.get_notes(ws_item.key):
+                    if note.content.strip():
+                        note_refs.append((note.key, note.content))
+
+                pdf_texts: dict[Path, str | Exception] = {}
+                unique_paths = list(dict.fromkeys(path for _, _, path in local_pdf_refs))
+                if unique_paths:
+
+                    def item_pdf_progress(phase: str, current: int, total: int, pages: int) -> None:
+                        emit_progress(f"item:{item_idx}:extract:{phase}", current, total, pages)
+
+                    pdf_texts.update(convert_pdfs_to_text(unique_paths, extractor, item_pdf_progress))
+                    clear_progress_status()
+
+                item_chunks: list[tuple[str, str, str, int]] = []
+                authors = ", ".join(c.full_name for c in item.creators)
+                meta_text = build_metadata_chunk(item.title, authors, item.abstract, item.tags)
+                item_chunks.append((ws_item.key, "metadata", meta_text, len(tokenize(meta_text))))
+
+                for note_key, note_content in note_refs:
+                    note_text = f"Title: {item.title}\nNote Key: {note_key}\nContent:\n{note_content}"
+                    item_chunks.append((ws_item.key, f"note:{note_key}", note_text, len(tokenize(note_text))))
+
+                item_pdf_errors = 0
+                for att_key, pdf_name, pdf_path in local_pdf_refs:
+                    pdf_text_or_err = pdf_texts.get(pdf_path)
+                    if isinstance(pdf_text_or_err, Exception):
+                        pdf_error_count += 1
+                        item_pdf_errors += 1
+                        click.echo(f"  [item:pdf-error] key={ws_item.key} pdf=\"{pdf_name}\" error={pdf_text_or_err}")
+                        continue
+                    if not isinstance(pdf_text_or_err, str) or not pdf_text_or_err.strip():
+                        continue
+                    pdf_kind = infer_pdf_kind(pdf_text_or_err, pdf_name)
+                    labeled_title = f"{item.title} | PDF: {pdf_name} | Attachment: {att_key} | Kind: {pdf_kind}"
+                    for chunk_content in chunk_text(pdf_text_or_err, labeled_title):
+                        item_chunks.append(
+                            (
+                                ws_item.key,
+                                f"pdf:{pdf_kind}:{att_key}:{pdf_name}",
+                                chunk_content,
+                                len(tokenize(chunk_content)),
+                            )
+                        )
+
+                chunk_texts = [content for _, _, content, _ in item_chunks]
+                vectors: list[list[float]] = []
+                item_mode_label = "BM25"
+                if emb_cfg.is_configured and chunk_texts:
+
+                    def item_emb_progress(done: int, total: int) -> None:
+                        emit_progress(f"item:{item_idx}:embed", done, total)
+
+                    try:
+                        vectors = embed_texts(chunk_texts, emb_cfg, item_emb_progress) or []
+                        if vectors:
+                            item_mode_label = "BM25 + embeddings"
+                    except Exception as e:
+                        click.echo(f"  [WARN] Embedding failed for {ws_item.key}: {e}", err=True)
+                    clear_progress_status()
+
+                chunk_ids: list[int] = []
+                for key, chunk_type, content, doc_len in item_chunks:
+                    chunk_id = idx.insert_chunk_no_commit(key, chunk_type, content, doc_len)
+                    idx.insert_bm25_terms_no_commit(chunk_id, compute_term_frequencies(tokenize(content)))
+                    chunk_ids.append(chunk_id)
+                if vectors:
+                    idx.set_embeddings_bulk_no_commit(chunk_ids, vectors)
+                idx.commit()
+                update_index_meta()
+
+                indexed_items += 1
+                total_chunks += len(item_chunks)
+                click.echo(
+                    "  [item:done] "
+                    f"{item_idx}/{len(to_index)} key={ws_item.key} chunks={len(item_chunks)} "
+                    f"pdfs={len(local_pdf_refs)} pdf_errors={item_pdf_errors} mode={item_mode_label} "
+                    f"item_elapsed={time.monotonic() - item_t0:.1f}s elapsed={time.monotonic() - t0:.1f}s",
+                )
+
+            elapsed = time.monotonic() - t0
+            click.echo(
+                f"Indexed {indexed_items} item(s) ({total_chunks} chunks, {pdf_error_count} PDF errors) "
+                f"in {elapsed:.1f}s [{mode_label}]"
+            )
+            return
+
         item_map: dict[str, Item] = {}
         pdf_refs: dict[str, list[tuple[str, str, Path]]] = {}
         unique_pdf_paths: dict[Path, None] = {}
@@ -553,9 +719,8 @@ def workspace_index(ctx: click.Context, name: str, force: bool, extractor: str |
             unique_paths = list(unique_pdf_paths.keys())
             click.echo(f"  Extracting {len(unique_paths)} PDF attachment(s) with {extractor}...")
 
-            def batch_progress(phase: str, current: int, total: int, _pages: int) -> None:
-                sys.stderr.write(f"\r{' ' * 60}\r    [{phase}] [{current}/{total}]")
-                sys.stdout.flush()
+            def batch_progress(phase: str, current: int, total: int, pages: int) -> None:
+                emit_progress(f"extract:{phase}", current, total, pages)
 
             if len(unique_paths) == 1:
                 single_path = unique_paths[0]
@@ -566,8 +731,7 @@ def workspace_index(ctx: click.Context, name: str, force: bool, extractor: str |
             else:
                 batch_results = convert_pdfs_to_text(unique_paths, extractor, batch_progress)
                 pdf_texts.update(batch_results)
-            sys.stderr.write(f"\r{' ' * 60}\r")
-            sys.stdout.flush()
+            clear_progress_status()
 
         # PHASE 2 — Chunk all texts
         click.echo(f"  Chunking {len(to_index)} item(s)...")
@@ -610,8 +774,7 @@ def workspace_index(ctx: click.Context, name: str, force: bool, extractor: str |
 
         for i, (key, chunk_type, content, doc_len) in enumerate(all_chunks, 1):
             if i % 500 == 0 or i == len(all_chunks):
-                sys.stderr.write(f"\r{' ' * 60}\r    [index] [{i}/{len(all_chunks)}]")
-                sys.stdout.flush()
+                emit_progress("index", i, len(all_chunks))
 
             chunk_id = idx.insert_chunk_no_commit(key, chunk_type, content, doc_len)
             tfs = compute_term_frequencies(tokenize(content))
@@ -620,8 +783,7 @@ def workspace_index(ctx: click.Context, name: str, force: bool, extractor: str |
             all_chunk_texts.append(content)
 
         idx.commit()
-        sys.stderr.write(f"\r{' ' * 60}\r")
-        sys.stdout.flush()
+        clear_progress_status()
 
         # Report extraction errors at end
         if pdf_errors:
@@ -649,8 +811,7 @@ def workspace_index(ctx: click.Context, name: str, force: bool, extractor: str |
             click.echo("  Generating embeddings...")
 
             def emb_progress(done: int, total: int) -> None:
-                sys.stderr.write(f"\r{' ' * 60}\r    [embed] [{done}/{total}]")
-                sys.stdout.flush()
+                emit_progress("embed", done, total)
 
             try:
                 vectors = embed_texts(all_chunk_texts, emb_cfg, emb_progress)
@@ -659,8 +820,7 @@ def workspace_index(ctx: click.Context, name: str, force: bool, extractor: str |
                     mode_label = "BM25 + embeddings"
             except Exception as e:
                 click.echo(f"  [WARN] Embedding failed: {e}", err=True)
-            sys.stderr.write(f"\r{' ' * 60}\r")
-            sys.stdout.flush()
+            clear_progress_status()
 
         elapsed = time.monotonic() - t0
         click.echo(f"Indexed {len(to_index)} item(s) ({total_chunks} chunks) in {elapsed:.1f}s [{mode_label}]")
