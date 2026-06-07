@@ -9,8 +9,9 @@ class RagIndex:
     def __init__(self, db_path: Path) -> None:
         self._db_path = db_path
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(db_path))
+        self._conn = sqlite3.connect(str(db_path), timeout=60.0)
         self._conn.row_factory = sqlite3.Row
+        self._conn.execute("PRAGMA busy_timeout = 60000")
         self._create_tables()
 
     def _create_tables(self) -> None:
@@ -71,6 +72,23 @@ class RagIndex:
 
     def get_all_chunks(self) -> list[dict]:
         rows = self._conn.execute("SELECT id, item_key, source, content, doc_len FROM chunks").fetchall()
+        return [dict(r) for r in rows]
+
+    def count_missing_embeddings(self) -> int:
+        row = self._conn.execute("SELECT COUNT(*) AS count FROM chunks WHERE embedding IS NULL").fetchone()
+        return int(row["count"] if row else 0)
+
+    def get_chunks_missing_embeddings(self, *, after_id: int = 0, limit: int = 100) -> list[dict]:
+        rows = self._conn.execute(
+            """
+            SELECT id, item_key, source, content, doc_len
+            FROM chunks
+            WHERE embedding IS NULL AND id > ?
+            ORDER BY id
+            LIMIT ?
+            """,
+            (after_id, limit),
+        ).fetchall()
         return [dict(r) for r in rows]
 
     def get_bm25_terms_for_chunk(self, chunk_id: int) -> dict[str, float]:

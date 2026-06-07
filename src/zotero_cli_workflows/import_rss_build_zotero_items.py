@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
+from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -15,6 +17,253 @@ from zotero_cli_agent.config import get_data_dir, load_config, resolve_library_i
 from zotero_cli_agent.core.reader import ZoteroReader
 from zotero_cli_agent.core.writer import SYNC_REMINDER, ZoteroWriteError, ZoteroWriter
 from zotero_cli_agent.models import Collection
+
+INBOX_UNSORTED_COLLECTION = "00_INBOX/00_UNSORTED"
+AUTHOR_WATCH_ROOT_COLLECTION = "00_INBOX/10_AUTHOR_WATCH"
+
+
+@dataclass
+class DoiImportListRow:
+    doi: str
+    title: str
+    journal: str | None
+    entry_uids: list[str] = field(default_factory=list)
+    topics: list[str] = field(default_factory=list)
+    keywords: list[str] = field(default_factory=list)
+    tags: list[str] = field(default_factory=list)
+    tracked_authors: list[str] = field(default_factory=list)
+    source_links: list[str] = field(default_factory=list)
+
+    def merge_entry(self, entry: dict[str, Any]) -> None:
+        self.entry_uids.extend(_as_unique_strings([entry.get("entry_uid")], self.entry_uids))
+        self.topics.extend(_as_unique_strings([entry.get("topic")], self.topics))
+        self.keywords.extend(_as_unique_strings(entry.get("keywords") or [], self.keywords))
+        self.tags.extend(_as_unique_strings(entry.get("tags") or [], self.tags))
+        self.tracked_authors.extend(_as_unique_strings(_extract_tracked_authors(entry.get("tags") or []), self.tracked_authors))
+        self.source_links.extend(_as_unique_strings([_nested_get(entry, "source", "link")], self.source_links))
+
+    @property
+    def alert_type(self) -> str:
+        return "author" if self.tracked_authors else "general"
+
+    @property
+    def target_collections(self) -> list[str]:
+        if not self.tracked_authors:
+            return [INBOX_UNSORTED_COLLECTION]
+        targets = [INBOX_UNSORTED_COLLECTION]
+        targets.extend(f"{AUTHOR_WATCH_ROOT_COLLECTION}/{author}" for author in self.tracked_authors)
+        return targets
+
+    def to_dict(self, *, already_in_library: bool) -> dict[str, Any]:
+        return {
+            "doi": self.doi,
+            "title": self.title,
+            "journal": self.journal,
+            "alert_type": self.alert_type,
+            "tracked_authors": self.tracked_authors,
+            "target_collections": self.target_collections,
+            "already_in_library": already_in_library,
+            "entry_uids": self.entry_uids,
+            "topics": self.topics,
+            "keywords": self.keywords,
+            "tags": self.tags,
+            "source_links": self.source_links,
+        }
+
+
+def _nested_get(data: dict[str, Any], *keys: str) -> Any:
+    current: Any = data
+    for key in keys:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(key)
+    return current
+
+
+def _normalize_author_name(raw: str) -> str:
+    return " ".join(raw.strip().split())
+
+
+def _extract_tracked_authors(tags: list[Any]) -> list[str]:
+    authors: list[str] = []
+    has_author_alert = any(str(tag).strip() == "alert_type:author" for tag in tags)
+    for tag in tags:
+        text = str(tag).strip()
+        if text.startswith("tracked_author:"):
+            name = _normalize_author_name(text.split(":", 1)[1])
+            if name and name not in authors:
+                authors.append(name)
+    if not authors and has_author_alert:
+        for tag in tags:
+            text = str(tag).strip()
+            if text.startswith("alert_key:"):
+                name = _normalize_author_name(text.split(":", 1)[1])
+                if name and name not in authors:
+                    authors.append(name)
+    return authors
+
+
+def _as_unique_strings(values: list[Any], existing: list[str]) -> list[str]:
+    existing_set = set(existing)
+    out: list[str] = []
+    for value in values:
+        if value is None:
+            continue
+        text = str(value).strip()
+        if not text or text in existing_set:
+            continue
+        existing_set.add(text)
+        out.append(text)
+    return out
+
+
+def _load_selected_items(path: Path) -> list[dict[str, Any]]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, list):
+        raise ValueError(f"Expected a top-level JSON array in {path}")
+    items: list[dict[str, Any]] = []
+    for row in payload:
+        if isinstance(row, dict):
+            items.append(row)
+    return items
+
+
+def _build_doi_rows(items: list[dict[str, Any]]) -> dict[str, DoiImportListRow]:
+    doi_rows: dict[str, DoiImportListRow] = {}
+    for entry in items:
+        doi = _normalize_doi(entry.get("doi"))
+        if doi is None:
+            continue
+        row = doi_rows.get(doi)
+        if row is None:
+            row = DoiImportListRow(
+                doi=doi,
+                title=str(entry.get("title") or "").strip(),
+                journal=(str(entry.get("journal")).strip() if entry.get("journal") else None),
+            )
+            doi_rows[doi] = row
+        row.merge_entry(entry)
+    return doi_rows
+
+
+def _load_library_dois_from_export(path: Path) -> set[str]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    data = payload.get("data") if isinstance(payload, dict) else payload
+    if not isinstance(data, list):
+        raise ValueError(f"Expected export JSON to contain a list under 'data': {path}")
+    dois: set[str] = set()
+    for row in data:
+        if not isinstance(row, dict):
+            continue
+        doi = _normalize_doi(row.get("doi"))
+        if doi:
+            dois.add(doi)
+    return dois
+
+
+def _export_current_library(repo_root: Path, export_path: Path) -> None:
+    cmd = ["uv", "run", "zot", "--json", "--detail", "full", "summarize-all"]
+    result = subprocess.run(
+        cmd,
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            "Failed to export current Zotero library via summarize-all.\n"
+            f"stdout:\n{result.stdout}\n\nstderr:\n{result.stderr}"
+        )
+    export_path.write_text(result.stdout, encoding="utf-8")
+
+
+def _write_json(path: Path, payload: Any) -> None:
+    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def build_rss_zotero_items_outputs(
+    *,
+    selected_json: Path,
+    output_dir: Path,
+    repo_root: Path,
+    zotero_export_json: Path | None,
+) -> dict[str, Any]:
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    export_path = zotero_export_json or output_dir / "zotero_before.json"
+    if zotero_export_json is None:
+        _export_current_library(repo_root, export_path)
+
+    selected_items = _load_selected_items(selected_json)
+    doi_rows = _build_doi_rows(selected_items)
+    library_dois = _load_library_dois_from_export(export_path)
+
+    all_doi_rows: list[dict[str, Any]] = []
+    new_doi_rows: list[dict[str, Any]] = []
+    root_only_dois: list[str] = []
+    author_routes: dict[str, list[str]] = defaultdict(list)
+
+    for doi in sorted(doi_rows):
+        row = doi_rows[doi]
+        already_in_library = doi in library_dois
+        row_dict = row.to_dict(already_in_library=already_in_library)
+        all_doi_rows.append(row_dict)
+        if already_in_library:
+            continue
+        new_doi_rows.append(row_dict)
+        if row.tracked_authors:
+            for author in row.tracked_authors:
+                author_routes[author].append(doi)
+        else:
+            root_only_dois.append(doi)
+
+    all_doi_entries_path = output_dir / "all_doi_entries.json"
+    new_doi_entries_path = output_dir / "new_doi_entries.json"
+    new_dois_path = output_dir / "new_dois.txt"
+    import_list_path = output_dir / "import_list.json"
+    summary_path = output_dir / "summary.json"
+
+    _write_json(all_doi_entries_path, all_doi_rows)
+    _write_json(new_doi_entries_path, new_doi_rows)
+    new_dois_path.write_text("\n".join(row["doi"] for row in new_doi_rows) + ("\n" if new_doi_rows else ""), encoding="utf-8")
+
+    import_list = {
+        "root_collection": INBOX_UNSORTED_COLLECTION,
+        "root_only_dois": root_only_dois,
+        "author_collections": [
+            {
+                "author": author,
+                "collection_path": ["00_INBOX", "10_AUTHOR_WATCH", author],
+                "dois": sorted(dois),
+            }
+            for author, dois in sorted(author_routes.items())
+        ],
+        "entries": new_doi_rows,
+    }
+    _write_json(import_list_path, import_list)
+
+    summary = {
+        "selected_json": str(selected_json),
+        "zotero_export_json": str(export_path),
+        "total_selected_rows": len(selected_items),
+        "unique_selected_dois": len(all_doi_rows),
+        "already_in_library": len(all_doi_rows) - len(new_doi_rows),
+        "new_dois": len(new_doi_rows),
+        "root_only_new_dois": len(root_only_dois),
+        "author_routed_new_dois": sum(len(dois) for dois in author_routes.values()),
+        "author_collection_count": len(author_routes),
+        "output_files": {
+            "all_doi_entries": str(all_doi_entries_path),
+            "new_doi_entries": str(new_doi_entries_path),
+            "new_dois": str(new_dois_path),
+            "import_list": str(import_list_path),
+            "summary": str(summary_path),
+        },
+    }
+    _write_json(summary_path, summary)
+    return summary
 
 
 @dataclass
@@ -67,8 +316,8 @@ def _parse_iso_datetime(raw: str | None) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
-def _load_route_entries(route_plan_path: Path, *, limit: int | None = None) -> tuple[str, list[ImportEntry]]:
-    payload = json.loads(route_plan_path.read_text(encoding="utf-8"))
+def _load_import_entries(import_list_path: Path, *, limit: int | None = None) -> tuple[str, list[ImportEntry]]:
+    payload = json.loads(import_list_path.read_text(encoding="utf-8"))
     root_collection = str(payload["root_collection"])
     raw_entries = payload.get("entries", [])
     entries: list[ImportEntry] = []
@@ -339,7 +588,7 @@ def _collect_collection_items(
     return []
 
 
-def _collect_route_server_state(
+def _collect_import_server_state(
     *,
     client: zotero.Zotero,
     entries: list[ImportEntry],
@@ -507,9 +756,9 @@ def _write_progress_files(
     _write_json_atomic(output_dir / "import_summary.json", summary)
 
 
-def import_rss_doi_route_plan(
+def import_rss_zotero_items(
     *,
-    route_plan: Path,
+    import_list: Path,
     output_dir: Path,
     profile: str | None,
     library: str,
@@ -519,7 +768,7 @@ def import_rss_doi_route_plan(
 ) -> dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
     library_ctx = _parse_library(library)
-    root_collection, all_entries = _load_route_entries(route_plan, limit=limit)
+    root_collection, all_entries = _load_import_entries(import_list, limit=limit)
     needed_paths = {root_collection}
     for entry in all_entries:
         needed_paths.update(entry.target_collections)
@@ -539,7 +788,7 @@ def import_rss_doi_route_plan(
 
     def _current_summary() -> dict[str, Any]:
         return {
-            "route_plan": str(route_plan),
+            "import_list": str(import_list),
             "apply": bool(apply),
             "total_entries_considered": len(all_entries),
             "created_new": counts["created_new"],
@@ -552,7 +801,7 @@ def import_rss_doi_route_plan(
             "sync_reminder": "",
             "phase": "preflight",
             "output_files": {
-                "preview": str(output_dir / "import_plan_preview.json"),
+                "preview": str(output_dir / "import_preview.json"),
                 "resume_state": str(output_dir / "resume_state.json"),
                 "checkpoint": str(checkpoint_path),
                 "imported_results": str(output_dir / "imported_results.json"),
@@ -572,7 +821,7 @@ def import_rss_doi_route_plan(
         checkpoint["updated_at"] = datetime.now(timezone.utc).isoformat()
         _write_json_atomic(checkpoint_path, checkpoint)
         empty_preview = {
-            "route_plan": str(route_plan),
+            "import_list": str(import_list),
             "apply": apply,
             "total_entries_considered": 0,
             "existing_items_detected": 0,
@@ -588,7 +837,7 @@ def import_rss_doi_route_plan(
             "checkpoint_path": str(checkpoint_path),
             "server_state_files": {
                 "resume_state": str(output_dir / "resume_state.json"),
-                "preview": str(output_dir / "import_plan_preview.json"),
+                "preview": str(output_dir / "import_preview.json"),
             },
             "diagnostics": {
                 "collection_scan": {"collections": []},
@@ -596,7 +845,7 @@ def import_rss_doi_route_plan(
                 "auto_recent_cutoff_utc": None,
             },
         }
-        _write_json_atomic(output_dir / "import_plan_preview.json", empty_preview)
+        _write_json_atomic(output_dir / "import_preview.json", empty_preview)
         _write_json_atomic(
             output_dir / "resume_state.json",
             {
@@ -622,7 +871,7 @@ def import_rss_doi_route_plan(
     local_collection_paths = _load_local_collection_paths(profile, library_ctx)
     server_path_to_key, server_key_to_path = _build_server_collection_maps(client)
 
-    known_items, collection_diagnostics, auto_recent_cutoff = _collect_route_server_state(
+    known_items, collection_diagnostics, auto_recent_cutoff = _collect_import_server_state(
         client=client,
         entries=all_entries,
         root_collection=root_collection,
@@ -669,7 +918,7 @@ def import_rss_doi_route_plan(
             )
 
     preview = {
-        "route_plan": str(route_plan),
+        "import_list": str(import_list),
         "apply": apply,
         "total_entries_considered": len(all_entries),
         "existing_items_detected": entries_with_existing_item,
@@ -685,7 +934,7 @@ def import_rss_doi_route_plan(
         "checkpoint_path": str(checkpoint_path),
         "server_state_files": {
             "resume_state": str(output_dir / "resume_state.json"),
-            "preview": str(output_dir / "import_plan_preview.json"),
+            "preview": str(output_dir / "import_preview.json"),
         },
         "diagnostics": {
             "collection_scan": collection_diagnostics,
@@ -693,7 +942,7 @@ def import_rss_doi_route_plan(
             "auto_recent_cutoff_utc": auto_recent_cutoff.isoformat() if auto_recent_cutoff else None,
         },
     }
-    _write_json_atomic(output_dir / "import_plan_preview.json", preview)
+    _write_json_atomic(output_dir / "import_preview.json", preview)
     _write_json_atomic(
         output_dir / "resume_state.json",
         {
@@ -714,7 +963,7 @@ def import_rss_doi_route_plan(
 
     def _current_summary() -> dict[str, Any]:
         return {
-            "route_plan": str(route_plan),
+            "import_list": str(import_list),
             "apply": True,
             "total_entries_considered": len(all_entries),
             "created_new": counts["created_new"],
@@ -727,7 +976,7 @@ def import_rss_doi_route_plan(
             "sync_reminder": SYNC_REMINDER if counts["created_new"] or counts["collection_repairs"] else "",
             "phase": "apply",
             "output_files": {
-                "preview": str(output_dir / "import_plan_preview.json"),
+                "preview": str(output_dir / "import_preview.json"),
                 "resume_state": str(output_dir / "resume_state.json"),
                 "checkpoint": str(checkpoint_path),
                 "imported_results": str(output_dir / "imported_results.json"),
@@ -959,46 +1208,78 @@ def import_rss_doi_route_plan(
 def parse_args() -> argparse.Namespace:
     repo_root = Path(__file__).resolve().parents[2]
     parser = argparse.ArgumentParser(
-        description=(
-            "Import DOI-only RSS inbox plan into Zotero and route items into "
-            "00_INBOX/00_UNSORTED and 00_INBOX/10_AUTHOR_WATCH collections."
-        )
+        description="Build RSS DOI import lists and import matching Zotero items."
     )
-    parser.add_argument(
-        "--route-plan",
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    build_parser = subparsers.add_parser(
+        "build-list",
+        help="Build import_list.json from an RSS selected JSON export.",
+    )
+    build_parser.add_argument("--selected-json", type=Path, required=True, help="Path to the RSS selected JSON array.")
+    build_parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=repo_root / "log" / "rss_doi_import_list",
+        help="Directory for generated import list files.",
+    )
+    build_parser.add_argument(
+        "--zotero-export-json",
+        type=Path,
+        default=None,
+        help="Optional existing summarize-all JSON export. If omitted, the script runs 'uv run zot --json --detail full summarize-all'.",
+    )
+
+    import_parser = subparsers.add_parser(
+        "import-list",
+        help="Import DOI entries from import_list.json into Zotero.",
+    )
+    import_parser.add_argument(
+        "--import-list",
         type=Path,
         required=True,
-        help="Path to route_plan.json generated by build_rss_doi_route_plan.py.",
+        help="Path to import_list.json generated by the build-list subcommand.",
     )
-    parser.add_argument(
+    import_parser.add_argument(
         "--output-dir",
         type=Path,
         default=repo_root / "log" / "rss_doi_import",
         help="Directory for import preview/results.",
     )
-    parser.add_argument("--profile", default=None, help="Optional zot profile name.")
-    parser.add_argument("--library", default="user", help="Library: 'user' or 'group:<id>'.")
-    parser.add_argument("--limit", type=int, default=None, help="Optionally limit the number of planned DOI entries.")
-    parser.add_argument(
+    import_parser.add_argument("--profile", default=None, help="Optional zot profile name.")
+    import_parser.add_argument("--library", default="user", help="Library: 'user' or 'group:<id>'.")
+    import_parser.add_argument("--limit", type=int, default=None, help="Optionally limit the number of DOI entries.")
+    import_parser.add_argument(
         "--recent-cutoff-utc",
         default=None,
         help="Optional ISO timestamp in UTC for recent top-item orphan scan, e.g. 2026-05-25T09:00:00Z.",
     )
-    parser.add_argument("--apply", action="store_true", help="Actually import and route items. Default is dry-run only.")
+    import_parser.add_argument("--apply", action="store_true", help="Actually import and route items. Default is dry-run only.")
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
-    summary = import_rss_doi_route_plan(
-        route_plan=args.route_plan.resolve(),
-        output_dir=args.output_dir.resolve(),
-        profile=args.profile,
-        library=args.library,
-        limit=args.limit,
-        apply=args.apply,
-        recent_cutoff_utc=args.recent_cutoff_utc,
-    )
+    repo_root = Path(__file__).resolve().parents[2]
+    if args.command == "build-list":
+        summary = build_rss_zotero_items_outputs(
+            selected_json=args.selected_json.resolve(),
+            output_dir=args.output_dir.resolve(),
+            repo_root=repo_root,
+            zotero_export_json=(args.zotero_export_json.resolve() if args.zotero_export_json else None),
+        )
+    elif args.command == "import-list":
+        summary = import_rss_zotero_items(
+            import_list=args.import_list.resolve(),
+            output_dir=args.output_dir.resolve(),
+            profile=args.profile,
+            library=args.library,
+            limit=args.limit,
+            apply=args.apply,
+            recent_cutoff_utc=args.recent_cutoff_utc,
+        )
+    else:
+        raise ValueError(f"Unsupported command: {args.command}")
     print(json.dumps(summary, indent=2, ensure_ascii=False))
     return 0
 

@@ -1,6 +1,6 @@
 import json
 
-from zotero_cli_workflows import import_rss_doi_route_plan as workflow
+from zotero_cli_workflows import import_rss_build_zotero_items as workflow
 
 
 class DummyWriter:
@@ -19,8 +19,8 @@ class DummyWriter:
 
 
 def test_import_records_unexpected_entry_exception(tmp_path, monkeypatch):
-    route_plan = tmp_path / "route_plan.json"
-    route_plan.write_text(
+    import_list = tmp_path / "import_list.json"
+    import_list.write_text(
         json.dumps(
             {
                 "root_collection": "00_INBOX",
@@ -42,7 +42,7 @@ def test_import_records_unexpected_entry_exception(tmp_path, monkeypatch):
     monkeypatch.setattr(workflow, "_build_server_collection_maps", lambda client: ({}, {}))
     monkeypatch.setattr(
         workflow,
-        "_collect_route_server_state",
+        "_collect_import_server_state",
         lambda **kwargs: ({}, {"collections": []}, None),
     )
     monkeypatch.setattr(workflow, "_build_writer", lambda *args, **kwargs: DummyWriter())
@@ -53,8 +53,8 @@ def test_import_records_unexpected_entry_exception(tmp_path, monkeypatch):
     )
 
     output_dir = tmp_path / "out"
-    summary = workflow.import_rss_doi_route_plan(
-        route_plan=route_plan,
+    summary = workflow.import_rss_zotero_items(
+        import_list=import_list,
         output_dir=output_dir,
         profile=None,
         library="user",

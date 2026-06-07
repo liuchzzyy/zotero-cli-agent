@@ -570,7 +570,7 @@ def workspace_index(
             return cleaned if len(cleaned) <= limit else cleaned[: limit - 3] + "..."
 
         if item_progress:
-            emb_cfg = load_embedding_config()
+            emb_cfg = load_embedding_config(apply_env_overrides=True)
             mode_label = "BM25 + embeddings" if emb_cfg.is_configured else "BM25"
             indexed_items = 0
             total_chunks = 0
@@ -705,14 +705,14 @@ def workspace_index(
                 if refs:
                     pdf_refs[ws_item.key] = refs
 
-            note_refs: list[tuple[str, str]] = []
+            batch_note_refs: list[tuple[str, str]] = []
             for note in reader.get_notes(ws_item.key):
                 if note.content.strip():
-                    note_refs.append((note.key, note.content))
-            if note_refs:
-                notes_map[ws_item.key] = note_refs
+                    batch_note_refs.append((note.key, note.content))
+            if batch_note_refs:
+                notes_map[ws_item.key] = batch_note_refs
 
-        pdf_texts: dict[Path, str | Exception] = {}
+        batch_pdf_texts: dict[Path, str | Exception] = {}
         pdf_errors: list[tuple[str, str, Exception]] = []
 
         if unique_pdf_paths:
@@ -725,12 +725,12 @@ def workspace_index(
             if len(unique_paths) == 1:
                 single_path = unique_paths[0]
                 try:
-                    pdf_texts[single_path] = convert_pdf_to_text(single_path, extractor, batch_progress)
+                    batch_pdf_texts[single_path] = convert_pdf_to_text(single_path, extractor, batch_progress)
                 except Exception as e:
-                    pdf_texts[single_path] = e
+                    batch_pdf_texts[single_path] = e
             else:
                 batch_results = convert_pdfs_to_text(unique_paths, extractor, batch_progress)
-                pdf_texts.update(batch_results)
+                batch_pdf_texts.update(batch_results)
             clear_progress_status()
 
         # PHASE 2 — Chunk all texts
@@ -754,7 +754,7 @@ def workspace_index(
                 all_chunks.append((ws_item.key, f"note:{note_key}", note_text, note_tokens))
 
             for att_key, pdf_name, pdf_path in pdf_refs.get(ws_item.key, []):
-                pdf_text_or_err = pdf_texts.get(pdf_path)
+                pdf_text_or_err = batch_pdf_texts.get(pdf_path)
                 if isinstance(pdf_text_or_err, Exception):
                     pdf_errors.append((ws_item.key, pdf_name, pdf_text_or_err))
                     continue
@@ -806,7 +806,7 @@ def workspace_index(
 
         # Embeddings if configured
         mode_label = "BM25"
-        emb_cfg = load_embedding_config()
+        emb_cfg = load_embedding_config(apply_env_overrides=True)
         if emb_cfg.is_configured and all_chunk_texts:
             click.echo("  Generating embeddings...")
 
@@ -814,9 +814,9 @@ def workspace_index(
                 emit_progress("embed", done, total)
 
             try:
-                vectors = embed_texts(all_chunk_texts, emb_cfg, emb_progress)
-                if vectors:
-                    idx.set_embeddings_bulk(all_chunk_ids, vectors)
+                bulk_vectors = embed_texts(all_chunk_texts, emb_cfg, emb_progress)
+                if bulk_vectors:
+                    idx.set_embeddings_bulk(all_chunk_ids, bulk_vectors)
                     mode_label = "BM25 + embeddings"
             except Exception as e:
                 click.echo(f"  [WARN] Embedding failed: {e}", err=True)
@@ -827,6 +827,211 @@ def workspace_index(
     finally:
         idx.close()
         reader.close()
+
+
+@workspace_group.command("embed")
+@click.argument("name")
+@click.option("--batch-size", default=100, show_default=True, help="Number of existing chunks to attempt per commit.")
+@click.option("--limit", default=0, show_default=True, help="Maximum chunks to attempt in this run; 0 means all missing.")
+@click.option("--max-retries", default=5, show_default=True, help="Retry a failed provider batch this many times.")
+@click.option("--retry-sleep", default=10.0, show_default=True, help="Initial seconds to sleep between batch retries.")
+@click.option("--progress-lines", is_flag=True, help="Write progress as newline records for log-friendly real-time output.")
+@click.pass_context
+def workspace_embed(
+    ctx: click.Context,
+    name: str,
+    batch_size: int,
+    limit: int,
+    max_retries: int,
+    retry_sleep: float,
+    progress_lines: bool,
+) -> None:
+    """Backfill embeddings for an existing workspace RAG index."""
+    json_out = ctx.obj.get("json", False)
+    if not workspace_exists(name):
+        emit_error(
+            "not_found",
+            f"Workspace '{name}' not found",
+            output_json=json_out,
+            hint="Use 'zot workspace list' to see available workspaces",
+            context="workspace embed",
+        )
+
+    idx_path = workspace_index_path(name)
+    if not idx_path.exists():
+        emit_error(
+            "not_found",
+            f"No index found for workspace '{name}'",
+            output_json=json_out,
+            hint=f"Run 'zot workspace index {name}' first",
+            context="workspace embed",
+        )
+
+    if batch_size <= 0:
+        emit_error(
+            "validation_error",
+            "--batch-size must be greater than 0",
+            output_json=json_out,
+            context="workspace embed",
+        )
+    if limit < 0:
+        emit_error(
+            "validation_error",
+            "--limit must be 0 or greater",
+            output_json=json_out,
+            context="workspace embed",
+        )
+    if max_retries < 0:
+        emit_error(
+            "validation_error",
+            "--max-retries must be 0 or greater",
+            output_json=json_out,
+            context="workspace embed",
+        )
+    if retry_sleep < 0:
+        emit_error(
+            "validation_error",
+            "--retry-sleep must be 0 or greater",
+            output_json=json_out,
+            context="workspace embed",
+        )
+
+    emb_cfg = load_embedding_config(apply_env_overrides=True)
+    if not emb_cfg.is_configured:
+        emit_error(
+            "configuration_error",
+            "Embedding provider is not configured",
+            output_json=json_out,
+            hint="Set [embedding].api_key in .zot/config.toml or ZOT_EMBEDDING_KEY",
+            context="workspace embed",
+        )
+
+    idx = RagIndex(idx_path)
+    t0 = time.monotonic()
+    try:
+        missing = idx.count_missing_embeddings()
+        if missing == 0:
+            click.echo(f"Embeddings for '{name}' are already complete.")
+            return
+
+        target = min(missing, limit) if limit else missing
+        attempted = 0
+        stored = 0
+        skipped = 0
+        after_id = 0
+        expected_dim: int | None = None
+
+        click.echo(
+            f"Backfilling embeddings for '{name}': missing={missing} target={target} "
+            f"provider={emb_cfg.provider} model={emb_cfg.model}"
+        )
+
+        def emit_status(done: int, total: int, last_id: int) -> None:
+            elapsed = time.monotonic() - t0
+            rate = done / elapsed if elapsed > 0 else 0.0
+            remaining = max(total - done, 0)
+            eta = remaining / rate if rate > 0 else 0.0
+            message = (
+                f"  [embed] attempted={done}/{total} stored={stored} skipped={skipped} "
+                f"last_id={last_id} rate={rate:.2f}/s eta={eta:.1f}s"
+            )
+            if progress_lines:
+                click.echo(message)
+            else:
+                sys.stderr.write(f"\r{' ' * 140}\r{message}")
+                sys.stderr.flush()
+
+        def embed_batch_with_retries(texts: list[str], chunk_ids: list[int]) -> list[list[float]]:
+            for attempt_no in range(max_retries + 1):
+                vectors_or_none = embed_texts(texts, emb_cfg)
+                if vectors_or_none is not None:
+                    if len(vectors_or_none) < len(texts):
+                        vectors_or_none.extend([[] for _ in range(len(texts) - len(vectors_or_none))])
+                    return vectors_or_none[: len(texts)]
+                if attempt_no < max_retries:
+                    delay = retry_sleep * (attempt_no + 1)
+                    click.echo(
+                        f"  [embed:retry] first_chunk_id={chunk_ids[0]} "
+                        f"attempt={attempt_no + 1}/{max_retries} sleep={delay:.1f}s",
+                        err=True,
+                    )
+                    time.sleep(delay)
+
+            if len(texts) == 1:
+                return [[]]
+
+            click.echo(
+                f"  [embed:fallback] first_chunk_id={chunk_ids[0]} count={len(texts)} trying individual chunks",
+                err=True,
+            )
+            vectors: list[list[float]] = []
+            for chunk_id, text in zip(chunk_ids, texts):
+                single_vectors: list[list[float]] | None = None
+                for attempt_no in range(max_retries + 1):
+                    single_vectors = embed_texts([text], emb_cfg)
+                    if single_vectors is not None:
+                        break
+                    if attempt_no < max_retries and retry_sleep > 0:
+                        time.sleep(retry_sleep)
+                if single_vectors and single_vectors[0]:
+                    vectors.append(single_vectors[0])
+                else:
+                    click.echo(f"  [embed:skip] chunk_id={chunk_id} reason=provider_failed", err=True)
+                    vectors.append([])
+            return vectors
+
+        while attempted < target:
+            rows = idx.get_chunks_missing_embeddings(after_id=after_id, limit=min(batch_size, target - attempted))
+            if not rows:
+                break
+
+            chunk_ids = [int(row["id"]) for row in rows]
+            texts = [str(row["content"]) for row in rows]
+            vectors = embed_batch_with_retries(texts, chunk_ids)
+
+            valid_ids: list[int] = []
+            valid_vectors: list[list[float]] = []
+            for chunk_id, vector in zip(chunk_ids, vectors):
+                if not vector:
+                    skipped += 1
+                    continue
+                if expected_dim is None:
+                    expected_dim = len(vector)
+                if len(vector) != expected_dim:
+                    skipped += 1
+                    continue
+                valid_ids.append(chunk_id)
+                valid_vectors.append(vector)
+
+            if valid_ids:
+                idx.set_embeddings_bulk_no_commit(valid_ids, valid_vectors)
+                stored += len(valid_ids)
+
+            attempted += len(rows)
+            after_id = chunk_ids[-1]
+            idx._conn.executemany(
+                "INSERT OR REPLACE INTO index_meta (key, value) VALUES (?, ?)",
+                [
+                    ("embedding_provider", emb_cfg.provider),
+                    ("embedding_model", emb_cfg.model),
+                    ("embedding_dim", str(expected_dim or "")),
+                    ("embedding_backfilled_at", datetime.now(timezone.utc).isoformat()),
+                ],
+            )
+            idx.commit()
+            emit_status(attempted, target, after_id)
+
+        if not progress_lines:
+            sys.stderr.write(f"\r{' ' * 140}\r")
+            sys.stderr.flush()
+        elapsed = time.monotonic() - t0
+        remaining_missing = idx.count_missing_embeddings()
+        click.echo(
+            f"Backfilled embeddings for '{name}': attempted={attempted}, stored={stored}, "
+            f"skipped={skipped}, remaining_missing={remaining_missing}, elapsed={elapsed:.1f}s"
+        )
+    finally:
+        idx.close()
 
 
 @workspace_group.command("query")
@@ -896,7 +1101,7 @@ def workspace_query(ctx: click.Context, question: str, ws_name: str, top_k: int,
                 bm25_results = bm25_score_chunks(idx, question, bm25_progress)
 
         if effective_mode in ("semantic", "hybrid") and has_embeddings:
-            emb_cfg = load_embedding_config()
+            emb_cfg = load_embedding_config(apply_env_overrides=True)
             if emb_cfg.is_configured:
                 try:
                     q_vecs = embed_texts([question], emb_cfg)
