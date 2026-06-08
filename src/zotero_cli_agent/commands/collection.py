@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import json
+from typing import Any
+
 import click
 
 from zotero_cli_agent.config import get_data_dir, load_config, resolve_library_id, resolve_write_credentials
 from zotero_cli_agent.core.reader import ZoteroReader
 from zotero_cli_agent.core.writer import SYNC_REMINDER, ZoteroWriteError, ZoteroWriter
 from zotero_cli_agent.exit_codes import EXIT_RUNTIME, emit_error
-from zotero_cli_agent.formatter import format_collections, format_items, print_error
+from zotero_cli_agent.formatter import envelope_ok, format_collections, format_items, format_success, print_error
 from zotero_cli_agent.models import ErrorInfo
 
 
@@ -14,6 +17,20 @@ from zotero_cli_agent.models import ErrorInfo
 def collection_group() -> None:
     """Manage Zotero collections."""
     pass
+
+
+def _emit_json_or_text(
+    data: Any, *, output_json: bool, human_text: str, meta: dict[str, Any] | None = None
+) -> None:
+    click.echo(format_success(data, output_json=output_json, human_text=human_text, meta=meta))
+
+
+def _emit_sync_success(data: Any, *, output_json: bool, human_text: str, meta: dict[str, Any] | None = None) -> None:
+    if output_json:
+        _emit_json_or_text(data, output_json=True, human_text=human_text, meta=meta)
+        return
+    click.echo(human_text)
+    click.echo(SYNC_REMINDER)
 
 
 @collection_group.command("list")
@@ -71,8 +88,16 @@ def collection_create(ctx: click.Context, name: str, parent: str | None) -> None
     writer = ZoteroWriter(library_id=library_id, api_key=api_key, library_type=library_type)
     try:
         key = writer.create_collection(name, parent_key=parent)
-        click.echo(f"Collection created: {key}")
-        click.echo(SYNC_REMINDER)
+        _emit_sync_success(
+            {
+                "key": key,
+                "name": name,
+                "parent_key": parent,
+                "sync_required": True,
+            },
+            output_json=json_out,
+            human_text=f"Collection created: {key}",
+        )
     except ZoteroWriteError as e:
         print_error(
             ErrorInfo(message=str(e), context="collection create", hint="Check API credentials and network"),
@@ -109,11 +134,22 @@ def collection_move(ctx: click.Context, item_key: str, collection_key: str, sour
     writer = ZoteroWriter(library_id=library_id, api_key=api_key, library_type=library_type)
     try:
         writer.move_to_collection(item_key, collection_key, source_collection_key=source_collection)
+        action = "moved" if source_collection else "added"
         if source_collection:
-            click.echo(f"Item {item_key} moved from collection {source_collection} to {collection_key}")
+            human_text = f"Item {item_key} moved from collection {source_collection} to {collection_key}"
         else:
-            click.echo(f"Item {item_key} added to collection {collection_key}")
-        click.echo(SYNC_REMINDER)
+            human_text = f"Item {item_key} added to collection {collection_key}"
+        _emit_sync_success(
+            {
+                "item_key": item_key,
+                "collection_key": collection_key,
+                "source_collection_key": source_collection,
+                "action": action,
+                "sync_required": True,
+            },
+            output_json=json_out,
+            human_text=human_text,
+        )
     except ZoteroWriteError as e:
         print_error(
             ErrorInfo(message=str(e), context="collection move", hint="Check item and collection keys"),
@@ -131,7 +167,11 @@ def collection_delete(ctx: click.Context, key: str, dry_run: bool) -> None:
     cfg = load_config(profile=ctx.obj.get("profile"))
     json_out = ctx.obj.get("json", False)
     if dry_run:
-        click.echo(f"[dry-run] Would delete collection '{key}'")
+        if json_out:
+            data = {"key": key, "would_delete": True}
+            click.echo(json.dumps(envelope_ok(data, extra={"dry_run": True}), indent=2, ensure_ascii=False))
+        else:
+            click.echo(f"[dry-run] Would delete collection '{key}'")
         return
     library_type = ctx.obj.get("library_type", "user")
     group_id = ctx.obj.get("group_id")
@@ -147,8 +187,15 @@ def collection_delete(ctx: click.Context, key: str, dry_run: bool) -> None:
     writer = ZoteroWriter(library_id=library_id, api_key=api_key, library_type=library_type)
     try:
         writer.delete_collection(key)
-        click.echo(f"Collection {key} deleted")
-        click.echo(SYNC_REMINDER)
+        _emit_sync_success(
+            {
+                "key": key,
+                "deleted": True,
+                "sync_required": True,
+            },
+            output_json=json_out,
+            human_text=f"Collection {key} deleted",
+        )
     except ZoteroWriteError as e:
         print_error(
             ErrorInfo(message=str(e), context="collection delete", hint="Check collection key"),
@@ -170,7 +217,6 @@ def collection_reorganize(ctx: click.Context, plan_file: str, dry_run: bool) -> 
 
     Optional "parent" field creates subcollections.
     """
-    import json
     from pathlib import Path
 
     cfg = load_config(profile=ctx.obj.get("profile"))
@@ -180,19 +226,49 @@ def collection_reorganize(ctx: click.Context, plan_file: str, dry_run: bool) -> 
     plan = json.loads(plan_path.read_text())
     collections = plan.get("collections", [])
     if not collections:
-        click.echo("No collections in plan.")
+        _emit_json_or_text(
+            {"collections": [], "message": "No collections in plan."},
+            output_json=json_out,
+            human_text="No collections in plan.",
+            meta={"count": 0},
+        )
         return
 
     if dry_run:
+        preview_collections: list[dict[str, Any]] = []
         for coll in collections:
             name = coll["name"]
             parent_name = coll.get("parent")
             items = coll.get("items", [])
+            preview_collections.append(
+                {
+                    "name": name,
+                    "parent_name": parent_name,
+                    "items": items,
+                    "item_count": len(items),
+                }
+            )
+            if json_out:
+                continue
             parent_str = f" (under '{parent_name}')" if parent_name else ""
             click.echo(f"[dry-run] Would create collection '{name}'{parent_str}")
             for item_key in items:
                 click.echo(f"[dry-run]   Would move {item_key} -> '{name}'")
-        click.echo(f"\n[dry-run] Total: {len(collections)} collections to create")
+        if json_out:
+            data = {
+                "would_create_collections": preview_collections,
+                "total_collections": len(preview_collections),
+                "total_items": sum(len(coll["items"]) for coll in preview_collections),
+            }
+            click.echo(
+                json.dumps(
+                    envelope_ok(data, meta={"count": len(preview_collections)}, extra={"dry_run": True}),
+                    indent=2,
+                    ensure_ascii=False,
+                )
+            )
+        else:
+            click.echo(f"\n[dry-run] Total: {len(collections)} collections to create")
         return
 
     library_type = ctx.obj.get("library_type", "user")
@@ -209,6 +285,9 @@ def collection_reorganize(ctx: click.Context, plan_file: str, dry_run: bool) -> 
 
     writer = ZoteroWriter(library_id=library_id, api_key=api_key, library_type=library_type)
     created_collections: dict[str, str] = {}  # name -> key mapping for parent lookups
+    created_results: list[dict[str, Any]] = []
+    moved_results: list[dict[str, Any]] = []
+    failed_results: list[dict[str, Any]] = []
 
     for coll in collections:
         name = coll["name"]
@@ -219,19 +298,76 @@ def collection_reorganize(ctx: click.Context, plan_file: str, dry_run: bool) -> 
         try:
             col_key = writer.create_collection(name, parent_key=parent_key)
             created_collections[name] = col_key
-            click.echo(f"Created collection '{name}' ({col_key})")
+            created_results.append(
+                {
+                    "name": name,
+                    "key": col_key,
+                    "parent_name": parent_name,
+                    "parent_key": parent_key,
+                }
+            )
+            if not json_out:
+                click.echo(f"Created collection '{name}' ({col_key})")
 
             for item_key in items:
                 try:
                     writer.move_to_collection(item_key, col_key)
-                    click.echo(f"  Moved {item_key} -> '{name}'")
+                    moved_results.append(
+                        {
+                            "item_key": item_key,
+                            "collection_name": name,
+                            "collection_key": col_key,
+                        }
+                    )
+                    if not json_out:
+                        click.echo(f"  Moved {item_key} -> '{name}'")
                 except ZoteroWriteError as e:
-                    click.echo(f"  Failed to move {item_key}: {e}")
+                    failed_results.append(
+                        {
+                            "operation": "move_item",
+                            "item_key": item_key,
+                            "collection_name": name,
+                            "collection_key": col_key,
+                            "message": str(e),
+                        }
+                    )
+                    if not json_out:
+                        click.echo(f"  Failed to move {item_key}: {e}")
         except ZoteroWriteError as e:
-            click.echo(f"Failed to create collection '{name}': {e}")
+            failed_results.append(
+                {
+                    "operation": "create_collection",
+                    "name": name,
+                    "parent_name": parent_name,
+                    "parent_key": parent_key,
+                    "message": str(e),
+                }
+            )
+            if not json_out:
+                click.echo(f"Failed to create collection '{name}': {e}")
 
-    click.echo(f"\nDone. Created {len(created_collections)} collections.")
-    click.echo(SYNC_REMINDER)
+    _emit_sync_success(
+        {
+            "created_collections": created_results,
+            "items_moved": moved_results,
+            "failed": failed_results,
+            "summary": {
+                "collections_requested": len(collections),
+                "collections_created": len(created_collections),
+                "items_moved": len(moved_results),
+                "failures": len(failed_results),
+            },
+            "sync_required": True,
+        },
+        output_json=json_out,
+        human_text=f"\nDone. Created {len(created_collections)} collections.",
+        meta={
+            "collections_requested": len(collections),
+            "collections_created": len(created_collections),
+            "items_moved": len(moved_results),
+            "failures": len(failed_results),
+        },
+    )
 
 
 @collection_group.command("rename")
@@ -256,8 +392,15 @@ def collection_rename(ctx: click.Context, key: str, new_name: str) -> None:
     writer = ZoteroWriter(library_id=library_id, api_key=api_key, library_type=library_type)
     try:
         writer.rename_collection(key, new_name)
-        click.echo(f"Collection {key} renamed to '{new_name}'")
-        click.echo(SYNC_REMINDER)
+        _emit_sync_success(
+            {
+                "key": key,
+                "new_name": new_name,
+                "sync_required": True,
+            },
+            output_json=json_out,
+            human_text=f"Collection {key} renamed to '{new_name}'",
+        )
     except ZoteroWriteError as e:
         print_error(
             ErrorInfo(message=str(e), context="collection rename", hint="Check collection key"),

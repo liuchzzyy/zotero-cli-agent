@@ -53,7 +53,7 @@ class TestDryRun:
         runner = CliRunner()
         result = runner.invoke(
             main,
-            ["collection", "reorganize", str(plan_file), "--dry-run"],
+            ["--no-json", "collection", "reorganize", str(plan_file), "--dry-run"],
         )
         assert result.exit_code == 0
         assert "[dry-run] Would create collection 'Topic A'" in result.output
@@ -66,12 +66,49 @@ class TestDryRun:
         runner = CliRunner()
         result = runner.invoke(
             main,
-            ["collection", "delete", "COL1", "--dry-run"],
+            ["--no-json", "collection", "delete", "COL1", "--dry-run"],
             env=WRITE_ENV,
         )
         assert result.exit_code == 0
         assert "[dry-run]" in result.output
         assert "COL1" in result.output
+
+    def test_collection_delete_dry_run_json_envelope(self):
+        runner = CliRunner()
+        result = runner.invoke(
+            main,
+            ["--json", "collection", "delete", "COL1", "--dry-run"],
+            env=WRITE_ENV,
+        )
+        assert result.exit_code == 0
+        env = json.loads(result.output)
+        assert env["ok"] is True
+        assert env["dry_run"] is True
+        assert env["data"]["key"] == "COL1"
+        assert env["data"]["would_delete"] is True
+
+    def test_collection_reorganize_dry_run_json_envelope(self, tmp_path):
+        plan = {
+            "collections": [
+                {"name": "Topic A", "items": ["K1", "K2"]},
+                {"name": "Sub B", "parent": "Topic A", "items": ["K3"]},
+            ]
+        }
+        plan_file = tmp_path / "plan.json"
+        plan_file.write_text(json.dumps(plan))
+
+        runner = CliRunner()
+        result = runner.invoke(
+            main,
+            ["--json", "collection", "reorganize", str(plan_file), "--dry-run"],
+        )
+
+        assert result.exit_code == 0
+        env = json.loads(result.output)
+        assert env["ok"] is True
+        assert env["dry_run"] is True
+        assert env["data"]["total_collections"] == 2
+        assert env["data"]["total_items"] == 3
 
     def test_tag_add_dry_run(self):
         runner = CliRunner()
@@ -103,6 +140,124 @@ class TestDryRun:
         assert env["ok"] is True
         assert env["dry_run"] is True
         assert env["data"]["would_add"] == "newtag"
+
+
+class TestCollectionJsonOutput:
+    @patch("zotero_cli_agent.commands.collection.ZoteroWriter")
+    def test_collection_create_json_success_envelope(self, mock_writer_cls):
+        mock_writer = MagicMock()
+        mock_writer_cls.return_value = mock_writer
+        mock_writer.create_collection.return_value = "NEWCOL"
+
+        runner = CliRunner()
+        result = runner.invoke(
+            main,
+            ["--json", "collection", "create", "New Col", "--parent", "PARENT"],
+            env=WRITE_ENV,
+        )
+
+        assert result.exit_code == 0
+        env = _parse_json_output(result.output)
+        assert env["ok"] is True
+        assert env["data"] == {
+            "key": "NEWCOL",
+            "name": "New Col",
+            "parent_key": "PARENT",
+            "sync_required": True,
+        }
+        assert SYNC_REMINDER not in result.output
+        mock_writer.create_collection.assert_called_once_with("New Col", parent_key="PARENT")
+
+    @patch("zotero_cli_agent.commands.collection.ZoteroWriter")
+    def test_collection_move_json_success_envelope(self, mock_writer_cls):
+        mock_writer = MagicMock()
+        mock_writer_cls.return_value = mock_writer
+
+        runner = CliRunner()
+        result = runner.invoke(
+            main,
+            ["--json", "collection", "move", "ITEM1", "DESTCOL", "--from", "SRCCOL"],
+            env=WRITE_ENV,
+        )
+
+        assert result.exit_code == 0
+        env = _parse_json_output(result.output)
+        assert env["ok"] is True
+        assert env["data"] == {
+            "item_key": "ITEM1",
+            "collection_key": "DESTCOL",
+            "source_collection_key": "SRCCOL",
+            "action": "moved",
+            "sync_required": True,
+        }
+        assert SYNC_REMINDER not in result.output
+        mock_writer.move_to_collection.assert_called_once_with(
+            "ITEM1", "DESTCOL", source_collection_key="SRCCOL"
+        )
+
+    @patch("zotero_cli_agent.commands.collection.ZoteroWriter")
+    def test_collection_delete_json_success_envelope(self, mock_writer_cls):
+        mock_writer = MagicMock()
+        mock_writer_cls.return_value = mock_writer
+
+        runner = CliRunner()
+        result = runner.invoke(main, ["--json", "collection", "delete", "COL1"], env=WRITE_ENV)
+
+        assert result.exit_code == 0
+        env = _parse_json_output(result.output)
+        assert env["ok"] is True
+        assert env["data"] == {"key": "COL1", "deleted": True, "sync_required": True}
+        assert SYNC_REMINDER not in result.output
+        mock_writer.delete_collection.assert_called_once_with("COL1")
+
+    @patch("zotero_cli_agent.commands.collection.ZoteroWriter")
+    def test_collection_rename_json_success_envelope(self, mock_writer_cls):
+        mock_writer = MagicMock()
+        mock_writer_cls.return_value = mock_writer
+
+        runner = CliRunner()
+        result = runner.invoke(main, ["--json", "collection", "rename", "COL1", "New Name"], env=WRITE_ENV)
+
+        assert result.exit_code == 0
+        env = _parse_json_output(result.output)
+        assert env["ok"] is True
+        assert env["data"] == {"key": "COL1", "new_name": "New Name", "sync_required": True}
+        assert SYNC_REMINDER not in result.output
+        mock_writer.rename_collection.assert_called_once_with("COL1", "New Name")
+
+    @patch("zotero_cli_agent.commands.collection.ZoteroWriter")
+    def test_collection_reorganize_json_success_envelope(self, mock_writer_cls, tmp_path):
+        mock_writer = MagicMock()
+        mock_writer_cls.return_value = mock_writer
+        mock_writer.create_collection.side_effect = ["COLA", "COLB"]
+        plan = {
+            "collections": [
+                {"name": "Topic A", "items": ["K1", "K2"]},
+                {"name": "Sub B", "parent": "Topic A", "items": ["K3"]},
+            ]
+        }
+        plan_file = tmp_path / "plan.json"
+        plan_file.write_text(json.dumps(plan))
+
+        runner = CliRunner()
+        result = runner.invoke(main, ["--json", "collection", "reorganize", str(plan_file)], env=WRITE_ENV)
+
+        assert result.exit_code == 0
+        env = _parse_json_output(result.output)
+        assert env["ok"] is True
+        assert env["data"]["summary"] == {
+            "collections_requested": 2,
+            "collections_created": 2,
+            "items_moved": 3,
+            "failures": 0,
+        }
+        assert env["data"]["created_collections"][1]["parent_key"] == "COLA"
+        assert env["data"]["items_moved"][0]["item_key"] == "K1"
+        assert env["data"]["failed"] == []
+        assert env["data"]["sync_required"] is True
+        assert SYNC_REMINDER not in result.output
+        assert mock_writer.create_collection.call_count == 2
+        assert mock_writer.move_to_collection.call_count == 3
 
 
 # --- Shell completions tests ---

@@ -123,6 +123,43 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-daily-rss-doi-impo
 - 如果失败来自 metadata/Crossref 解析异常，先修复代码并补测试，再基于原 checkpoint 恢复；不要清空本次 log 目录。
 ```
 
+## Daily 00_UNSORTED Review
+
+### 推荐给代理的直接提示词
+```text
+使用 skill zotero-cli-agent。
+在 E:\Desktop\CodingDaily\zotero-cli-agent 下读取 Zotero 的 00_INBOX/00_UNSORTED 集合条目，按每 100 条为一批返回给我。
+
+这是只读审阅流程，不写 Zotero，不改 zotero.sqlite，不生成 cleaned-metadata/update/delete 文件。默认直接在回复中返回结果；除非我明确要求保存快照，不要把结果散落到仓库根目录、tools\、tmp\ 或临时 .workspace\... 中。
+
+执行顺序：
+1. 先运行 `uv run zot --json collection list`，从当前 live collection tree 中确认 `00_INBOX/00_UNSORTED` 的 collection key。历史上常见 key 是 `QFGBGJTZ`，但每天都必须重新确认，不要直接复用旧 key。
+2. 再运行 `uv run zot --json collection items <UNSORTED_COLLECTION_KEY>` 读取当前集合条目，记录本次总数和当前批次范围。
+3. 按 Zotero 当前返回顺序从 1 开始编号。第一批返回 1-100；我说“下一批”时返回 101-200，依此类推。
+4. 每条只返回四列，固定表头必须写成：`序号 / key / 中文标题 / 期刊`。
+5. 推荐用 Markdown 表格返回，表头固定为：`| 序号 | key | 中文标题 | 期刊 |`。
+6. 期刊字段优先取 `extra.publicationTitle`，没有时再取 `extra.journalAbbreviation`，再没有时取 `extra.publisher`；期刊名保持 Zotero 原文，不强行翻译。
+7. 标题翻译成中文时保留专有名词、缩写、模型名、材料名和化学式的准确性，例如 MnO2、Zn2+、CO2、LiFePO4、LLM、RAG、VSR、MXene 不要拆坏或过度意译。
+8. 返回前说明：`第一批：1-100 / 共 N 条` 或 `第 X 批：A-B / 共 N 条`。
+
+可用的字段抽取命令示例：
+$env:PYTHONIOENCODING='utf-8'
+$j = uv run zot --json collection items <UNSORTED_COLLECTION_KEY> | ConvertFrom-Json
+$offset = 0
+$limit = 100
+$i = $offset
+$j.data | Select-Object -Skip $offset -First $limit | ForEach-Object {
+  $i++
+  $journal = ''
+  if ($_.extra -and $_.extra.publicationTitle) { $journal = $_.extra.publicationTitle }
+  elseif ($_.extra -and $_.extra.journalAbbreviation) { $journal = $_.extra.journalAbbreviation }
+  elseif ($_.extra -and $_.extra.publisher) { $journal = $_.extra.publisher }
+  [pscustomobject]@{ n=$i; key=$_.key; title=$_.title; journal=$journal }
+} | ConvertTo-Json -Depth 8
+
+如果我后续要根据序号删除、移动或保留条目，必须把本次审阅输出对应的 number-to-key 映射视为唯一依据。不要在集合变化后重新读取并套用旧序号；执行任何写操作前先复述将要处理的序号、key 和目标集合，等我确认。
+```
+
 ## Remove Newer DOI Duplicates
 
 ### 推荐给代理的直接提示词
