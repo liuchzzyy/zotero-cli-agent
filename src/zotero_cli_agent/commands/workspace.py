@@ -837,7 +837,12 @@ def workspace_index(
 
 @workspace_group.command("embed")
 @click.argument("name")
-@click.option("--batch-size", default=100, show_default=True, help="Number of existing chunks to attempt per commit.")
+@click.option(
+    "--batch-size",
+    default=100,
+    show_default=True,
+    help="Number of missing chunks to send to the provider and attempt per commit.",
+)
 @click.option("--limit", default=0, show_default=True, help="Maximum chunks to attempt in this run; 0 means all missing.")
 @click.option("--max-retries", default=5, show_default=True, help="Retry a failed provider batch this many times.")
 @click.option("--retry-sleep", default=10.0, show_default=True, help="Initial seconds to sleep between batch retries.")

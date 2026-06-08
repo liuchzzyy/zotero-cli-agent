@@ -4,18 +4,21 @@ param(
     [string]$Extractor = "mineru",
     [int]$ScanLimit = 100000,
     [int]$ProgressEvery = 100,
-    [int]$EmbedBatchSize = 100,
+    [int]$EmbedBatchSize = 1,
     [int]$EmbedLimit = 0,
     [int]$EmbedMaxRetries = 8,
     [double]$EmbedRetrySleep = 10.0,
     [double]$EmbedHeartbeatSeconds = 15.0,
     [string]$EmbeddingDevice = "",
+    [int]$GpuMinMemoryMiB = 6144,
     [string]$OutputDir = "",
     [switch]$DryRun,
     [switch]$NoIndex,
     [switch]$NoEmbed,
     [switch]$EmbedOnly,
     [switch]$ForceRebuild,
+    [switch]$AllowLowVramGpu,
+    [switch]$SkipGpuPreflight,
     [switch]$KeepInventory,
     [switch]$StopOnError,
     [switch]$KeepLog,
@@ -117,6 +120,9 @@ if ($EmbedRetrySleep -lt 0) {
 }
 if ($EmbedHeartbeatSeconds -lt 0) {
     throw "-EmbedHeartbeatSeconds must be 0 or greater."
+}
+if ($GpuMinMemoryMiB -lt 0) {
+    throw "-GpuMinMemoryMiB must be 0 or greater."
 }
 
 function Get-RepoRoot {
@@ -229,6 +235,143 @@ function Get-JsonInt64 {
     return [int64]$Object.$Name
 }
 
+function Get-TomlSectionValue {
+    param(
+        [string]$Path,
+        [string]$Section,
+        [string]$Name
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return ""
+    }
+
+    $inSection = $false
+    foreach ($line in Get-Content -LiteralPath $Path) {
+        $trimmed = $line.Trim()
+        if ($trimmed -match '^\[(.+)\]$') {
+            $inSection = ($Matches[1] -eq $Section)
+            continue
+        }
+        if (-not $inSection) {
+            continue
+        }
+        if ($trimmed -match ("^{0}\s*=\s*(.+)$" -f [regex]::Escape($Name))) {
+            $value = $Matches[1].Trim()
+            $commentIndex = $value.IndexOf("#")
+            if ($commentIndex -ge 0) {
+                $value = $value.Substring(0, $commentIndex).Trim()
+            }
+            return $value.Trim('"').Trim("'")
+        }
+    }
+
+    return ""
+}
+
+function Get-EffectiveEmbeddingSetting {
+    param(
+        [string]$RepoRoot,
+        [string]$OverrideDevice,
+        [string]$Name
+    )
+
+    if (($Name -eq "device") -and $OverrideDevice) {
+        return $OverrideDevice
+    }
+    if (($Name -eq "device") -and $env:ZOT_EMBEDDING_DEVICE) {
+        return $env:ZOT_EMBEDDING_DEVICE
+    }
+    if (($Name -eq "model") -and $env:ZOT_EMBEDDING_MODEL) {
+        return $env:ZOT_EMBEDDING_MODEL
+    }
+    if (($Name -eq "provider") -and $env:ZOT_EMBEDDING_PROVIDER) {
+        return $env:ZOT_EMBEDDING_PROVIDER
+    }
+
+    $configPath = Join-Path $RepoRoot ".zot\config.toml"
+    return Get-TomlSectionValue -Path $configPath -Section "embedding" -Name $Name
+}
+
+function Invoke-EmbeddingGpuPreflight {
+    param(
+        [string]$RepoRoot,
+        [string]$Device,
+        [string]$Provider,
+        [string]$Model,
+        [int]$MinMemoryMiB,
+        [switch]$AllowLowVramGpu,
+        [switch]$SkipGpuPreflight
+    )
+
+    if ($SkipGpuPreflight) {
+        Write-RunSetting "gpu_preflight" "skipped"
+        return
+    }
+    if ($Provider -and ($Provider -ne "sentence_transformers")) {
+        return
+    }
+    if (-not ($Device -match '^cuda($|:)')) {
+        return
+    }
+
+    Write-RunSection "GPU Preflight"
+    Write-RunSetting "embedding_device" $Device
+    if ($Provider) {
+        Write-RunSetting "embedding_provider" $Provider
+    }
+    if ($Model) {
+        Write-RunSetting "embedding_model" $Model
+    }
+
+    $smiOutput = & nvidia-smi --query-gpu=name,driver_version,memory.total,memory.free --format=csv,noheader,nounits 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "nvidia-smi failed during GPU preflight: $smiOutput"
+    }
+    $gpuLine = @($smiOutput | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })[0]
+    $parts = @($gpuLine -split "," | ForEach-Object { $_.Trim() })
+    if ($parts.Count -ge 4) {
+        $gpuName = $parts[0]
+        $driverVersion = $parts[1]
+        $totalMiB = [int]$parts[2]
+        $freeMiB = [int]$parts[3]
+        Write-RunSetting "gpu" $gpuName
+        Write-RunSetting "driver" $driverVersion
+        Write-RunSetting "gpu_memory_total_mib" $totalMiB
+        Write-RunSetting "gpu_memory_free_mib" $freeMiB
+    }
+    else {
+        $totalMiB = 0
+        Write-RunSetting "nvidia_smi" $gpuLine
+    }
+
+    $python = Join-Path $RepoRoot ".venv\Scripts\python.exe"
+    if (Test-Path -LiteralPath $python) {
+        $torchOutput = & $python -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else '')" 2>&1
+    }
+    else {
+        $torchOutput = & uv run python -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else '')" 2>&1
+    }
+    if ($LASTEXITCODE -ne 0) {
+        throw "PyTorch CUDA check failed during GPU preflight: $torchOutput"
+    }
+    Write-RunSetting "torch_cuda" ($torchOutput -join " ")
+    if (($torchOutput -join " ") -notmatch "\bTrue\b") {
+        throw "PyTorch CUDA is not available; use -EmbeddingDevice cpu or repair the CUDA environment before GPU embedding."
+    }
+
+    if (($MinMemoryMiB -gt 0) -and ($totalMiB -gt 0) -and ($totalMiB -lt $MinMemoryMiB)) {
+        $message = (
+            "Detected GPU memory ({0} MiB) is below the safety floor ({1} MiB) for full-library local embedding. " +
+            "Use -EmbeddingDevice cpu for the safe path, or explicitly add -AllowLowVramGpu with -EmbedBatchSize 1 and a small -EmbedLimit for a smoke test."
+        ) -f $totalMiB, $MinMemoryMiB
+        if (-not $AllowLowVramGpu) {
+            throw $message
+        }
+        Write-Host ("WARNING: {0}" -f $message) -ForegroundColor Yellow
+    }
+}
+
 function Invoke-RagEmbeddingBackfill {
     param(
         [string]$RepoRoot,
@@ -239,8 +382,23 @@ function Invoke-RagEmbeddingBackfill {
         [int]$MaxRetries,
         [double]$RetrySleep,
         [double]$HeartbeatSeconds,
-        [string]$Device
+        [string]$Device,
+        [int]$GpuMinMemoryMiB,
+        [switch]$AllowLowVramGpu,
+        [switch]$SkipGpuPreflight
     )
+
+    $effectiveDevice = Get-EffectiveEmbeddingSetting -RepoRoot $RepoRoot -OverrideDevice $Device -Name "device"
+    $effectiveModel = Get-EffectiveEmbeddingSetting -RepoRoot $RepoRoot -OverrideDevice "" -Name "model"
+    $effectiveProvider = Get-EffectiveEmbeddingSetting -RepoRoot $RepoRoot -OverrideDevice "" -Name "provider"
+    Invoke-EmbeddingGpuPreflight `
+        -RepoRoot $RepoRoot `
+        -Device $effectiveDevice `
+        -Provider $effectiveProvider `
+        -Model $effectiveModel `
+        -MinMemoryMiB $GpuMinMemoryMiB `
+        -AllowLowVramGpu:$AllowLowVramGpu `
+        -SkipGpuPreflight:$SkipGpuPreflight
 
     $embedCmd = @(
         "uv", "run", "zot", "workspace", "embed", $WorkspaceName,
@@ -259,9 +417,13 @@ function Invoke-RagEmbeddingBackfill {
 
     Write-RunSection "Embedding Backfill"
     Write-RunSetting "progress log" $LogPath
+    if ($effectiveDevice) {
+        Write-RunSetting "effective device" $effectiveDevice
+    }
     if ($Device) {
         Write-RunSetting "device override" $Device
     }
+    Write-RunSetting "embed batch size" $BatchSize
     Write-RunSetting "heartbeat seconds" $HeartbeatSeconds
     Invoke-LoggedCommand -RepoRoot $RepoRoot -LogPath $LogPath -Command $embedCmd
 }
@@ -498,7 +660,11 @@ Write-RunSetting "keep_log" $KeepLog
 if ($EmbeddingDevice) {
     Write-RunSetting "embedding_device" $EmbeddingDevice
 }
+Write-RunSetting "embed_batch_size" $EmbedBatchSize
 Write-RunSetting "embed_heartbeat_seconds" $EmbedHeartbeatSeconds
+Write-RunSetting "gpu_min_memory_mib" $GpuMinMemoryMiB
+Write-RunSetting "allow_low_vram_gpu" $AllowLowVramGpu
+Write-RunSetting "skip_gpu_preflight" $SkipGpuPreflight
 if (-not $HideProgressWatchCommands) {
     Write-ProgressWatchCommands -RunOutputDir $runOutputDir
 }
@@ -563,7 +729,10 @@ try {
                 -MaxRetries $EmbedMaxRetries `
                 -RetrySleep $EmbedRetrySleep `
                 -HeartbeatSeconds $EmbedHeartbeatSeconds `
-                -Device $EmbeddingDevice
+                -Device $EmbeddingDevice `
+                -GpuMinMemoryMiB $GpuMinMemoryMiB `
+                -AllowLowVramGpu:$AllowLowVramGpu `
+                -SkipGpuPreflight:$SkipGpuPreflight
         }
         else {
             Write-Host "No missing embeddings found for workspace '$WorkspaceName'."
@@ -634,7 +803,10 @@ try {
             -MaxRetries $EmbedMaxRetries `
             -RetrySleep $EmbedRetrySleep `
             -HeartbeatSeconds $EmbedHeartbeatSeconds `
-            -Device $EmbeddingDevice
+            -Device $EmbeddingDevice `
+            -GpuMinMemoryMiB $GpuMinMemoryMiB `
+            -AllowLowVramGpu:$AllowLowVramGpu `
+            -SkipGpuPreflight:$SkipGpuPreflight
     }
     else {
         Write-Host "RAG embeddings are already complete for workspace '$WorkspaceName'."
