@@ -110,10 +110,26 @@ class EmbeddingConfig:
     api_key: str = ""
     model: str = "jina-embeddings-v3"
     provider: str = "jina"
+    hf_token: str = ""
 
     @property
     def is_configured(self) -> bool:
+        if self.provider == "sentence_transformers":
+            return bool(self.model)
         return bool(self.url and self.api_key)
+
+
+@dataclass
+class RerankConfig:
+    provider: str = ""
+    model: str = "BAAI/bge-reranker-v2-m3"
+    hf_token: str = ""
+    batch_size: int = 4
+    max_length: int = 512
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self.provider and self.model)
 
 
 @dataclass
@@ -187,12 +203,36 @@ def load_embedding_config(path: Path | None = None, *, apply_env_overrides: bool
             api_key=emb.get("api_key", defaults.api_key),
             model=emb.get("model", defaults.model),
             provider=emb.get("provider", defaults.provider),
+            hf_token=emb.get("hf_token", defaults.hf_token),
         )
     if apply_env_overrides:
         defaults.url = os.environ.get("ZOT_EMBEDDING_URL", defaults.url)
         defaults.api_key = os.environ.get("ZOT_EMBEDDING_KEY", defaults.api_key)
         defaults.model = os.environ.get("ZOT_EMBEDDING_MODEL", defaults.model)
         defaults.provider = os.environ.get("ZOT_EMBEDDING_PROVIDER", defaults.provider)
+        defaults.hf_token = os.environ.get("ZOT_EMBEDDING_HF_TOKEN", defaults.hf_token)
+    return defaults
+
+
+def load_rerank_config(path: Path | None = None, *, apply_env_overrides: bool = False) -> RerankConfig:
+    defaults = RerankConfig()
+    data = _load_toml_data(path)
+    if data:
+        emb = data.get("embedding", {})
+        rerank = data.get("rerank", {})
+        defaults = RerankConfig(
+            provider=rerank.get("provider", defaults.provider),
+            model=rerank.get("model", defaults.model),
+            hf_token=rerank.get("hf_token", emb.get("hf_token", defaults.hf_token)),
+            batch_size=int(rerank.get("batch_size", defaults.batch_size)),
+            max_length=int(rerank.get("max_length", defaults.max_length)),
+        )
+    if apply_env_overrides:
+        defaults.provider = os.environ.get("ZOT_RERANK_PROVIDER", defaults.provider)
+        defaults.model = os.environ.get("ZOT_RERANK_MODEL", defaults.model)
+        defaults.hf_token = os.environ.get("ZOT_RERANK_HF_TOKEN", defaults.hf_token)
+        defaults.batch_size = int(os.environ.get("ZOT_RERANK_BATCH_SIZE", defaults.batch_size))
+        defaults.max_length = int(os.environ.get("ZOT_RERANK_MAX_LENGTH", defaults.max_length))
     return defaults
 
 

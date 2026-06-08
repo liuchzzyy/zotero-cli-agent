@@ -191,6 +191,7 @@ data_dir = '/tmp/zotero'
 url = "https://api.jina.ai/v1/embeddings"
 api_key = "test-key"
 model = "jina-embeddings-v3"
+hf_token = "hf-test"
 """)
     from zotero_cli_agent.config import load_embedding_config
 
@@ -198,6 +199,7 @@ model = "jina-embeddings-v3"
     assert cfg.url == "https://api.jina.ai/v1/embeddings"
     assert cfg.api_key == "test-key"
     assert cfg.model == "jina-embeddings-v3"
+    assert cfg.hf_token == "hf-test"
 
 
 def test_load_embedding_config_defaults(tmp_path):
@@ -217,12 +219,16 @@ def test_load_embedding_config_env_override(tmp_path, monkeypatch):
     monkeypatch.setenv("ZOT_EMBEDDING_URL", "http://localhost:11434/v1/embeddings")
     monkeypatch.setenv("ZOT_EMBEDDING_KEY", "local-key")
     monkeypatch.setenv("ZOT_EMBEDDING_MODEL", "custom-model")
+    monkeypatch.setenv("ZOT_EMBEDDING_PROVIDER", "sentence_transformers")
+    monkeypatch.setenv("ZOT_EMBEDDING_HF_TOKEN", "hf-env")
     from zotero_cli_agent.config import load_embedding_config
 
     cfg = load_embedding_config(path=config_file, apply_env_overrides=True)
     assert cfg.url == "http://localhost:11434/v1/embeddings"
     assert cfg.api_key == "local-key"
     assert cfg.model == "custom-model"
+    assert cfg.provider == "sentence_transformers"
+    assert cfg.hf_token == "hf-env"
 
 
 def test_embedding_config_is_configured():
@@ -230,6 +236,49 @@ def test_embedding_config_is_configured():
 
     assert EmbeddingConfig(url="http://x", api_key="k", model="m").is_configured is True
     assert EmbeddingConfig(url="http://x", api_key="", model="m").is_configured is False
+    assert EmbeddingConfig(url="", api_key="", model="Qwen/Qwen3-Embedding-0.6B", provider="sentence_transformers").is_configured is True
+    assert EmbeddingConfig(url="", api_key="", model="", provider="sentence_transformers").is_configured is False
+
+
+def test_load_rerank_config_from_toml(tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text("""
+[embedding]
+hf_token = "hf-from-embedding"
+
+[rerank]
+provider = "bge_reranker"
+model = "BAAI/bge-reranker-v2-m3"
+batch_size = 2
+max_length = 384
+""")
+    from zotero_cli_agent.config import load_rerank_config
+
+    cfg = load_rerank_config(path=config_file)
+    assert cfg.provider == "bge_reranker"
+    assert cfg.model == "BAAI/bge-reranker-v2-m3"
+    assert cfg.hf_token == "hf-from-embedding"
+    assert cfg.batch_size == 2
+    assert cfg.max_length == 384
+    assert cfg.is_configured is True
+
+
+def test_load_rerank_config_env_override(tmp_path, monkeypatch):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text("[rerank]\nprovider = ''\n")
+    monkeypatch.setenv("ZOT_RERANK_PROVIDER", "bge_reranker")
+    monkeypatch.setenv("ZOT_RERANK_MODEL", "custom-reranker")
+    monkeypatch.setenv("ZOT_RERANK_HF_TOKEN", "hf-rerank")
+    monkeypatch.setenv("ZOT_RERANK_BATCH_SIZE", "3")
+    monkeypatch.setenv("ZOT_RERANK_MAX_LENGTH", "256")
+    from zotero_cli_agent.config import load_rerank_config
+
+    cfg = load_rerank_config(path=config_file, apply_env_overrides=True)
+    assert cfg.provider == "bge_reranker"
+    assert cfg.model == "custom-reranker"
+    assert cfg.hf_token == "hf-rerank"
+    assert cfg.batch_size == 3
+    assert cfg.max_length == 256
 
 
 def test_repo_local_config_path():

@@ -14,6 +14,7 @@ from zotero_cli_agent.config import (
     get_prefs_js_path,
     load_config,
     load_embedding_config,
+    load_rerank_config,
     resolve_library_id,
 )
 from zotero_cli_agent.core.rag import (
@@ -32,6 +33,7 @@ from zotero_cli_agent.core.rag import (
 )
 from zotero_cli_agent.core.rag_index import RagIndex
 from zotero_cli_agent.core.reader import ZoteroReader
+from zotero_cli_agent.core.rerank import rerank_chunks
 from zotero_cli_agent.core.workspace import (
     Workspace,
     delete_workspace,
@@ -477,6 +479,7 @@ def _resolve_collection_key(reader: ZoteroReader, name_or_key: str) -> str | Non
 @click.option("--extractor", default=None, help="PDF text extractor to use. Defaults to the configured MinerU extractor.")
 @click.option("--progress-lines", is_flag=True, help="Write progress as newline records for log-friendly real-time output.")
 @click.option("--item-progress", is_flag=True, help="Index and commit one workspace item at a time with per-item progress.")
+@click.option("--no-embed", is_flag=True, help="Skip embedding generation during indexing; use workspace embed later.")
 @click.pass_context
 def workspace_index(
     ctx: click.Context,
@@ -485,6 +488,7 @@ def workspace_index(
     extractor: str | None,
     progress_lines: bool,
     item_progress: bool,
+    no_embed: bool,
 ) -> None:
     """Build RAG index for a workspace."""
     json_out = ctx.obj.get("json", False)
@@ -572,8 +576,8 @@ def workspace_index(
             return cleaned if len(cleaned) <= limit else cleaned[: limit - 3] + "..."
 
         if item_progress:
-            emb_cfg = load_embedding_config(apply_env_overrides=True)
-            mode_label = "BM25 + embeddings" if emb_cfg.is_configured else "BM25"
+            emb_cfg = None if no_embed else load_embedding_config(apply_env_overrides=True)
+            mode_label = "BM25 + embeddings" if emb_cfg and emb_cfg.is_configured else "BM25"
             indexed_items = 0
             total_chunks = 0
             pdf_error_count = 0
@@ -646,7 +650,7 @@ def workspace_index(
                 chunk_texts = [content for _, _, content, _ in item_chunks]
                 vectors: list[list[float]] = []
                 item_mode_label = "BM25"
-                if emb_cfg.is_configured and chunk_texts:
+                if emb_cfg and emb_cfg.is_configured and chunk_texts:
 
                     def item_emb_progress(done: int, total: int) -> None:
                         emit_progress(f"item:{item_idx}:embed", done, total)
@@ -808,8 +812,8 @@ def workspace_index(
 
         # Embeddings if configured
         mode_label = "BM25"
-        emb_cfg = load_embedding_config(apply_env_overrides=True)
-        if emb_cfg.is_configured and all_chunk_texts:
+        emb_cfg = None if no_embed else load_embedding_config(apply_env_overrides=True)
+        if emb_cfg and emb_cfg.is_configured and all_chunk_texts:
             click.echo("  Generating embeddings...")
 
             def emb_progress(done: int, total: int) -> None:
@@ -1155,8 +1159,25 @@ def workspace_embed(
     default="any",
     help="Restrict PDF results to main paper or supplementary PDF chunks",
 )
+@click.option("--rerank", is_flag=True, help="Rerank fused retrieval candidates with the configured local reranker.")
+@click.option(
+    "--rerank-top-n",
+    type=click.IntRange(min=1),
+    default=50,
+    show_default=True,
+    help="Number of fused candidates to rerank.",
+)
 @click.pass_context
-def workspace_query(ctx: click.Context, question: str, ws_name: str, top_k: int, mode: str, pdf_kind: str) -> None:
+def workspace_query(
+    ctx: click.Context,
+    question: str,
+    ws_name: str,
+    top_k: int,
+    mode: str,
+    pdf_kind: str,
+    rerank: bool,
+    rerank_top_n: int,
+) -> None:
     """Query workspace papers with natural language."""
     json_out = ctx.obj.get("json", False)
     if not workspace_exists(ws_name):
@@ -1209,7 +1230,7 @@ def workspace_query(ctx: click.Context, question: str, ws_name: str, top_k: int,
             emb_cfg = load_embedding_config(apply_env_overrides=True)
             if emb_cfg.is_configured:
                 try:
-                    q_vecs = embed_texts([question], emb_cfg)
+                    q_vecs = embed_texts([question], emb_cfg, input_type="query")
                     if q_vecs:
                         if json_out:
                             semantic_results = semantic_score_chunks(idx, q_vecs[0], None)
@@ -1236,6 +1257,38 @@ def workspace_query(ctx: click.Context, question: str, ws_name: str, top_k: int,
             merged = bm25_results
 
         filtered = filter_ranked_results_by_pdf_kind(merged, pdf_kind)
+        if rerank and filtered:
+            rerank_cfg = load_rerank_config(apply_env_overrides=True)
+            if not rerank_cfg.is_configured:
+                emit_error(
+                    "configuration_error",
+                    "Reranker provider is not configured",
+                    output_json=json_out,
+                    hint="Set [rerank].provider and [rerank].model in .zot/config.toml",
+                    context="workspace query",
+                )
+            if not json_out:
+                sys.stderr.write("\r    [rerank]")
+                sys.stderr.flush()
+
+            def rerank_progress(done: int, total: int) -> None:
+                if not json_out:
+                    sys.stderr.write(f"\r{' ' * 60}\r    [rerank] [{done}/{total}]")
+                    sys.stderr.flush()
+
+            reranked = rerank_chunks(
+                question,
+                filtered,
+                rerank_cfg,
+                top_n=rerank_top_n,
+                progress_callback=rerank_progress if not json_out else None,
+            )
+            if reranked:
+                filtered = reranked
+                effective_mode = f"{effective_mode}+rerank"
+            if not json_out:
+                sys.stderr.write(f"\r{' ' * 60}\r")
+                sys.stderr.flush()
         top = filtered[:top_k]
 
         if not top:

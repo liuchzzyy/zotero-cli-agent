@@ -16,6 +16,7 @@ from zotero_cli_agent.config import (
     load_config,
     load_embedding_config,
     load_pdf_config,
+    load_rerank_config,
     resolve_semantic_scholar_api_key,
 )
 from zotero_cli_agent.core.pdf_cache import PdfCache
@@ -940,7 +941,15 @@ def _handle_workspace_index(name: str, force: bool = False, library: str = "user
         idx.close()
 
 
-def _handle_workspace_query(name: str, question: str, top_k: int = 5, mode: str = "auto", pdf_kind: str = "any") -> dict:
+def _handle_workspace_query(
+    name: str,
+    question: str,
+    top_k: int = 5,
+    mode: str = "auto",
+    pdf_kind: str = "any",
+    rerank: bool = False,
+    rerank_top_n: int = 50,
+) -> dict:
     from zotero_cli_agent.core.rag import (
         bm25_score_chunks,
         embed_texts,
@@ -949,6 +958,7 @@ def _handle_workspace_query(name: str, question: str, top_k: int = 5, mode: str 
         semantic_score_chunks,
     )
     from zotero_cli_agent.core.rag_index import RagIndex
+    from zotero_cli_agent.core.rerank import rerank_chunks
 
     if not workspace_exists(name):
         return {"error": f"Workspace '{name}' not found."}
@@ -971,7 +981,7 @@ def _handle_workspace_query(name: str, question: str, top_k: int = 5, mode: str 
             emb_cfg = load_embedding_config()
             if emb_cfg.is_configured:
                 try:
-                    q_vecs = embed_texts([question], emb_cfg)
+                    q_vecs = embed_texts([question], emb_cfg, input_type="query")
                     if q_vecs:
                         semantic_results = semantic_score_chunks(idx, q_vecs[0])
                 except Exception:
@@ -985,6 +995,14 @@ def _handle_workspace_query(name: str, question: str, top_k: int = 5, mode: str 
             merged = bm25_results
 
         filtered = filter_ranked_results_by_pdf_kind(merged, pdf_kind)
+        if rerank and filtered:
+            rerank_cfg = load_rerank_config()
+            if not rerank_cfg.is_configured:
+                return {"error": "Reranker provider is not configured."}
+            reranked = rerank_chunks(question, filtered, rerank_cfg, top_n=rerank_top_n)
+            if reranked:
+                filtered = reranked
+                effective_mode = f"{effective_mode}+rerank"
         top = filtered[:top_k]
         return {
             "results": [
@@ -1701,7 +1719,14 @@ def workspace_index(name: str, force: bool = False, library: str = "user") -> Js
 
 
 @mcp.tool()
-def workspace_query(name: str, question: str, top_k: int = 5, mode: str = "auto") -> JsonObject:
+def workspace_query(
+    name: str,
+    question: str,
+    top_k: int = 5,
+    mode: str = "auto",
+    rerank: bool = False,
+    rerank_top_n: int = 50,
+) -> JsonObject:
     """Query workspace papers with natural language using RAG retrieval.
 
     Returns ranked chunks from indexed papers matching the question.
@@ -1711,8 +1736,10 @@ def workspace_query(name: str, question: str, top_k: int = 5, mode: str = "auto"
         question: Natural language query.
         top_k: Number of results to return (default 5).
         mode: Retrieval mode — 'auto' (default), 'bm25', 'semantic', or 'hybrid'.
+        rerank: Whether to rerank fused candidates with the configured reranker.
+        rerank_top_n: Number of fused candidates to rerank (default 50).
     """
-    return _handle_workspace_query(name, question, top_k=top_k, mode=mode)
+    return _handle_workspace_query(name, question, top_k=top_k, mode=mode, rerank=rerank, rerank_top_n=rerank_top_n)
 
 
 # ---------------------------------------------------------------------------

@@ -32,7 +32,10 @@ class JinaProvider(EmbeddingProvider):
         self,
         texts: list[str],
         progress_callback: Callable[[int, int], None] | None = None,
+        *,
+        input_type: str = "document",
     ) -> list[list[float]]:
+        _ = input_type
         if not texts:
             return []
         all_embeddings: list[list[float]] = []

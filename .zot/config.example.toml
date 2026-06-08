@@ -30,6 +30,20 @@ api_key = ""
 model = "jina-embeddings-v3"
 provider = "jina"
 
+# Local model alternative:
+# provider = "sentence_transformers"
+# model = "BAAI/bge-m3"
+# api_key = ""
+# url = ""
+# hf_token = ""
+
+[rerank]
+provider = ""
+model = "BAAI/bge-reranker-v2-m3"
+hf_token = ""
+batch_size = 4
+max_length = 512
+
 [ai_notes]
 api_key = ""
 base_url = "http://127.0.0.1:8317/v1"

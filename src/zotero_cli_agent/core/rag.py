@@ -354,7 +354,6 @@ def bm25_score_chunks(
         return []
     chunks = index.get_all_chunks()
     total_chunks = len(chunks)
-    chunk_ids = [c["id"] for c in chunks]
 
     # Bulk fetch df for query terms (1 query instead of N queries)
     conn = index._conn
@@ -371,8 +370,16 @@ def bm25_score_chunks(
         dft = df.get(term, 0)
         idf[term] = math.log((total_docs - dft + 0.5) / (dft + 0.5) + 1)
 
-    # Bulk fetch all term frequencies for all chunks (1 query)
-    all_term_tfs = index.get_bm25_terms_bulk(chunk_ids)
+    # Fetch only postings for the query terms. This avoids sending every
+    # chunk id as a SQLite placeholder, which breaks on large indexes.
+    tf_rows = conn.execute(
+        f"SELECT chunk_id, term, tf FROM bm25_terms WHERE term IN ({placeholders})",
+        query_terms,
+    ).fetchall()
+    all_term_tfs: dict[int, dict[str, float]] = {}
+    for row in tf_rows:
+        chunk_tfs = all_term_tfs.setdefault(int(row["chunk_id"]), {})
+        chunk_tfs[str(row["term"])] = float(row["tf"])
 
     results: list[tuple[int, float, dict]] = []
     report_every = max(1, total_chunks // 50)
@@ -444,12 +451,14 @@ def embed_texts(
     texts: list[str],
     config: EmbeddingConfig,
     progress_callback: Callable[[int, int], None] | None = None,
+    *,
+    input_type: str = "document",
 ) -> list[list[float]] | None:
     if not config.is_configured:
         return None
     router = EmbeddingRouter(config)
     try:
-        return router.embed(texts, progress_callback)
+        return router.embed(texts, progress_callback, input_type=input_type)
     except Exception as e:
         # Configured-but-failed: surface the reason so callers don't silently
         # degrade to BM25-only without telling the user. See issue #28.

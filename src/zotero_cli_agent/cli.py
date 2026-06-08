@@ -15,6 +15,7 @@ from zotero_cli_agent.commands.completions import completions_cmd
 from zotero_cli_agent.commands.config import config_group
 from zotero_cli_agent.commands.delete import delete_cmd
 from zotero_cli_agent.commands.duplicates import duplicates_cmd
+from zotero_cli_agent.commands.embedding import embedding_group
 from zotero_cli_agent.commands.export import export_cmd
 from zotero_cli_agent.commands.list_cmd import list_cmd
 from zotero_cli_agent.commands.mcp import mcp_group
@@ -53,6 +54,7 @@ _READ_COMMANDS = {
     "summarize",
     "summarize-all",
     "duplicates",
+    "embedding",
     "collection",
     "config",
     "completions",
@@ -272,6 +274,7 @@ main.add_command(recent_cmd, "recent")
 main.add_command(update_cmd, "update")
 main.add_command(trash_group, "trash")
 main.add_command(duplicates_cmd, "duplicates")
+main.add_command(embedding_group, "embedding")
 main.add_command(attach_cmd, "attach")
 main.add_command(update_status_cmd, "update-status")
 main.add_command(workspace_group, "workspace")

@@ -483,6 +483,7 @@ Write-RunSetting "output" $runOutputDir
 Write-RunSetting "dry_run" $DryRun
 Write-RunSetting "no_index" $NoIndex
 Write-RunSetting "no_embed" $NoEmbed
+Write-RunSetting "index_stage_embed" "disabled; workspace embed runs after all indexing"
 Write-RunSetting "embed_only" $EmbedOnly
 Write-RunSetting "force_rebuild" $ForceRebuild
 Write-RunSetting "keep_log" $KeepLog
@@ -538,10 +539,10 @@ try {
     }
 
     $embedLogPath = Join-Path $logsDir "embed.log"
-    $shouldBackfillEmbeddings = (-not $NoEmbed) -and ($chunksMissingEmbeddings -gt 0)
+    $hasExistingMissingEmbeddings = ($chunksMissingEmbeddings -gt 0)
 
     if ($EmbedOnly) {
-        if ($shouldBackfillEmbeddings) {
+        if ($hasExistingMissingEmbeddings) {
             Invoke-RagEmbeddingBackfill `
                 -RepoRoot $repoRoot `
                 -LogPath $embedLogPath `
@@ -565,26 +566,14 @@ try {
         return
     }
 
-    $preIndexBackfillRan = $false
-    if ($shouldBackfillEmbeddings -and (-not $ForceRebuild)) {
-        Write-RunSection "Pre-Index Embedding"
+    if ($hasExistingMissingEmbeddings -and (-not $ForceRebuild)) {
         Write-Host (
-            "  Existing RAG index has {0} chunks without embeddings. Backfilling before item indexing." -f
+            "Existing RAG index has {0} chunks without embeddings; backfill will run after item indexing." -f
             (Format-RunNumber $chunksMissingEmbeddings)
         )
-        Invoke-RagEmbeddingBackfill `
-            -RepoRoot $repoRoot `
-            -LogPath $embedLogPath `
-            -WorkspaceName $WorkspaceName `
-            -BatchSize $EmbedBatchSize `
-            -Limit $EmbedLimit `
-            -MaxRetries $EmbedMaxRetries `
-            -RetrySleep $EmbedRetrySleep `
-            -HeartbeatSeconds $EmbedHeartbeatSeconds
-        $preIndexBackfillRan = $true
     }
-    elseif ($shouldBackfillEmbeddings -and $ForceRebuild) {
-        Write-Host "Existing RAG index has missing embeddings, but -ForceRebuild was set; skipping old chunk backfill before rebuild."
+    elseif ($hasExistingMissingEmbeddings -and $ForceRebuild) {
+        Write-Host "Existing RAG index has missing embeddings, but -ForceRebuild was set; old chunks will be rebuilt before embedding."
     }
     elseif ($indexedChunkCount -gt 0) {
         Write-Host "Existing RAG index has no missing embeddings before item indexing."
@@ -601,13 +590,13 @@ try {
         Write-Host "RAG index is already up to date for workspace '$WorkspaceName'."
     }
     else {
-        $indexCmd = @("uv", "run", "zot", "workspace", "index", $WorkspaceName, "--extractor", $Extractor, "--progress-lines", "--item-progress")
+        $indexCmd = @("uv", "run", "zot", "workspace", "index", $WorkspaceName, "--extractor", $Extractor, "--progress-lines", "--item-progress", "--no-embed")
         if ($ForceRebuild) {
             $indexCmd += "--force"
         }
 
         Write-RunSection "Item Index"
-        Write-Host "  Starting RAG index. This may take a long time for MinerU extraction."
+        Write-Host "  Starting RAG index with embeddings disabled. This may take a long time for MinerU extraction."
         Write-RunSetting "progress log" (Join-Path $logsDir "index.log")
         Invoke-LoggedCommand -RepoRoot $repoRoot -LogPath (Join-Path $logsDir "index.log") -Command $indexCmd
         $ranIndex = $true
@@ -616,9 +605,14 @@ try {
     if ($NoEmbed) {
         Write-Host "Skipped embedding backfill because -NoEmbed was set."
     }
-    elseif ($ranIndex) {
-        Write-RunSection "Post-Index Embedding"
-        Write-Host "  Backfilling embeddings for chunks created or refreshed by this index run."
+    elseif ($ranIndex -or ($hasExistingMissingEmbeddings -and (-not $ForceRebuild))) {
+        Write-RunSection "Embedding Backfill"
+        if ($ranIndex) {
+            Write-Host "  Backfilling embeddings after all pending item indexing completed."
+        }
+        else {
+            Write-Host "  RAG index was already up to date; backfilling existing missing embeddings."
+        }
         Invoke-RagEmbeddingBackfill `
             -RepoRoot $repoRoot `
             -LogPath $embedLogPath `
@@ -628,9 +622,6 @@ try {
             -MaxRetries $EmbedMaxRetries `
             -RetrySleep $EmbedRetrySleep `
             -HeartbeatSeconds $EmbedHeartbeatSeconds
-    }
-    elseif ($preIndexBackfillRan) {
-        Write-Host "Pre-index embedding backfill completed. No item indexing ran in this pass."
     }
     else {
         Write-Host "RAG embeddings are already complete for workspace '$WorkspaceName'."

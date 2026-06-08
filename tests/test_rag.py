@@ -9,6 +9,7 @@ import pytest
 
 from zotero_cli_agent.config import EmbeddingConfig
 from zotero_cli_agent.core.providers.jina import JinaProvider
+from zotero_cli_agent.core.providers.sentence_transformers import SentenceTransformersProvider
 from zotero_cli_agent.core.rag import (
     bm25_score_chunks,
     build_metadata_chunk,
@@ -212,6 +213,23 @@ class TestBM25:
         finally:
             idx.close()
 
+    def test_bm25_scoring_does_not_bulk_fetch_by_all_chunk_ids(self, tmp_path):
+        idx = RagIndex(tmp_path / "test.idx.sqlite")
+        try:
+            c1 = idx.insert_chunk("A", "pdf", "attention mechanism in transformers")
+            c2 = idx.insert_chunk("B", "pdf", "battery electrolyte")
+            idx.insert_bm25_terms(c1, compute_term_frequencies(tokenize("attention mechanism in transformers")))
+            idx.insert_bm25_terms(c2, compute_term_frequencies(tokenize("battery electrolyte")))
+            idx.set_meta("total_docs", "2")
+            idx.set_meta("avg_doc_len", "3")
+
+            with patch.object(idx, "get_bm25_terms_bulk", side_effect=AssertionError("should not be called")):
+                results = bm25_score_chunks(idx, "attention mechanism")
+
+            assert results[0][0] == c1
+        finally:
+            idx.close()
+
 
 class TestEmbedding:
     def test_cosine_similarity_identical(self):
@@ -244,6 +262,59 @@ class TestEmbedding:
             body = json.loads(call_args.data)
             assert body["model"] == "model"
             assert body["input"] == ["hello world"]
+
+    def test_sentence_transformers_provider_uses_query_prompt(self):
+        class FakeEmbeddings:
+            def tolist(self):
+                return [[0.1, 0.2, 0.3]]
+
+        class FakeModel:
+            prompts = {"query": "Instruct: retrieve relevant passages\nQuery: "}
+
+            def __init__(self, model_name, **kwargs):
+                self.model_name = model_name
+                self.kwargs = kwargs
+                self.encode_calls = []
+
+            def encode(self, texts, **kwargs):
+                self.encode_calls.append((texts, kwargs))
+                return FakeEmbeddings()
+
+        with patch(
+            "zotero_cli_agent.core.providers.sentence_transformers._import_sentence_transformer",
+            return_value=FakeModel,
+        ):
+            provider = SentenceTransformersProvider(model="local-model", hf_token="hf-test")
+            result = provider.embed(["hello world"], input_type="query")
+
+        assert result == [[0.1, 0.2, 0.3]]
+        model = provider._model
+        assert model is not None
+        assert model.kwargs["token"] == "hf-test"
+        assert model.encode_calls[0][1]["prompt_name"] == "query"
+
+    def test_sentence_transformers_provider_documents_do_not_use_query_prompt(self):
+        class FakeModel:
+            prompts = {"query": "query prompt"}
+
+            def __init__(self, model_name, **kwargs):
+                self.encode_calls = []
+
+            def encode(self, texts, **kwargs):
+                self.encode_calls.append((texts, kwargs))
+                return [[0.1, 0.2, 0.3]]
+
+        with patch(
+            "zotero_cli_agent.core.providers.sentence_transformers._import_sentence_transformer",
+            return_value=FakeModel,
+        ):
+            provider = SentenceTransformersProvider(model="local-model")
+            result = provider.embed(["hello world"], input_type="document")
+
+        assert result == [[0.1, 0.2, 0.3]]
+        model = provider._model
+        assert model is not None
+        assert "prompt_name" not in model.encode_calls[0][1]
 
     def test_jina_provider_requests_truncation(self):
         provider = JinaProvider(api_key="key", model="jina-embeddings-v3", url="http://test/v1/embeddings")

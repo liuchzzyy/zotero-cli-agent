@@ -10,15 +10,26 @@ from unittest.mock import patch
 from click.testing import CliRunner
 
 from zotero_cli_agent.cli import main
+from zotero_cli_agent.core.rag_index import RagIndex
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
-def _invoke(args: list[str], json_output: bool = False):
+def _invoke(args: list[str], json_output: bool = False, env: dict[str, str] | None = None):
     runner = CliRunner()
     base = ["--json"] if json_output else []
-    env = {"ZOT_DATA_DIR": str(FIXTURES_DIR), "ZOT_FORMAT": "table"}
-    return runner.invoke(main, base + args, env=env)
+    base_env = {
+        "ZOT_DATA_DIR": str(FIXTURES_DIR),
+        "ZOT_FORMAT": "table",
+        "ZOT_EMBEDDING_PROVIDER": "jina",
+        "ZOT_EMBEDDING_URL": "",
+        "ZOT_EMBEDDING_KEY": "",
+        "ZOT_EMBEDDING_MODEL": "",
+        "ZOT_EMBEDDING_HF_TOKEN": "",
+    }
+    if env:
+        base_env.update(env)
+    return runner.invoke(main, base + args, env=base_env)
 
 
 def _patch_ws_dir(tmp_path):
@@ -69,6 +80,34 @@ class TestWorkspaceIndex:
             result = _invoke(["workspace", "index", "test-idx"])
         assert "up to date" in result.output
 
+    def test_index_no_embed_skips_configured_embedding(self, tmp_path):
+        with _patch_ws_dir(tmp_path), patch(
+            "zotero_cli_agent.commands.workspace.embed_texts",
+            side_effect=AssertionError("should not embed"),
+        ) as embed_mock:
+            _invoke(["workspace", "new", "test-idx"])
+            _invoke(["workspace", "add", "test-idx", "ATTN001"])
+            result = _invoke(
+                ["workspace", "index", "test-idx", "--no-embed"],
+                env={
+                    "ZOT_EMBEDDING_PROVIDER": "jina",
+                    "ZOT_EMBEDDING_URL": "https://example.invalid/v1/embeddings",
+                    "ZOT_EMBEDDING_KEY": "fake-key",
+                    "ZOT_EMBEDDING_MODEL": "fake-model",
+                },
+            )
+
+        assert result.exit_code == 0
+        assert "BM25" in result.output
+        embed_mock.assert_not_called()
+
+        idx = RagIndex(tmp_path / "test-idx" / "rag.idx.sqlite")
+        try:
+            assert idx.count_missing_embeddings() > 0
+            assert idx.get_all_embeddings() == []
+        finally:
+            idx.close()
+
 
 class TestWorkspaceQuery:
     def test_query_workspace(self, tmp_path):
@@ -96,6 +135,28 @@ class TestWorkspaceQuery:
         assert isinstance(results, list)
         assert len(results) > 0
         assert "item_key" in results[0]
+
+    def test_query_rerank_json_output(self, tmp_path):
+        def fake_rerank(question, candidates, config, *, top_n=50, progress_callback=None):
+            assert question == "attention"
+            assert config.provider == "bge_reranker"
+            assert top_n == 2
+            selected = candidates[:top_n]
+            return [(cid, 10.0 - idx, chunk) for idx, (cid, _score, chunk) in enumerate(selected)] + candidates[top_n:]
+
+        with _patch_ws_dir(tmp_path), patch("zotero_cli_agent.commands.workspace.rerank_chunks", fake_rerank):
+            _invoke(["workspace", "new", "test-q"])
+            _invoke(["workspace", "add", "test-q", "ATTN001"])
+            _invoke(["workspace", "index", "test-q"])
+            result = _invoke(
+                ["workspace", "query", "attention", "--workspace", "test-q", "--rerank", "--rerank-top-n", "2"],
+                json_output=True,
+                env={"ZOT_RERANK_PROVIDER": "bge_reranker", "ZOT_RERANK_MODEL": "fake-reranker"},
+            )
+
+        data = json.loads(result.output)["data"]
+        assert data["mode"] == "bm25+rerank"
+        assert data["results"][0]["score"] == 10.0
 
     def test_query_irrelevant(self, tmp_path):
         with _patch_ws_dir(tmp_path):
