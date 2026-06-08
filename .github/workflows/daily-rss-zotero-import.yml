@@ -97,19 +97,26 @@ jobs:
       - name: Run Daily RSS Zotero import
         shell: pwsh
         run: |
-          $args = @(
-            "-RunInCurrentWindow",
-            "-Date", $env:IMPORT_DATE,
-            "-SelectedJson", $env:SELECTED_JSON,
-            "-ProgressIntervalSeconds", "30",
-            "-SkipLibraryExport",
-            "-SkipLocalDb",
-            "-HideProgressWatchCommands"
-          )
           if ($env:KEEP_RUN_LOG -eq "true") {
-            $args += "-KeepLog"
+            & .\tools\run-daily-rss-doi-import.ps1 `
+              -RunInCurrentWindow `
+              -Date $env:IMPORT_DATE `
+              -SelectedJson $env:SELECTED_JSON `
+              -ProgressIntervalSeconds 30 `
+              -SkipLibraryExport `
+              -SkipLocalDb `
+              -HideProgressWatchCommands `
+              -KeepLog
+          } else {
+            & .\tools\run-daily-rss-doi-import.ps1 `
+              -RunInCurrentWindow `
+              -Date $env:IMPORT_DATE `
+              -SelectedJson $env:SELECTED_JSON `
+              -ProgressIntervalSeconds 30 `
+              -SkipLibraryExport `
+              -SkipLocalDb `
+              -HideProgressWatchCommands
           }
-          & .\tools\run-daily-rss-doi-import.ps1 @args
 
       - name: Summarize retained run output
         if: always()
