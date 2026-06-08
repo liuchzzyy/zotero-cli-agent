@@ -73,6 +73,36 @@ function Get-ForwardedWorkflowArguments {
     return @($arguments)
 }
 
+function Get-WorkflowPowerShellPath {
+    if ($env:ZOT_WORKFLOW_POWERSHELL) {
+        if (Test-Path -LiteralPath $env:ZOT_WORKFLOW_POWERSHELL) {
+            return (Resolve-Path -LiteralPath $env:ZOT_WORKFLOW_POWERSHELL).Path
+        }
+        return $env:ZOT_WORKFLOW_POWERSHELL
+    }
+
+    $candidates = [System.Collections.Generic.List[string]]::new()
+    if ($env:ProgramFiles) {
+        $candidates.Add((Join-Path $env:ProgramFiles "PowerShell\7\pwsh.exe"))
+    }
+    if ($env:LOCALAPPDATA) {
+        $candidates.Add((Join-Path $env:LOCALAPPDATA "Microsoft\powershell\7\pwsh.exe"))
+    }
+
+    $pwshCommand = Get-Command "pwsh.exe" -ErrorAction SilentlyContinue
+    if ($pwshCommand) {
+        $candidates.Add($pwshCommand.Source)
+    }
+
+    foreach ($candidate in @($candidates | Select-Object -Unique)) {
+        if ($candidate -and (Test-Path -LiteralPath $candidate)) {
+            return (Resolve-Path -LiteralPath $candidate).Path
+        }
+    }
+
+    return "powershell.exe"
+}
+
 function Start-WorkflowInNewWindow {
     param(
         [Parameter(Mandatory = $true)]
@@ -86,7 +116,9 @@ function Start-WorkflowInNewWindow {
     )
 
     $forwardedArguments = Get-ForwardedWorkflowArguments -BoundParameters $BoundParameters
+    $powerShellExe = Get-WorkflowPowerShellPath
     $processArguments = [System.Collections.Generic.List[string]]::new()
+    $processArguments.Add("-NoLogo")
     $processArguments.Add("-NoProfile")
     $processArguments.Add("-ExecutionPolicy")
     $processArguments.Add("Bypass")
@@ -98,14 +130,55 @@ function Start-WorkflowInNewWindow {
     }
 
     $process = Start-Process `
-        -FilePath "powershell.exe" `
+        -FilePath $powerShellExe `
         -ArgumentList @($processArguments) `
         -WorkingDirectory $WorkingDirectory `
         -WindowStyle Normal `
         -PassThru
 
     Write-Host ("Started {0} in a new PowerShell window. PID: {1}" -f $DisplayName, $process.Id) -ForegroundColor Cyan
+    Write-Host ("PowerShell host: {0}" -f $powerShellExe) -ForegroundColor DarkGray
     Write-Host "Close the new window only after the workflow finishes." -ForegroundColor DarkGray
+}
+
+function Disable-WorkflowConsoleQuickEdit {
+    try {
+        if (-not ([System.Management.Automation.PSTypeName]'WorkflowConsoleModeNative').Type) {
+            Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+
+public static class WorkflowConsoleModeNative {
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern IntPtr GetStdHandle(int nStdHandle);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool GetConsoleMode(IntPtr hConsoleHandle, out int lpMode);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool SetConsoleMode(IntPtr hConsoleHandle, int dwMode);
+}
+"@
+        }
+
+        $stdInputHandle = [WorkflowConsoleModeNative]::GetStdHandle(-10)
+        if ($stdInputHandle -eq [IntPtr]::Zero -or $stdInputHandle.ToInt64() -eq -1) {
+            return
+        }
+
+        [int]$mode = 0
+        if (-not [WorkflowConsoleModeNative]::GetConsoleMode($stdInputHandle, [ref]$mode)) {
+            return
+        }
+
+        $enableQuickEditMode = 0x0040
+        $enableExtendedFlags = 0x0080
+        $newMode = ($mode -bor $enableExtendedFlags) -band (-bnot $enableQuickEditMode)
+        [void][WorkflowConsoleModeNative]::SetConsoleMode($stdInputHandle, $newMode)
+    }
+    catch {
+        # Best effort only; console mode is not available in every host.
+    }
 }
 
 function New-SharedUtf8AppendWriter {

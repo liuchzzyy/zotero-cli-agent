@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import sys
+import threading
 import time
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -835,6 +837,12 @@ def workspace_index(
 @click.option("--limit", default=0, show_default=True, help="Maximum chunks to attempt in this run; 0 means all missing.")
 @click.option("--max-retries", default=5, show_default=True, help="Retry a failed provider batch this many times.")
 @click.option("--retry-sleep", default=10.0, show_default=True, help="Initial seconds to sleep between batch retries.")
+@click.option(
+    "--heartbeat-seconds",
+    default=15.0,
+    show_default=True,
+    help="Seconds between provider wait progress lines when --progress-lines is set; 0 disables wait heartbeats.",
+)
 @click.option("--progress-lines", is_flag=True, help="Write progress as newline records for log-friendly real-time output.")
 @click.pass_context
 def workspace_embed(
@@ -844,6 +852,7 @@ def workspace_embed(
     limit: int,
     max_retries: int,
     retry_sleep: float,
+    heartbeat_seconds: float,
     progress_lines: bool,
 ) -> None:
     """Backfill embeddings for an existing workspace RAG index."""
@@ -895,6 +904,13 @@ def workspace_embed(
             output_json=json_out,
             context="workspace embed",
         )
+    if heartbeat_seconds < 0:
+        emit_error(
+            "validation_error",
+            "--heartbeat-seconds must be 0 or greater",
+            output_json=json_out,
+            context="workspace embed",
+        )
 
     emb_cfg = load_embedding_config(apply_env_overrides=True)
     if not emb_cfg.is_configured:
@@ -926,6 +942,10 @@ def workspace_embed(
             f"provider={emb_cfg.provider} model={emb_cfg.model}"
         )
 
+        def emit_progress_line(message: str, *, err: bool = False) -> None:
+            click.echo(message, err=err)
+            (sys.stderr if err else sys.stdout).flush()
+
         def emit_status(done: int, total: int, last_id: int) -> None:
             elapsed = time.monotonic() - t0
             rate = done / elapsed if elapsed > 0 else 0.0
@@ -936,17 +956,94 @@ def workspace_embed(
                 f"last_id={last_id} rate={rate:.2f}/s eta={eta:.1f}s"
             )
             if progress_lines:
-                click.echo(message)
+                emit_progress_line(message)
             else:
                 sys.stderr.write(f"\r{' ' * 140}\r{message}")
                 sys.stderr.flush()
 
+        def run_with_wait_heartbeat(
+            call: Callable[[], list[list[float]] | None],
+            *,
+            event: str,
+            chunk_ids: list[int],
+            count: int,
+            attempt_no: int,
+            attempt_total: int,
+        ) -> tuple[list[list[float]] | None, float]:
+            first_id = chunk_ids[0]
+            last_id = chunk_ids[-1]
+            started = time.monotonic()
+            if progress_lines:
+                emit_progress_line(
+                    f"  [{event}:start] attempted={attempted}/{target} stored={stored} skipped={skipped} "
+                    f"first_chunk_id={first_id} last_chunk_id={last_id} count={count} "
+                    f"attempt={attempt_no}/{attempt_total}"
+                )
+
+            result_holder: dict[str, list[list[float]] | None] = {}
+            exception_holder: dict[str, BaseException] = {}
+
+            def worker() -> None:
+                try:
+                    result_holder["result"] = call()
+                except BaseException as exc:
+                    exception_holder["exception"] = exc
+
+            worker_thread = threading.Thread(
+                target=worker,
+                name=f"zot-{event}-provider",
+                daemon=True,
+            )
+            worker_thread.start()
+
+            if progress_lines and heartbeat_seconds > 0:
+                while worker_thread.is_alive():
+                    worker_thread.join(timeout=heartbeat_seconds)
+                    if worker_thread.is_alive():
+                        elapsed = time.monotonic() - started
+                        emit_progress_line(
+                            f"  [{event}:wait] attempted={attempted}/{target} stored={stored} skipped={skipped} "
+                            f"first_chunk_id={first_id} last_chunk_id={last_id} count={count} "
+                            f"attempt={attempt_no}/{attempt_total} provider_elapsed={elapsed:.1f}s"
+                        )
+            else:
+                worker_thread.join()
+
+            if "exception" in exception_holder:
+                raise exception_holder["exception"]
+
+            elapsed = time.monotonic() - started
+            return result_holder.get("result"), elapsed
+
         def embed_batch_with_retries(texts: list[str], chunk_ids: list[int]) -> list[list[float]]:
             for attempt_no in range(max_retries + 1):
-                vectors_or_none = embed_texts(texts, emb_cfg)
+                provider_attempt = attempt_no + 1
+
+                def provider_progress(done: int, provider_total: int) -> None:
+                    if progress_lines:
+                        emit_progress_line(
+                            f"  [embed:provider] attempted={attempted}/{target} stored={stored} skipped={skipped} "
+                            f"first_chunk_id={chunk_ids[0]} provider_done={done}/{provider_total} "
+                            f"attempt={provider_attempt}/{max_retries + 1}"
+                        )
+
+                vectors_or_none, provider_elapsed = run_with_wait_heartbeat(
+                    lambda: embed_texts(texts, emb_cfg, provider_progress),
+                    event="embed",
+                    chunk_ids=chunk_ids,
+                    count=len(texts),
+                    attempt_no=provider_attempt,
+                    attempt_total=max_retries + 1,
+                )
                 if vectors_or_none is not None:
                     if len(vectors_or_none) < len(texts):
                         vectors_or_none.extend([[] for _ in range(len(texts) - len(vectors_or_none))])
+                    if progress_lines:
+                        emit_progress_line(
+                            f"  [embed:done] first_chunk_id={chunk_ids[0]} last_chunk_id={chunk_ids[-1]} "
+                            f"count={len(texts)} returned={len(vectors_or_none)} elapsed={provider_elapsed:.1f}s "
+                            f"attempt={provider_attempt}/{max_retries + 1}"
+                        )
                     return vectors_or_none[: len(texts)]
                 if attempt_no < max_retries:
                     delay = retry_sleep * (attempt_no + 1)
@@ -968,7 +1065,15 @@ def workspace_embed(
             for chunk_id, text in zip(chunk_ids, texts):
                 single_vectors: list[list[float]] | None = None
                 for attempt_no in range(max_retries + 1):
-                    single_vectors = embed_texts([text], emb_cfg)
+                    provider_attempt = attempt_no + 1
+                    single_vectors, _provider_elapsed = run_with_wait_heartbeat(
+                        lambda: embed_texts([text], emb_cfg),
+                        event="embed:single",
+                        chunk_ids=[chunk_id],
+                        count=1,
+                        attempt_no=provider_attempt,
+                        attempt_total=max_retries + 1,
+                    )
                     if single_vectors is not None:
                         break
                     if attempt_no < max_retries and retry_sleep > 0:

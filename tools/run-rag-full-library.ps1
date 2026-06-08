@@ -1,6 +1,6 @@
 param(
-    [string]$WorkspaceName = "full-library-pdf-rag",
-    [string]$Collections = "",
+    [string]$WorkspaceName = "full-library-rag",
+    [string]$Collections = "00_PROJECT_INBOX,00_TOPIC_INBOX",
     [string]$Extractor = "mineru",
     [int]$ScanLimit = 100000,
     [int]$ProgressEvery = 100,
@@ -8,6 +8,7 @@ param(
     [int]$EmbedLimit = 0,
     [int]$EmbedMaxRetries = 8,
     [double]$EmbedRetrySleep = 10.0,
+    [double]$EmbedHeartbeatSeconds = 15.0,
     [string]$OutputDir = "",
     [switch]$DryRun,
     [switch]$NoIndex,
@@ -32,6 +33,72 @@ if (-not $RunInCurrentWindow) {
     return
 }
 
+Disable-WorkflowConsoleQuickEdit
+
+function Initialize-RagTextDisplay {
+    try {
+        $utf8 = [System.Text.UTF8Encoding]::new($false)
+        [Console]::InputEncoding = $utf8
+        [Console]::OutputEncoding = $utf8
+        $script:OutputEncoding = $utf8
+        if ($PSVersionTable.PSVersion.Major -ge 7) {
+            $PSStyle.OutputRendering = "PlainText"
+        }
+    }
+    catch {
+        # Display setup is best effort only; the workflow can still run without it.
+    }
+}
+
+function Write-RunSection([string]$Title) {
+    Write-Host ""
+    Write-Host ("[{0}]" -f $Title) -ForegroundColor Cyan
+}
+
+function Write-RunSetting([string]$Name, [object]$Value) {
+    Write-Host ("  {0,-30} {1}" -f ($Name + ":"), $Value)
+}
+
+function Format-RunNumber([object]$Value) {
+    try {
+        return ("{0:N0}" -f [int64]$Value)
+    }
+    catch {
+        return "$Value"
+    }
+}
+
+function Format-RunCommand([string[]]$Command) {
+    $parts = foreach ($part in $Command) {
+        if ($part -match '[\s"]') {
+            '"' + $part.Replace('"', '\"') + '"'
+        }
+        else {
+            $part
+        }
+    }
+    return ($parts -join " ")
+}
+
+function Write-LoggedOutputLine {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$LogPath,
+        [Parameter(Mandatory = $true)]
+        [object]$Line
+    )
+
+    $text = ([string]$Line).Replace("`r", "").TrimEnd()
+    if ([string]::IsNullOrWhiteSpace($text)) {
+        return
+    }
+
+    Write-Host $text
+    Add-Content -LiteralPath $LogPath -Encoding UTF8 -Value $text
+}
+
+Initialize-RagTextDisplay
+
 if ($EmbedOnly -and $NoEmbed) {
     throw "-EmbedOnly and -NoEmbed cannot be used together."
 }
@@ -46,6 +113,9 @@ if ($EmbedMaxRetries -lt 0) {
 }
 if ($EmbedRetrySleep -lt 0) {
     throw "-EmbedRetrySleep must be 0 or greater."
+}
+if ($EmbedHeartbeatSeconds -lt 0) {
+    throw "-EmbedHeartbeatSeconds must be 0 or greater."
 }
 
 function Get-RepoRoot {
@@ -98,13 +168,17 @@ function Remove-RunOutputDirWithRetry([string]$RunOutputDir) {
 function Write-ProgressWatchCommands([string]$RunOutputDir) {
     $inventoryPath = Join-Path $RunOutputDir "inventory.json"
     $logsDir = Join-Path $RunOutputDir "logs"
-    Write-Host ""
-    Write-Host "Optional progress checks from another PowerShell:" -ForegroundColor DarkGray
-    Write-Host "  Primary progress is this window plus run.log/progress.jsonl; use these checks only for diagnosis." -ForegroundColor DarkGray
-    Write-Host '  Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match ''run-rag-full-library|workspace index|workspace embed|mineru|inventory_full_pdf_workspace'' } | Select-Object ProcessId,Name,CommandLine'
-    Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-ChildItem -LiteralPath '{0}' -File | Sort-Object LastWriteTime -Descending | Select-Object -First 5 FullName,Length,LastWriteTime }}" -f $logsDir)
-    Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-Content -Tail 20 -LiteralPath '{0}' }}" -f (Join-Path $logsDir "embed.log"))
-    Write-Host ("  if (Test-Path -LiteralPath '{0}') {{ Get-Content -Raw -LiteralPath '{0}' }}" -f $inventoryPath)
+    Write-RunSection "Optional Diagnostics"
+    Write-Host "  Primary progress is this window plus run.log/progress.jsonl."
+    Write-Host "  Use these checks only when diagnosing a stalled run."
+    Write-Host "  Processes:"
+    Write-Host '    Get-CimInstance Win32_Process | ? CommandLine -match "run-rag-full-library|workspace index|workspace embed|mineru|inventory_full_pdf_workspace" | select ProcessId,Name,CommandLine'
+    Write-Host "  Latest child logs:"
+    Write-Host ("    Get-ChildItem -LiteralPath '{0}' -File | sort LastWriteTime -desc | select -first 5 FullName,Length,LastWriteTime" -f $logsDir)
+    Write-Host "  Embedding tail:"
+    Write-Host ("    Get-Content -Tail 20 -LiteralPath '{0}'" -f (Join-Path $logsDir "embed.log"))
+    Write-Host "  Inventory JSON:"
+    Write-Host ("    Get-Content -Raw -LiteralPath '{0}'" -f $inventoryPath)
 }
 
 function Invoke-LoggedCommand {
@@ -115,11 +189,19 @@ function Invoke-LoggedCommand {
     )
 
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $LogPath) | Out-Null
+
+    $exe = $Command[0]
+    $cmdArgs = if ($Command.Count -gt 1) { $Command[1..($Command.Count - 1)] } else { @() }
+
+    Write-RunSection "Command"
+    Write-RunSetting "command" (Format-RunCommand -Command $Command)
+    Write-RunSetting "log" $LogPath
+
     Push-Location $RepoRoot
     try {
-        $exe = $Command[0]
-        $args = $Command[1..($Command.Count - 1)]
-        & $exe @args 2>&1 | Tee-Object -FilePath $LogPath
+        & $exe @cmdArgs 2>&1 | ForEach-Object {
+            Write-LoggedOutputLine -LogPath $LogPath -Line $_
+        }
         $exitCode = $LASTEXITCODE
     }
     finally {
@@ -154,7 +236,8 @@ function Invoke-RagEmbeddingBackfill {
         [int]$BatchSize,
         [int]$Limit,
         [int]$MaxRetries,
-        [double]$RetrySleep
+        [double]$RetrySleep,
+        [double]$HeartbeatSeconds
     )
 
     $embedCmd = @(
@@ -162,15 +245,16 @@ function Invoke-RagEmbeddingBackfill {
         "--batch-size", "$BatchSize",
         "--max-retries", "$MaxRetries",
         "--retry-sleep", "$RetrySleep",
+        "--heartbeat-seconds", "$HeartbeatSeconds",
         "--progress-lines"
     )
     if ($Limit -gt 0) {
         $embedCmd += @("--limit", "$Limit")
     }
 
-    Write-Host ""
-    Write-Host "Starting RAG embedding backfill."
-    Write-Host ("Progress is streamed and also saved to {0}." -f $LogPath)
+    Write-RunSection "Embedding Backfill"
+    Write-RunSetting "progress log" $LogPath
+    Write-RunSetting "heartbeat seconds" $HeartbeatSeconds
     Invoke-LoggedCommand -RepoRoot $RepoRoot -LogPath $LogPath -Command $embedCmd
 }
 
@@ -387,19 +471,21 @@ New-Item -ItemType Directory -Force -Path $runOutputDir | Out-Null
 Write-InventoryScript -ScriptPath $inventoryScript
 Start-WorkflowRunLog -RunDirectory $runOutputDir -WorkflowName "rag-full-library" -RepoRoot $repoRoot
 
-Write-Host "Repo:       $repoRoot"
-Write-Host "Workspace:  $WorkspaceName"
+Write-RunSection "Full Library RAG Incremental Index"
+Write-RunSetting "repo" $repoRoot
+Write-RunSetting "workspace" $WorkspaceName
 if ($collectionNames.Count -gt 0) {
-    Write-Host ("Collections: {0}" -f ($collectionNames -join ", "))
+    Write-RunSetting "collections" ($collectionNames -join ", ")
 }
-Write-Host "Extractor:  $Extractor"
-Write-Host "Output:     $runOutputDir"
-Write-Host "DryRun:     $DryRun"
-Write-Host "NoIndex:    $NoIndex"
-Write-Host "NoEmbed:    $NoEmbed"
-Write-Host "EmbedOnly:  $EmbedOnly"
-Write-Host "Force:      $ForceRebuild"
-Write-Host "KeepLog:    $KeepLog"
+Write-RunSetting "extractor" $Extractor
+Write-RunSetting "output" $runOutputDir
+Write-RunSetting "dry_run" $DryRun
+Write-RunSetting "no_index" $NoIndex
+Write-RunSetting "no_embed" $NoEmbed
+Write-RunSetting "embed_only" $EmbedOnly
+Write-RunSetting "force_rebuild" $ForceRebuild
+Write-RunSetting "keep_log" $KeepLog
+Write-RunSetting "embed_heartbeat_seconds" $EmbedHeartbeatSeconds
 if (-not $HideProgressWatchCommands) {
     Write-ProgressWatchCommands -RunOutputDir $runOutputDir
 }
@@ -429,21 +515,20 @@ try {
     $chunksWithEmbeddings = Get-JsonInt64 -Object $inventory -Name "chunks_with_embeddings"
     $chunksMissingEmbeddings = Get-JsonInt64 -Object $inventory -Name "chunks_missing_embeddings"
 
-    Write-Host ""
-    Write-Host "Inventory summary:"
+    Write-RunSection "Inventory Summary"
     $inventoryCollections = @($inventory.collections)
     if ($inventoryCollections.Count -gt 0) {
-        Write-Host ("  collections:                  {0}" -f ($inventoryCollections -join ", "))
+        Write-RunSetting "collections" ($inventoryCollections -join ", ")
     }
-    Write-Host ("  scanned_items:                {0}" -f $inventory.scanned_items)
-    Write-Host ("  local_pdf_items:              {0}" -f $inventory.local_pdf_items)
-    Write-Host ("  pdf_but_missing_local_file:   {0}" -f $inventory.pdf_but_missing_local_file)
-    Write-Host ("  workspace_added_items:        {0}" -f $inventory.workspace_added_items)
-    Write-Host ("  indexed_items:                {0}" -f $inventory.indexed_items)
-    Write-Host ("  pending_index_items:          {0}" -f $pendingIndexItems)
-    Write-Host ("  indexed_chunk_count:          {0}" -f $indexedChunkCount)
-    Write-Host ("  chunks_with_embeddings:       {0}" -f $chunksWithEmbeddings)
-    Write-Host ("  chunks_missing_embeddings:    {0}" -f $chunksMissingEmbeddings)
+    Write-RunSetting "scanned_items" (Format-RunNumber $inventory.scanned_items)
+    Write-RunSetting "local_pdf_items" (Format-RunNumber $inventory.local_pdf_items)
+    Write-RunSetting "pdf_but_missing_local_file" (Format-RunNumber $inventory.pdf_but_missing_local_file)
+    Write-RunSetting "workspace_added_items" (Format-RunNumber $inventory.workspace_added_items)
+    Write-RunSetting "indexed_items" (Format-RunNumber $inventory.indexed_items)
+    Write-RunSetting "pending_index_items" (Format-RunNumber $pendingIndexItems)
+    Write-RunSetting "indexed_chunk_count" (Format-RunNumber $indexedChunkCount)
+    Write-RunSetting "chunks_with_embeddings" (Format-RunNumber $chunksWithEmbeddings)
+    Write-RunSetting "chunks_missing_embeddings" (Format-RunNumber $chunksMissingEmbeddings)
 
     if ($DryRun) {
         Write-Host "Dry-run complete. No workspace, RAG index, or embedding changes were made."
@@ -463,7 +548,8 @@ try {
                 -BatchSize $EmbedBatchSize `
                 -Limit $EmbedLimit `
                 -MaxRetries $EmbedMaxRetries `
-                -RetrySleep $EmbedRetrySleep
+                -RetrySleep $EmbedRetrySleep `
+                -HeartbeatSeconds $EmbedHeartbeatSeconds
         }
         else {
             Write-Host "No missing embeddings found for workspace '$WorkspaceName'."
@@ -480,10 +566,10 @@ try {
 
     $preIndexBackfillRan = $false
     if ($shouldBackfillEmbeddings -and (-not $ForceRebuild)) {
-        Write-Host ""
+        Write-RunSection "Pre-Index Embedding"
         Write-Host (
-            "Existing RAG index has {0} chunks without embeddings. Backfilling before item indexing." -f
-            $chunksMissingEmbeddings
+            "  Existing RAG index has {0} chunks without embeddings. Backfilling before item indexing." -f
+            (Format-RunNumber $chunksMissingEmbeddings)
         )
         Invoke-RagEmbeddingBackfill `
             -RepoRoot $repoRoot `
@@ -492,7 +578,8 @@ try {
             -BatchSize $EmbedBatchSize `
             -Limit $EmbedLimit `
             -MaxRetries $EmbedMaxRetries `
-            -RetrySleep $EmbedRetrySleep
+            -RetrySleep $EmbedRetrySleep `
+            -HeartbeatSeconds $EmbedHeartbeatSeconds
         $preIndexBackfillRan = $true
     }
     elseif ($shouldBackfillEmbeddings -and $ForceRebuild) {
@@ -518,9 +605,9 @@ try {
             $indexCmd += "--force"
         }
 
-        Write-Host ""
-        Write-Host "Starting RAG index. This may take a long time for MinerU extraction."
-        Write-Host ("Progress is streamed and also saved to {0}." -f (Join-Path $logsDir "index.log"))
+        Write-RunSection "Item Index"
+        Write-Host "  Starting RAG index. This may take a long time for MinerU extraction."
+        Write-RunSetting "progress log" (Join-Path $logsDir "index.log")
         Invoke-LoggedCommand -RepoRoot $repoRoot -LogPath (Join-Path $logsDir "index.log") -Command $indexCmd
         $ranIndex = $true
     }
@@ -529,8 +616,8 @@ try {
         Write-Host "Skipped embedding backfill because -NoEmbed was set."
     }
     elseif ($ranIndex) {
-        Write-Host ""
-        Write-Host "Backfilling embeddings for chunks created or refreshed by this index run."
+        Write-RunSection "Post-Index Embedding"
+        Write-Host "  Backfilling embeddings for chunks created or refreshed by this index run."
         Invoke-RagEmbeddingBackfill `
             -RepoRoot $repoRoot `
             -LogPath $embedLogPath `
@@ -538,7 +625,8 @@ try {
             -BatchSize $EmbedBatchSize `
             -Limit $EmbedLimit `
             -MaxRetries $EmbedMaxRetries `
-            -RetrySleep $EmbedRetrySleep
+            -RetrySleep $EmbedRetrySleep `
+            -HeartbeatSeconds $EmbedHeartbeatSeconds
     }
     elseif ($preIndexBackfillRan) {
         Write-Host "Pre-index embedding backfill completed. No item indexing ran in this pass."
@@ -570,7 +658,6 @@ finally {
     }
 }
 
-Write-Host ""
-Write-Host "RAG full-library run complete."
-Write-Host "Workspace and index are under .workspace\$WorkspaceName."
-Write-Host "PDF text cache is under .zot\state\pdf_cache.sqlite and is intentionally kept for incremental reuse."
+Write-RunSection "Complete"
+Write-RunSetting "workspace/index" ".workspace\$WorkspaceName"
+Write-RunSetting "pdf cache" ".zot\state\pdf_cache.sqlite"

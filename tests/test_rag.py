@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from zotero_cli_agent.config import EmbeddingConfig
+from zotero_cli_agent.core.providers.jina import JinaProvider
 from zotero_cli_agent.core.rag import (
     bm25_score_chunks,
     build_metadata_chunk,
@@ -243,6 +244,23 @@ class TestEmbedding:
             body = json.loads(call_args.data)
             assert body["model"] == "model"
             assert body["input"] == ["hello world"]
+
+    def test_jina_provider_requests_truncation(self):
+        provider = JinaProvider(api_key="key", model="jina-embeddings-v3", url="http://test/v1/embeddings")
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps({"data": [{"embedding": [0.1, 0.2, 0.3]}]}).encode()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        with patch("urllib.request.urlopen", return_value=mock_response) as mock_urlopen:
+            result = provider.embed(["hello world"])
+
+        assert result == [[0.1, 0.2, 0.3]]
+        call_args = mock_urlopen.call_args[0][0]
+        body = json.loads(call_args.data)
+        assert body["model"] == "jina-embeddings-v3"
+        assert body["input"] == ["hello world"]
+        assert body["truncate"] is True
 
     def test_embed_texts_surfaces_provider_error(self, capsys):
         cfg = EmbeddingConfig(url="http://test/v1/embeddings", api_key="key", model="model", provider="aliyun")

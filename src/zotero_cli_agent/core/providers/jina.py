@@ -46,7 +46,7 @@ class JinaProvider(EmbeddingProvider):
         return all_embeddings
 
     def _embed_batch(self, batch: list[str]) -> list[list[float]]:
-        body = json_mod.dumps({"model": self.model, "input": batch}).encode()
+        body = self._request_body(batch)
         req = urllib.request.Request(self.url, data=body)
         req.add_header("Content-Type", "application/json")
         req.add_header("Authorization", f"Bearer {self.api_key}")
@@ -60,7 +60,7 @@ class JinaProvider(EmbeddingProvider):
                 embeddings_data = data.get("data") or data.get("output", {}).get("embeddings", [])
                 return [item["embedding"] for item in embeddings_data]
             except urllib.error.HTTPError as e:
-                last_error = e
+                last_error = RuntimeError(f"HTTP {e.code}: {e.read().decode('utf-8', 'replace')}")
                 if e.code == 413:
                     return self._fallback_to_individual(batch)
                 time.sleep(2**attempt)
@@ -76,7 +76,7 @@ class JinaProvider(EmbeddingProvider):
         results: list[list[float]] = []
         for text in batch:
             try:
-                body = json_mod.dumps({"model": self.model, "input": [text]}).encode()
+                body = self._request_body([text])
                 req = urllib.request.Request(self.url, data=body)
                 req.add_header("Content-Type", "application/json")
                 req.add_header("Authorization", f"Bearer {self.api_key}")
@@ -90,3 +90,6 @@ class JinaProvider(EmbeddingProvider):
             except Exception:
                 results.append([])
         return results
+
+    def _request_body(self, batch: list[str]) -> bytes:
+        return json_mod.dumps({"model": self.model, "input": batch, "truncate": True}).encode()
