@@ -293,6 +293,29 @@ class TestEmbedding:
         assert model.kwargs["token"] == "hf-test"
         assert model.encode_calls[0][1]["prompt_name"] == "query"
 
+    def test_sentence_transformers_provider_uses_device_and_batch_size(self):
+        class FakeModel:
+            def __init__(self, model_name, **kwargs):
+                self.kwargs = kwargs
+                self.encode_calls = []
+
+            def encode(self, texts, **kwargs):
+                self.encode_calls.append((texts, kwargs))
+                return [[0.1, 0.2, 0.3]]
+
+        with patch(
+            "zotero_cli_agent.core.providers.sentence_transformers._import_sentence_transformer",
+            return_value=FakeModel,
+        ):
+            provider = SentenceTransformersProvider(model="local-model", batch_size=3, device="cuda")
+            result = provider.embed(["hello world"], input_type="document")
+
+        assert result == [[0.1, 0.2, 0.3]]
+        model = provider._model
+        assert model is not None
+        assert model.kwargs["device"] == "cuda"
+        assert model.encode_calls[0][1]["batch_size"] == 3
+
     def test_sentence_transformers_provider_documents_do_not_use_query_prompt(self):
         class FakeModel:
             prompts = {"query": "query prompt"}

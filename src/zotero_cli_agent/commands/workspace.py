@@ -847,6 +847,11 @@ def workspace_index(
     show_default=True,
     help="Seconds between provider wait progress lines when --progress-lines is set; 0 disables wait heartbeats.",
 )
+@click.option(
+    "--device",
+    default="",
+    help="Override local sentence-transformers device, e.g. cpu, cuda, cuda:0, or auto.",
+)
 @click.option("--progress-lines", is_flag=True, help="Write progress as newline records for log-friendly real-time output.")
 @click.pass_context
 def workspace_embed(
@@ -857,6 +862,7 @@ def workspace_embed(
     max_retries: int,
     retry_sleep: float,
     heartbeat_seconds: float,
+    device: str,
     progress_lines: bool,
 ) -> None:
     """Backfill embeddings for an existing workspace RAG index."""
@@ -917,6 +923,8 @@ def workspace_embed(
         )
 
     emb_cfg = load_embedding_config(apply_env_overrides=True)
+    if device:
+        emb_cfg.device = device
     if not emb_cfg.is_configured:
         emit_error(
             "configuration_error",
@@ -943,7 +951,8 @@ def workspace_embed(
 
         click.echo(
             f"Backfilling embeddings for '{name}': missing={missing} target={target} "
-            f"provider={emb_cfg.provider} model={emb_cfg.model}"
+            f"provider={emb_cfg.provider} model={emb_cfg.model} "
+            f"device={emb_cfg.device} provider_batch_size={emb_cfg.batch_size}"
         )
 
         def emit_progress_line(message: str, *, err: bool = False) -> None:

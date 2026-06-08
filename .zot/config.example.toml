@@ -36,6 +36,8 @@ provider = "jina"
 # api_key = ""
 # url = ""
 # hf_token = ""
+# device = "cpu"  # use "cuda" or "cuda:0" after installing the local-embeddings-gpu extra
+# batch_size = 8
 
 [rerank]
 provider = ""

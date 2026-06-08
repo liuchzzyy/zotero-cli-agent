@@ -209,6 +209,9 @@ zot workspace export llm-safety --format bibtex       # BibTeX
 # Build RAG index (BM25 over metadata + PDF text)
 zot workspace index llm-safety             # Incremental index
 zot workspace index llm-safety --force     # Full rebuild
+zot workspace index llm-safety --no-embed  # BM25 only; backfill embeddings later
+zot workspace embed llm-safety --device cpu
+zot workspace embed llm-safety --device cuda --limit 100
 
 # Query workspace with natural language
 zot workspace query "reward hacking" --workspace llm-safety
@@ -334,5 +337,6 @@ zot --json workspace query "AlphaFold architecture" --workspace protein-folding 
 - **Item keys** are 8-character alphanumeric strings like `K853PGUG`
 - **Group libraries** — use `--library group:<id>` with any command
 - **Workspaces** — pure local TOML files, no API needed for basic operations; `workspace index` reads PDFs from Zotero storage
-- **Workspace RAG** — BM25 always available (zero new deps); optional semantic search via the `[embedding]` section in `.zot/config.toml`
+- **Workspace RAG** — BM25 always available; optional semantic search via the `[embedding]` section in `.zot/config.toml`
+- **Local embeddings** — install `local-embeddings-cpu` for the default CPU path or `local-embeddings-gpu` for CUDA; select runtime device with `[embedding].device`, `ZOT_EMBEDDING_DEVICE`, or `zot workspace embed --device`
 

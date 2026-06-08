@@ -192,6 +192,8 @@ url = "https://api.jina.ai/v1/embeddings"
 api_key = "test-key"
 model = "jina-embeddings-v3"
 hf_token = "hf-test"
+device = "cuda"
+batch_size = 2
 """)
     from zotero_cli_agent.config import load_embedding_config
 
@@ -200,6 +202,8 @@ hf_token = "hf-test"
     assert cfg.api_key == "test-key"
     assert cfg.model == "jina-embeddings-v3"
     assert cfg.hf_token == "hf-test"
+    assert cfg.device == "cuda"
+    assert cfg.batch_size == 2
 
 
 def test_load_embedding_config_defaults(tmp_path):
@@ -211,6 +215,8 @@ def test_load_embedding_config_defaults(tmp_path):
     assert cfg.url == "https://api.jina.ai/v1/embeddings"
     assert cfg.api_key == ""
     assert cfg.model == "jina-embeddings-v3"
+    assert cfg.device == "cpu"
+    assert cfg.batch_size == 8
 
 
 def test_load_embedding_config_env_override(tmp_path, monkeypatch):
@@ -221,6 +227,8 @@ def test_load_embedding_config_env_override(tmp_path, monkeypatch):
     monkeypatch.setenv("ZOT_EMBEDDING_MODEL", "custom-model")
     monkeypatch.setenv("ZOT_EMBEDDING_PROVIDER", "sentence_transformers")
     monkeypatch.setenv("ZOT_EMBEDDING_HF_TOKEN", "hf-env")
+    monkeypatch.setenv("ZOT_EMBEDDING_DEVICE", "cuda:0")
+    monkeypatch.setenv("ZOT_EMBEDDING_BATCH_SIZE", "1")
     from zotero_cli_agent.config import load_embedding_config
 
     cfg = load_embedding_config(path=config_file, apply_env_overrides=True)
@@ -229,6 +237,8 @@ def test_load_embedding_config_env_override(tmp_path, monkeypatch):
     assert cfg.model == "custom-model"
     assert cfg.provider == "sentence_transformers"
     assert cfg.hf_token == "hf-env"
+    assert cfg.device == "cuda:0"
+    assert cfg.batch_size == 1
 
 
 def test_embedding_config_is_configured():

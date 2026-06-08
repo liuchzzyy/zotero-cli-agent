@@ -111,6 +111,8 @@ class EmbeddingConfig:
     model: str = "jina-embeddings-v3"
     provider: str = "jina"
     hf_token: str = ""
+    device: str = "cpu"
+    batch_size: int = 8
 
     @property
     def is_configured(self) -> bool:
@@ -204,6 +206,8 @@ def load_embedding_config(path: Path | None = None, *, apply_env_overrides: bool
             model=emb.get("model", defaults.model),
             provider=emb.get("provider", defaults.provider),
             hf_token=emb.get("hf_token", defaults.hf_token),
+            device=emb.get("device", defaults.device),
+            batch_size=int(emb.get("batch_size", defaults.batch_size)),
         )
     if apply_env_overrides:
         defaults.url = os.environ.get("ZOT_EMBEDDING_URL", defaults.url)
@@ -211,6 +215,8 @@ def load_embedding_config(path: Path | None = None, *, apply_env_overrides: bool
         defaults.model = os.environ.get("ZOT_EMBEDDING_MODEL", defaults.model)
         defaults.provider = os.environ.get("ZOT_EMBEDDING_PROVIDER", defaults.provider)
         defaults.hf_token = os.environ.get("ZOT_EMBEDDING_HF_TOKEN", defaults.hf_token)
+        defaults.device = os.environ.get("ZOT_EMBEDDING_DEVICE", defaults.device)
+        defaults.batch_size = int(os.environ.get("ZOT_EMBEDDING_BATCH_SIZE", defaults.batch_size))
     return defaults
 
 

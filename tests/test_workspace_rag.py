@@ -26,6 +26,8 @@ def _invoke(args: list[str], json_output: bool = False, env: dict[str, str] | No
         "ZOT_EMBEDDING_KEY": "",
         "ZOT_EMBEDDING_MODEL": "",
         "ZOT_EMBEDDING_HF_TOKEN": "",
+        "ZOT_EMBEDDING_DEVICE": "cpu",
+        "ZOT_EMBEDDING_BATCH_SIZE": "8",
     }
     if env:
         base_env.update(env)

@@ -41,6 +41,8 @@ class EmbeddingRouter:
 
             self.providers["sentence_transformers"] = SentenceTransformersProvider(
                 model=model,
+                batch_size=self.config.batch_size,
+                device=self.config.device,
                 hf_token=self.config.hf_token,
             )
 

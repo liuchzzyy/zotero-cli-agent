@@ -23,7 +23,8 @@ def _import_sentence_transformer() -> Any:
     except ImportError as exc:
         raise RuntimeError(
             "sentence-transformers is not installed. "
-            "Install it with: uv sync --dev --extra mcp --extra local-embeddings"
+            "Install it with: uv sync --dev --extra mcp --extra local-embeddings-cpu "
+            "or --extra local-embeddings-gpu"
         ) from exc
     return SentenceTransformer
 
@@ -42,9 +43,9 @@ class SentenceTransformersProvider(EmbeddingProvider):
     ) -> None:
         self.model_name = model or DEFAULT_MODEL
         self.cache_dir = cache_dir or default_model_cache_dir()
-        self.batch_size = batch_size
+        self.batch_size = max(int(batch_size), 1)
         self.normalize_embeddings = normalize_embeddings
-        self.device = device or os.environ.get("ZOT_EMBEDDING_DEVICE", "")
+        self.device = device if device is not None else os.environ.get("ZOT_EMBEDDING_DEVICE", "cpu")
         self.query_prompt_name = query_prompt_name
         self.hf_token = hf_token
         self._model: Any | None = None
@@ -92,7 +93,7 @@ class SentenceTransformersProvider(EmbeddingProvider):
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         SentenceTransformer = _import_sentence_transformer()
         kwargs: dict[str, Any] = {"cache_folder": str(self.cache_dir)}
-        if self.device:
+        if self.device and self.device.lower() != "auto":
             kwargs["device"] = self.device
         if self.hf_token:
             kwargs["token"] = self.hf_token

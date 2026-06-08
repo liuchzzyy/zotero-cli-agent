@@ -355,6 +355,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-citation-key-updat
 - 索引方式：phase-by-phase。先维护 .workspace\full-library-rag\workspace.toml；再调用 uv run zot workspace index full-library-rag --extractor mineru --progress-lines --item-progress --no-embed，让所有待处理条目先完成 PDF 抽取、chunk、BM25；最后统一调用 uv run zot workspace embed full-library-rag --progress-lines 回填 chunks.embedding IS NULL。
 - 增量规则：workspace 只新增缺失 key；RAG index 只索引尚未进入 rag.idx.sqlite 的 item key；embedding 只回填 chunks.embedding IS NULL 的 chunk；PDF 文本抽取复用 .zot\state\pdf_cache.sqlite。
 - index 阶段按 Zotero 父条目逐个处理、逐个 commit，但只写 BM25，不生成 embedding；中断后重跑会跳过已进入 rag.idx.sqlite 的 item key，继续剩余条目。embed 阶段按 chunk 批量提交，并在 provider 请求开始、等待、内部进度和 batch 完成时输出进度行；中断、provider 断连或手动停止后重跑会跳过已有 embedding 的 chunk。
+- 本地 sentence-transformers 默认使用 CPU：安装 `uv sync --dev --extra mcp --extra local-embeddings-cpu`，并在 `.zot/config.toml` 的 `[embedding]` 里设置 `device = "cpu"`。GPU 运行使用 `uv sync --dev --extra mcp --extra local-embeddings-gpu`，并设置 `device = "cuda"`，也可以在 wrapper 中用 `-EmbeddingDevice cuda` 临时覆盖。同一个 `.venv` 不能同时安装 CPU 和 CUDA 两份 torch wheel；CUDA wheel 仍可通过 `device = "cpu"` 或 `-EmbeddingDevice cpu` 走 CPU fallback，不要为此创建 `.venv-gpu`。
+- 本机 GPU 路径已验证为：NVIDIA GeForce GTX 960M + NVIDIA driver 522.25 + torch 2.7.1+cu118 + CUDA runtime 11.8。GTX 960M 只有 4GB 显存，`.zot/config.toml` 初始建议 `batch_size = 1`；确认稳定后再调大。GPU 全量 embedding 前必须先跑 `nvidia-smi` 和 PyTorch CUDA 检查，确认 `torch.cuda.is_available()` 为 true。
 
 集合参数：
 - wrapper 支持 `-Collections`，值为逗号分隔的 collection 名称或 key；inventory 阶段会对这些集合取并集并去重，再筛选“至少有一个本地存在 PDF 附件”的父条目。
@@ -372,6 +374,10 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1
 
 只回填旧索引 embedding，不重跑 PDF 提取或 index。适用于 rag.idx.sqlite 已有 chunks 但 chunks.embedding 为空或部分为空的情况：
 pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -EmbedOnly -KeepLog
+
+只小批量测试 GPU embedding，不重跑 PDF 提取或 index：
+uv run python -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else None)"
+pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -EmbedOnly -EmbedLimit 100 -EmbeddingDevice cuda -KeepLog
 
 00_PROJECT_INBOX + 00_TOPIC_INBOX 默认正式运行。长任务建议加 -KeepLog，方便完成后复核 index.log：
 pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -KeepLog
@@ -409,7 +415,8 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-evidence-search.ps1 
 - 如果需要保留 inventory.json 或运行日志用于审查，加 -KeepLog。
 - 如果需要保留临时 inventory 脚本用于排查，加 -KeepInventory；这会保留本次 log 目录。
 - 如果只想更新 workspace 不跑索引和 embedding，用 -NoIndex；成功后仍按默认清理本次 log 目录，除非加 -KeepLog。
-- 如果只想回填 embedding，不跑 PDF 提取或 item 索引，用 -EmbedOnly；可配合 -EmbedBatchSize、-EmbedLimit、-EmbedMaxRetries、-EmbedRetrySleep、-EmbedHeartbeatSeconds 控制批量、重试和 provider 等待心跳。
+- 如果只想回填 embedding，不跑 PDF 提取或 item 索引，用 -EmbedOnly；可配合 -EmbedBatchSize、-EmbedLimit、-EmbeddingDevice、-EmbedMaxRetries、-EmbedRetrySleep、-EmbedHeartbeatSeconds 控制批量、设备、重试和 provider 等待心跳。
+- NVIDIA 驱动安装完成并验证后，可以删除安装中间文件：`C:\Users\chengliu\Downloads\NVIDIA`、`C:\NVIDIA\DisplayDriver\522.25` 和 `%TEMP%\NvidiaLogging`；不要删除已安装的 `C:\Program Files\NVIDIA Corporation`。
 
 常用命令：
 pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -DryRun -ScanLimit 500 -KeepLog
@@ -417,6 +424,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1
 pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -DryRun -KeepLog
 pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -KeepLog
 pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -EmbedOnly -KeepLog
+pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -EmbedOnly -EmbedLimit 100 -EmbeddingDevice cuda -KeepLog
 pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -NoIndex
 pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -ForceRebuild
 pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-evidence-search.ps1 -Question "zinc manganese battery" -Mode auto -TopK 8 -RerankTopN 50 -KeepLog

@@ -9,6 +9,7 @@ param(
     [int]$EmbedMaxRetries = 8,
     [double]$EmbedRetrySleep = 10.0,
     [double]$EmbedHeartbeatSeconds = 15.0,
+    [string]$EmbeddingDevice = "",
     [string]$OutputDir = "",
     [switch]$DryRun,
     [switch]$NoIndex,
@@ -237,7 +238,8 @@ function Invoke-RagEmbeddingBackfill {
         [int]$Limit,
         [int]$MaxRetries,
         [double]$RetrySleep,
-        [double]$HeartbeatSeconds
+        [double]$HeartbeatSeconds,
+        [string]$Device
     )
 
     $embedCmd = @(
@@ -251,9 +253,15 @@ function Invoke-RagEmbeddingBackfill {
     if ($Limit -gt 0) {
         $embedCmd += @("--limit", "$Limit")
     }
+    if ($Device) {
+        $embedCmd += @("--device", $Device)
+    }
 
     Write-RunSection "Embedding Backfill"
     Write-RunSetting "progress log" $LogPath
+    if ($Device) {
+        Write-RunSetting "device override" $Device
+    }
     Write-RunSetting "heartbeat seconds" $HeartbeatSeconds
     Invoke-LoggedCommand -RepoRoot $RepoRoot -LogPath $LogPath -Command $embedCmd
 }
@@ -487,6 +495,9 @@ Write-RunSetting "index_stage_embed" "disabled; workspace embed runs after all i
 Write-RunSetting "embed_only" $EmbedOnly
 Write-RunSetting "force_rebuild" $ForceRebuild
 Write-RunSetting "keep_log" $KeepLog
+if ($EmbeddingDevice) {
+    Write-RunSetting "embedding_device" $EmbeddingDevice
+}
 Write-RunSetting "embed_heartbeat_seconds" $EmbedHeartbeatSeconds
 if (-not $HideProgressWatchCommands) {
     Write-ProgressWatchCommands -RunOutputDir $runOutputDir
@@ -551,7 +562,8 @@ try {
                 -Limit $EmbedLimit `
                 -MaxRetries $EmbedMaxRetries `
                 -RetrySleep $EmbedRetrySleep `
-                -HeartbeatSeconds $EmbedHeartbeatSeconds
+                -HeartbeatSeconds $EmbedHeartbeatSeconds `
+                -Device $EmbeddingDevice
         }
         else {
             Write-Host "No missing embeddings found for workspace '$WorkspaceName'."
@@ -621,7 +633,8 @@ try {
             -Limit $EmbedLimit `
             -MaxRetries $EmbedMaxRetries `
             -RetrySleep $EmbedRetrySleep `
-            -HeartbeatSeconds $EmbedHeartbeatSeconds
+            -HeartbeatSeconds $EmbedHeartbeatSeconds `
+            -Device $EmbeddingDevice
     }
     else {
         Write-Host "RAG embeddings are already complete for workspace '$WorkspaceName'."

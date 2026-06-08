@@ -25,6 +25,17 @@ dependencies = [
 [project.optional-dependencies]
 mcp = ["mcp>=1.0"]
 local-embeddings = [
+    "torch==2.7.1",
+    "sentence-transformers>=2.7.0",
+    "transformers>=4.51.0",
+]
+local-embeddings-cpu = [
+    "torch==2.7.1",
+    "sentence-transformers>=2.7.0",
+    "transformers>=4.51.0",
+]
+local-embeddings-gpu = [
+    "torch==2.7.1",
     "sentence-transformers>=2.7.0",
     "transformers>=4.51.0",
 ]
@@ -54,6 +65,35 @@ dev = [
     "ruff>=0.9",
     "mypy>=1.14",
 ]
+
+[tool.uv]
+conflicts = [
+    [
+        { extra = "local-embeddings" },
+        { extra = "local-embeddings-gpu" },
+    ],
+    [
+        { extra = "local-embeddings-cpu" },
+        { extra = "local-embeddings-gpu" },
+    ],
+]
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu", extra = "local-embeddings" },
+    { index = "pytorch-cpu", extra = "local-embeddings-cpu" },
+    { index = "pytorch-cu118", extra = "local-embeddings-gpu" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu118"
+url = "https://download.pytorch.org/whl/cu118"
+explicit = true
 
 [tool.ruff]
 target-version = "py310"

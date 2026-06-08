@@ -53,7 +53,11 @@ def embedding_download(ctx: click.Context, model: str | None, cache_dir: str | N
             "configuration_error",
             str(exc),
             output_json=output_json,
-            hint="Install local embedding dependencies with: uv sync --dev --extra mcp --extra local-embeddings",
+            hint=(
+                "Install local embedding dependencies with: "
+                "uv sync --dev --extra mcp --extra local-embeddings-cpu "
+                "or --extra local-embeddings-gpu"
+            ),
             context="embedding download",
         )
     except Exception as exc:

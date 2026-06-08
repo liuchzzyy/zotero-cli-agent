@@ -17,7 +17,8 @@ def _import_transformers() -> tuple[Any, Any]:
     except ImportError as exc:
         raise RuntimeError(
             "transformers is not installed. "
-            "Install it with: uv sync --dev --extra mcp --extra local-embeddings"
+            "Install it with: uv sync --dev --extra mcp --extra local-embeddings-cpu "
+            "or --extra local-embeddings-gpu"
         ) from exc
     return AutoTokenizer, AutoModelForSequenceClassification
 
@@ -28,7 +29,7 @@ def _import_torch() -> Any:
     except ImportError as exc:
         raise RuntimeError(
             "torch is not installed. Install local embedding dependencies with: "
-            "uv sync --dev --extra mcp --extra local-embeddings"
+            "uv sync --dev --extra mcp --extra local-embeddings-cpu or --extra local-embeddings-gpu"
         ) from exc
     return torch
 
