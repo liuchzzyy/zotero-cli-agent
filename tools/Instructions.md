@@ -26,10 +26,6 @@
 在 E:\Desktop\CodingDaily\zotero-cli-agent 下执行 metadata cleanup。先建立本次运行目录：log\metadata-cleanup-YYYYMMDD-HHMM。
 本指令独立包含运行文件规则：metadata-export、cleaned jsonl、dry-run/apply 输出、batch 文件、续跑文件和诊断记录都只放在本次 log\metadata-cleanup-YYYYMMDD-HHMM 目录；不要放在仓库根目录散文件、tmp\ 或临时 .workspace\... 运行目录中。失败、中断、等待确认或需要排查时保留该目录；复核无误后删除本次目录，如果 log\ 已空也删除 log\。
 
-如果这是 CodingDaily 的“全库条目清理”总控流程，优先使用根目录 wrapper：
-powershell -NoProfile -ExecutionPolicy Bypass -File E:\Desktop\CodingDaily\run-full-library-cleanup.ps1 -SkipDuplicates -SkipRelevance
-该 wrapper 会默认排除 `80_TRASH` (`JJ6JSGT5`) 和 `90_ARCHIVE` (`6HREN2FT`)，并在 apply 时提供 `-ResumeMetadataApply` 续跑和实时 `[batch x/y] item a/b | overall c/d` 进度。
-
 如果在本仓库内单独执行 metadata cleanup，先读取 Zotero 条目 metadata。默认导出命令必须同时跳过已清理 tag 和不需要清理的 holding collections：
 uv run zot --json --detail full summarize-all --exclude-tag workflow/metadata --exclude-tag update/metadata --exclude-collection-key JJ6JSGT5 --exclude-collection-key 6HREN2FT --limit 5000 > log\metadata-cleanup-YYYYMMDD-HHMM\metadata-export.json
 
@@ -69,12 +65,8 @@ uv run zot --json update --from-jsonl log\metadata-cleanup-YYYYMMDD-HHMM\cleaned
 - 先读取已有 `metadata-cleanup-apply-batch-*.json`；成功 batch 跳过。
 - partial batch 只收集 `data.failed` 中的条目，写入 `cleaned-metadata-retry-failed-001.jsonl` 后单独重试。
 - 空文件、缺失输出或 JSON 解析失败的 batch 才重跑该 batch。
-- 在 CodingDaily 总控流程中，直接用同一个 `-RunName` 加 `-ResumeMetadataApply` 续跑：
-  powershell -NoProfile -ExecutionPolicy Bypass -File E:\Desktop\CodingDaily\run-full-library-cleanup.ps1 -RunName full-library-cleanup-YYYYMMDD-HHMMSS -SkipDuplicates -SkipRelevance -SkipMetadataExport -CleanedMetadataJsonl E:\Desktop\CodingDaily\zotero-cli-agent\log\full-library-cleanup-YYYYMMDD-HHMMSS\03_metadata\cleaned-metadata.jsonl -ApplyMetadata -ResumeMetadataApply
-
 全部批次完成后，生成或检查最终汇总：
 - 单独流程：人工汇总每个 batch 的 succeeded/failed，确认 cleaned-metadata.jsonl 中所有 key 都成功。
-- 总控 wrapper：检查 03_metadata\metadata-cleanup-final-summary.json，要求 final_succeeded 等于 total_updates，final_unresolved_failed=0。
 
 复核无误后删除本次 log\metadata-cleanup-YYYYMMDD-HHMM 目录；如果 log\ 已空，也删除 log\。
 ```
@@ -148,12 +140,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-daily-rss-doi-impo
 
 规则固定为：只按 DOI 精确判断；同 DOI 时保留 date_added 更早的旧条目，删除 date_added 更晚的新条目。
 执行时必须给出实时进度：查询 DOI 重复项、构建 keep/delete 计划、每个重复组的 keep/delete 判断；正式删除时还要报告批次编号、已删除数、失败数、总体百分比。
-
-如果这是 CodingDaily 的“全库条目清理”总控流程，本步骤是第一步，仍然先 dry-run，不要和 relevance / metadata apply 一起无确认地自动写入：
-powershell -NoProfile -ExecutionPolicy Bypass -File E:\Desktop\CodingDaily\run-full-library-cleanup.ps1
-确认 DOI keep/delete 计划后，才只执行 DOI duplicate apply：
-powershell -NoProfile -ExecutionPolicy Bypass -File E:\Desktop\CodingDaily\run-full-library-cleanup.ps1 -RunName full-library-cleanup-YYYYMMDD-HHMMSS -SkipRelevance -SkipMetadataExport -ApplyDuplicates
-如果 dry-run 显示 0 groups found，不需要进入 apply。
 
 默认调用会重新打开一个新的 PowerShell 窗口，实际去重在新窗口中运行；wrapper 会在 `log\remove-newer-doi-duplicates-YYYYMMDD-HHMMSS` 写入 `run.log` 和 `progress.jsonl`。只有调试/CI 才追加 `-RunInCurrentWindow`。
 
