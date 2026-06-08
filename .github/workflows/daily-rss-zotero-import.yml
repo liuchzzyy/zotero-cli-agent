@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   import:
-    name: Import RSS selected JSON into Zotero
+    name: Import RSS into Zotero
     runs-on: windows-latest
     timeout-minutes: 60
     env:
