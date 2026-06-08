@@ -461,11 +461,16 @@ def _handle_collection_create(name: str, parent_key: str | None, library: str = 
         return {"error": str(e), "context": "collection_create"}
 
 
-def _handle_collection_move(item_key: str, collection_key: str, library: str = "user") -> dict:
+def _handle_collection_move(
+    item_key: str,
+    collection_key: str,
+    source_collection_key: str | None = None,
+    library: str = "user",
+) -> dict:
     try:
         writer = _get_writer(library)
-        writer.move_to_collection(item_key, collection_key)
-        return {"item_key": item_key, "collection_key": collection_key}
+        writer.move_to_collection(item_key, collection_key, source_collection_key=source_collection_key)
+        return {"item_key": item_key, "collection_key": collection_key, "source_collection_key": source_collection_key}
     except ZoteroWriteError as e:
         return {"error": str(e), "context": "collection_move"}
 
@@ -1458,15 +1463,26 @@ def collection_create(name: str, parent_key: str | None = None, library: str = "
 
 
 @mcp.tool()
-def collection_move(item_key: str, collection_key: str, library: str = "user") -> JsonObject:
-    """Move an item to a collection. Requires API credentials.
+def collection_move(
+    item_key: str,
+    collection_key: str,
+    source_collection_key: str | None = None,
+    library: str = "user",
+) -> JsonObject:
+    """Add an item to a collection, or move it from a source collection. Requires API credentials.
 
     Args:
         item_key: The Zotero item key.
         collection_key: The target collection key.
+        source_collection_key: Optional source collection key to remove. If omitted, existing collection memberships stay.
         library: Library — 'user' (default) or 'group:<id>'.
     """
-    return _handle_collection_move(item_key, collection_key, library=library)
+    return _handle_collection_move(
+        item_key,
+        collection_key,
+        source_collection_key=source_collection_key,
+        library=library,
+    )
 
 
 @mcp.tool()

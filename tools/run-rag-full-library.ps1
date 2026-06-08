@@ -455,6 +455,7 @@ if __name__ == "__main__":
 
 $repoRoot = Get-RepoRoot
 $runOutputDir = New-RunOutputDir -RepoRoot $repoRoot -RequestedOutputDir $OutputDir
+Assert-WorkflowOutputDirSafe -RepoRoot $repoRoot -RunOutputDir $runOutputDir
 $logsDir = Join-Path $runOutputDir "logs"
 $inventoryPath = Join-Path $runOutputDir "inventory.json"
 $inventoryScript = Join-Path $runOutputDir "inventory_full_pdf_workspace.py"

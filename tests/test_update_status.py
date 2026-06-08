@@ -2,11 +2,41 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
+from click.testing import CliRunner
+
+from zotero_cli_agent.cli import main
 from zotero_cli_agent.core.semantic_scholar import (
     PublicationStatus,
     extract_arxiv_id,
     extract_preprint_info,
 )
+
+FIXTURES_DIR = Path(__file__).parent / "fixtures"
+
+
+def _run(args: list[str]):
+    runner = CliRunner()
+    return runner.invoke(main, args, env={"ZOT_DATA_DIR": str(FIXTURES_DIR), "ZOT_FORMAT": "table"})
+
+
+class TestUpdateStatusCli:
+    def test_no_preprint_ids_json_envelope(self) -> None:
+        result = _run(["--json", "update-status", "--limit", "1"])
+        assert result.exit_code == 0
+        env = json.loads(result.output)
+        assert env["ok"] is True
+        assert env["data"]["results"] == []
+        assert env["data"]["checked"] == 0
+
+    def test_missing_item_json_not_found(self) -> None:
+        result = _run(["--json", "update-status", "MISSING"])
+        assert result.exit_code == 4
+        env = json.loads(result.output)
+        assert env["ok"] is False
+        assert env["error"]["code"] == "not_found"
 
 
 class TestExtractArxivId:

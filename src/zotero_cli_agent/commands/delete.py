@@ -7,7 +7,7 @@ import click
 from zotero_cli_agent.config import load_config, resolve_write_credentials
 from zotero_cli_agent.core.writer import SYNC_REMINDER, ZoteroWriteError, ZoteroWriter
 from zotero_cli_agent.exit_codes import EXIT_RUNTIME, emit_error
-from zotero_cli_agent.formatter import envelope_ok, envelope_partial
+from zotero_cli_agent.formatter import envelope_error, envelope_ok, envelope_partial
 
 
 @click.command("delete")
@@ -96,21 +96,13 @@ def delete_cmd(
         if failed and succeeded:
             env = envelope_partial(succeeded, failed, meta={"sync_required": True})
         elif failed:
-            click.echo(
-                json.dumps(
-                    {
-                        "ok": False,
-                        "error": {
-                            "code": "api_error",
-                            "message": f"{len(failed)} delete(s) failed",
-                            "retryable": True,
-                            "failed": failed,
-                        },
-                    },
-                    indent=2,
-                    ensure_ascii=False,
-                )
+            env = envelope_error(
+                "api_error",
+                f"{len(failed)} delete(s) failed",
+                retryable=True,
+                failed=failed,
             )
+            click.echo(json.dumps(env, indent=2, ensure_ascii=False))
             raise SystemExit(EXIT_RUNTIME)
         else:
             env = envelope_ok(

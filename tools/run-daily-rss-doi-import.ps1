@@ -330,6 +330,7 @@ if ($runningImports.Count -gt 0) {
 }
 
 $runOutputDir = New-RunOutputDir -RepoRoot $ZoteroRepoRoot -Date $Date -RequestedOutputDir $OutputDir
+Assert-WorkflowOutputDirSafe -RepoRoot $ZoteroRepoRoot -RunOutputDir $runOutputDir
 $importListDir = Join-Path $runOutputDir "rss_item_import_list"
 $importDir = Join-Path $runOutputDir "rss_item_import"
 $importList = Join-Path $importListDir "import_list.json"

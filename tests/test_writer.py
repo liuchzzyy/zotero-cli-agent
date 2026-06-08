@@ -181,3 +181,43 @@ def test_rename_collection_not_found(mock_zotero_cls):
     writer = ZoteroWriter(library_id="123", api_key="abc")
     with pytest.raises(ZoteroWriteError, match="not found"):
         writer.rename_collection("NONEXIST", "New Name")
+
+
+@patch("zotero_cli_agent.core.writer.zotero.Zotero")
+def test_move_to_collection_without_source_adds_membership(mock_zotero_cls):
+    mock_zot = MagicMock()
+    mock_zotero_cls.return_value = mock_zot
+    mock_zot.item.return_value = {"key": "K1", "data": {"collections": ["SRC"]}}
+
+    writer = ZoteroWriter(library_id="123", api_key="abc")
+    writer.move_to_collection("K1", "DEST")
+
+    mock_zot.addto_collection.assert_called_once_with("DEST", mock_zot.item.return_value)
+    mock_zot.update_item.assert_not_called()
+
+
+@patch("zotero_cli_agent.core.writer.zotero.Zotero")
+def test_move_to_collection_with_source_rewrites_membership(mock_zotero_cls):
+    mock_zot = MagicMock()
+    mock_zotero_cls.return_value = mock_zot
+    item = {"key": "K1", "data": {"collections": ["SRC", "KEEP"]}}
+    mock_zot.item.return_value = item
+
+    writer = ZoteroWriter(library_id="123", api_key="abc")
+    writer.move_to_collection("K1", "DEST", source_collection_key="SRC")
+
+    assert item["data"]["collections"] == ["KEEP", "DEST"]
+    mock_zot.update_item.assert_called_once_with(item)
+
+
+@patch("zotero_cli_agent.core.writer.zotero.Zotero")
+def test_move_to_collection_source_missing_is_validation_error(mock_zotero_cls):
+    mock_zot = MagicMock()
+    mock_zotero_cls.return_value = mock_zot
+    mock_zot.item.return_value = {"key": "K1", "data": {"collections": ["OTHER"]}}
+
+    writer = ZoteroWriter(library_id="123", api_key="abc")
+    with pytest.raises(ZoteroWriteError) as exc_info:
+        writer.move_to_collection("K1", "DEST", source_collection_key="SRC")
+
+    assert exc_info.value.code == "validation_error"

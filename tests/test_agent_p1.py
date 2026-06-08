@@ -161,6 +161,10 @@ class TestHelpTiers:
         destructive_section = out[destructive_idx:]
         assert "delete" in destructive_section
         assert "update-status" in destructive_section
+        read_section = out[read_idx:write_idx]
+        write_section = out[write_idx:destructive_idx]
+        assert "\n  tag " not in read_section
+        assert "\n  tag " in write_section
 
     def test_write_commands_marked_mutating(self):
         result = _run(["--help"])

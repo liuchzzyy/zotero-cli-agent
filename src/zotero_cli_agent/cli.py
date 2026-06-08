@@ -54,7 +54,6 @@ _READ_COMMANDS = {
     "summarize-all",
     "duplicates",
     "collection",
-    "tag",
     "config",
     "completions",
     "mcp",
@@ -62,7 +61,7 @@ _READ_COMMANDS = {
     "schema",
     "trash",
 }
-_WRITE_COMMANDS = {"add", "update", "note", "attach"}
+_WRITE_COMMANDS = {"add", "update", "note", "attach", "tag"}
 _DESTRUCTIVE_COMMANDS = {"delete", "update-status"}
 
 

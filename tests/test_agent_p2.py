@@ -68,6 +68,10 @@ class TestSchemaMetadata:
         env = json.loads(_run(["schema", "add"]).output)
         assert env["data"]["safety_tier"] == "write"
 
+    def test_schema_tag_cmd_tier_is_write(self):
+        env = json.loads(_run(["schema", "tag"]).output)
+        assert env["data"]["safety_tier"] == "write"
+
     def test_schema_nested_collection_create_is_write(self):
         env = json.loads(_run(["schema", "collection", "create"]).output)
         assert env["data"]["safety_tier"] == "write"
@@ -83,6 +87,11 @@ class TestSchemaMetadata:
     def test_schema_nested_collection_list_stays_read(self):
         env = json.loads(_run(["schema", "collection", "list"]).output)
         assert env["data"]["safety_tier"] == "read"
+
+    def test_schema_collection_move_has_source_option(self):
+        env = json.loads(_run(["schema", "collection", "move"]).output)
+        flags = {flag for param in env["data"]["params"] for flag in param.get("flags", [])}
+        assert "--from" in flags
 
     def test_schema_since_and_deprecated_fields(self):
         env = json.loads(_run(["schema", "search"]).output)

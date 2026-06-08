@@ -135,7 +135,8 @@ zot delete ITEMKEY --yes --idempotency-key abc-126
 zot --json collection list
 zot --json collection items COLLECTIONKEY
 zot collection create "New Project"
-zot collection move ITEMKEY COLLECTIONKEY
+zot collection move ITEMKEY COLLECTIONKEY                 # add target membership
+zot collection move ITEMKEY DESTKEY --from SOURCEKEY      # true move from source to destination
 zot collection rename COLLECTIONKEY "New Name"
 zot collection delete COLLECTIONKEY
 ```

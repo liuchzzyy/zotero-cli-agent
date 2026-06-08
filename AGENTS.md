@@ -6,7 +6,8 @@ This file provides guidance to coding agents working with code in this repositor
 
 `zotero-cli-agent` (binary: `zot`) is a Zotero CLI built for Claude Code / agent use. It combines **direct local SQLite reads** with **Zotero Web API writes**, and exposes the same surface via an MCP server.
 
-The CLI follows an agent-native contract documented in `docs/agent-interface.md`:
+The CLI follows an agent-native contract enforced by the Click tree, `zot schema`,
+`formatter.py`, `exit_codes.py`, and the agent-interface tests:
 
 - stable JSON envelope
 - typed exit codes
@@ -25,7 +26,7 @@ uv sync --dev --extra mcp
 
 # Lint / type-check / test
 uv run ruff check src tests
-uv run mypy src/zotero_cli_agent
+uv run python -m mypy src/zotero_cli_agent
 uv run pytest -q
 
 # Run a single test / file / node
@@ -42,9 +43,7 @@ uv run zot schema
 uv build
 ```
 
-CI runs on Python 3.10–3.13.
-
-Note on PyPI publish gating: `.github/workflows/publish.yml` gates release on lint + mypy, not full pytest. Preserve that intentionally unless explicitly changing release policy.
+The package supports Python 3.10–3.13. The checked-in GitHub workflow currently covers the daily RSS Zotero import, not a general lint/test/release matrix.
 
 ## Architecture
 
@@ -87,13 +86,14 @@ When adding a command, register it in `cli.py` and place it in the correct safet
 
 If a CLI command should also be available to MCP clients, mirror it here.
 
-### Docs and skill
+### Agent Contract and Skill
 
-- `docs/agent-interface.md` is the authoritative agent contract.
-- `docs/` is built with MkDocs Material.
-- `skill/zotero-cli-agent/` is the bundled Claude skill.
+- `zot schema` is the authoritative machine-readable CLI surface.
+- `tests/test_agent_interface.py`, `tests/test_agent_p1.py`, and `tests/test_agent_p2.py` are the regression guardrails for envelope shape, exit codes, dry-run behavior, streaming, and safety tiers.
+- `skill/zotero-cli-agent/` is the bundled Claude skill and should stay aligned with real CLI behavior.
+- No `docs/` tree or MkDocs config is currently checked in. Do not treat missing docs paths as source of truth unless docs are reintroduced in a future change.
 
-If the CLI surface changes, keep the docs and skill in sync.
+If the CLI surface changes, update schema-visible behavior, tests, and the bundled skill together. If docs are later restored, keep them in sync too.
 
 ## Config and Profiles
 
@@ -157,7 +157,7 @@ This affects both `zot --help` grouping and `zot schema` output consumed by agen
 Before closing substantial changes, run the smallest relevant checks first, then broader ones as needed:
 
 1. Targeted `pytest` for touched behavior
-2. `uv run mypy src/zotero_cli_agent`
+2. `uv run python -m mypy src/zotero_cli_agent`
 3. `uv run ruff check src tests`
 4. `uv run pytest -q`
 

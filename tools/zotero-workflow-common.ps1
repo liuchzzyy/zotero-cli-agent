@@ -141,6 +141,28 @@ function Start-WorkflowInNewWindow {
     Write-Host "Close the new window only after the workflow finishes." -ForegroundColor DarkGray
 }
 
+function Assert-WorkflowOutputDirSafe {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RepoRoot,
+        [Parameter(Mandatory = $true)]
+        [string]$RunOutputDir
+    )
+
+    $resolvedRepoRoot = [System.IO.Path]::GetFullPath($RepoRoot).TrimEnd('\', '/')
+    $resolvedRunDir = [System.IO.Path]::GetFullPath($RunOutputDir).TrimEnd('\', '/')
+    $resolvedLogRoot = [System.IO.Path]::GetFullPath((Join-Path $resolvedRepoRoot "log")).TrimEnd('\', '/')
+    $comparison = [System.StringComparison]::OrdinalIgnoreCase
+
+    if ($resolvedRunDir -eq $resolvedRepoRoot -or $resolvedRunDir -eq $resolvedLogRoot) {
+        throw "Refusing unsafe workflow output directory: $resolvedRunDir"
+    }
+
+    if (-not $resolvedRunDir.StartsWith($resolvedLogRoot + [System.IO.Path]::DirectorySeparatorChar, $comparison)) {
+        throw "Workflow output directory must be under '$resolvedLogRoot': $resolvedRunDir"
+    }
+}
+
 function Disable-WorkflowConsoleQuickEdit {
     try {
         if (-not ([System.Management.Automation.PSTypeName]'WorkflowConsoleModeNative').Type) {

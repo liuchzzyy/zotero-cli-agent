@@ -16,6 +16,8 @@ from zotero_cli_agent.config import (
 from zotero_cli_agent.core.reader import ZoteroReader
 from zotero_cli_agent.core.semantic_scholar import PreprintInfo, SemanticScholarClient, extract_preprint_info
 from zotero_cli_agent.core.writer import SYNC_REMINDER, ZoteroWriteError, ZoteroWriter
+from zotero_cli_agent.exit_codes import emit_error
+from zotero_cli_agent.formatter import envelope_ok
 
 
 @click.command("update-status")
@@ -77,21 +79,32 @@ def update_status_cmd(
         if key:
             item = reader.get_item(key)
             if not item:
-                click.echo(f"Error: Item '{key}' not found.", err=True)
-                raise SystemExit(1)
+                emit_error(
+                    "not_found",
+                    f"Item '{key}' not found.",
+                    output_json=json_out,
+                    hint="Run 'zot search' to find valid item keys",
+                    context="update-status",
+                )
             items = [item]
         else:
             try:
                 items = reader.get_arxiv_preprints(collection=collection, limit=limit)
             except ValueError as e:
-                click.echo(f"Error: {e}", err=True)
-                raise SystemExit(1)
+                emit_error(
+                    "not_found",
+                    str(e),
+                    output_json=json_out,
+                    hint="Run 'zot collection list' to find valid collection keys",
+                    context="update-status",
+                )
     finally:
         reader.close()
 
     if not items:
         if json_out:
-            click.echo("[]")
+            data = {"results": [], "published": 0, "checked": 0, "updated": 0, "sync_required": False}
+            click.echo(json.dumps(envelope_ok(data, meta={"count": 0}), indent=2, ensure_ascii=False))
         else:
             click.echo("No preprints found.")
         return
@@ -109,7 +122,8 @@ def update_status_cmd(
 
     if not preprint_items:
         if json_out:
-            click.echo("[]")
+            data = {"results": [], "published": 0, "checked": 0, "updated": 0, "sync_required": False}
+            click.echo(json.dumps(envelope_ok(data, meta={"count": 0}), indent=2, ensure_ascii=False))
         else:
             click.echo("No items with preprint IDs found.")
         return
@@ -178,12 +192,69 @@ def update_status_cmd(
     finally:
         client.close()
 
-    if json_out:
-        click.echo(json.dumps(results, indent=2))
-        return
+    updated = 0
+    update_failed: list[dict[str, object]] = []
 
-    click.echo()
-    click.echo(f"Found {published_count}/{len(preprint_items)} published paper(s).")
+    if not json_out:
+        click.echo()
+        click.echo(f"Found {published_count}/{len(preprint_items)} published paper(s).")
+
+    if apply and published_count > 0:
+        # Apply updates via Zotero Web API
+        library_type = ctx.obj.get("library_type", "user")
+        group_id = ctx.obj.get("group_id")
+        zot_library_id, zot_api_key = resolve_write_credentials(cfg, library_type=library_type, group_id=group_id)
+
+        if not zot_library_id or not zot_api_key:
+            emit_error(
+                "auth_missing",
+                "Zotero write credentials not configured",
+                output_json=json_out,
+                hint="Run 'zot config init' to set up API credentials",
+                context="update-status",
+            )
+
+        writer = ZoteroWriter(library_id=zot_library_id, api_key=zot_api_key, library_type=library_type)
+        for r in results:
+            if not r["published"]:
+                continue
+            fields: dict[str, str] = {}
+            if r.get("doi"):
+                fields["DOI"] = r["doi"]
+            if r.get("venue"):
+                fields["publicationTitle"] = r["venue"]
+            elif r.get("journal"):
+                fields["publicationTitle"] = r["journal"]
+            if r.get("date"):
+                fields["date"] = r["date"]
+            if not fields:
+                continue
+            try:
+                writer.update_item(r["key"], fields)
+                r["updated"] = True
+                updated += 1
+                if not json_out:
+                    click.echo(f"  Updated {r['key']}: {r['title'][:50]}...")
+            except ZoteroWriteError as e:
+                error = {"code": e.code, "message": str(e), "retryable": e.retryable}
+                r["updated"] = False
+                r["update_error"] = error
+                update_failed.append({"key": r["key"], "error": error})
+                if not json_out:
+                    click.echo(f"  Failed {r['key']}: {e}", err=True)
+
+    data = {
+        "results": results,
+        "published": published_count,
+        "checked": len(preprint_items),
+        "updated": updated,
+        "update_failed": update_failed,
+        "sync_required": updated > 0,
+    }
+    if json_out:
+        extra = {} if apply else {"dry_run": True}
+        click.echo(json.dumps(envelope_ok(data, meta={"count": len(results)}, extra=extra), indent=2, ensure_ascii=False))
+        return
 
     if published_count == 0:
         return
@@ -191,41 +262,6 @@ def update_status_cmd(
     if not apply:
         click.echo("\nDry-run mode. Use --apply to update Zotero metadata.")
         return
-
-    # Apply updates via Zotero Web API
-    library_type = ctx.obj.get("library_type", "user")
-    group_id = ctx.obj.get("group_id")
-    zot_library_id, zot_api_key = resolve_write_credentials(cfg, library_type=library_type, group_id=group_id)
-
-    if not zot_library_id or not zot_api_key:
-        click.echo(
-            "\nError: Zotero write credentials not configured. Run 'zot config init' to set up API credentials.",
-            err=True,
-        )
-        raise SystemExit(1)
-
-    writer = ZoteroWriter(library_id=zot_library_id, api_key=zot_api_key, library_type=library_type)
-    updated = 0
-    for r in results:
-        if not r["published"]:
-            continue
-        fields: dict[str, str] = {}
-        if r.get("doi"):
-            fields["DOI"] = r["doi"]
-        if r.get("venue"):
-            fields["publicationTitle"] = r["venue"]
-        elif r.get("journal"):
-            fields["publicationTitle"] = r["journal"]
-        if r.get("date"):
-            fields["date"] = r["date"]
-        if not fields:
-            continue
-        try:
-            writer.update_item(r["key"], fields)
-            updated += 1
-            click.echo(f"  Updated {r['key']}: {r['title'][:50]}...")
-        except ZoteroWriteError as e:
-            click.echo(f"  Failed {r['key']}: {e}", err=True)
 
     click.echo(f"\nUpdated {updated} item(s).")
     if updated > 0:

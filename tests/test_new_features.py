@@ -95,6 +95,15 @@ class TestDryRun:
         assert "[dry-run]" in result.output
         assert "oldtag" in result.output
 
+    def test_tag_add_dry_run_json_envelope(self):
+        runner = CliRunner()
+        result = runner.invoke(main, ["--json", "tag", "K1", "--add", "newtag", "--dry-run"], env=WRITE_ENV)
+        assert result.exit_code == 0
+        env = json.loads(result.output)
+        assert env["ok"] is True
+        assert env["dry_run"] is True
+        assert env["data"]["would_add"] == "newtag"
+
 
 # --- Shell completions tests ---
 
@@ -345,6 +354,19 @@ class TestBatchTag:
         assert result.exit_code == 0
         assert "ATTN001" in result.output
         assert "BERT002" in result.output
+
+    def test_tag_view_json_envelope(self, test_db_path):
+        runner = CliRunner()
+        result = runner.invoke(
+            main,
+            ["--json", "tag", "ATTN001"],
+            env={"ZOT_DATA_DIR": str(test_db_path.parent), "ZOT_FORMAT": "table"},
+        )
+        assert result.exit_code == 0
+        env = json.loads(result.output)
+        assert env["ok"] is True
+        assert env["data"][0]["key"] == "ATTN001"
+        assert "transformer" in env["data"][0]["tags"]
 
 
 # --- Timeout tests ---

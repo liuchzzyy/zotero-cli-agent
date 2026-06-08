@@ -704,7 +704,18 @@ class TestHandleCollectionMove:
         result = _handle_collection_move("ITEM1", "COL1")
         assert result["item_key"] == "ITEM1"
         assert result["collection_key"] == "COL1"
-        writer.move_to_collection.assert_called_once_with("ITEM1", "COL1")
+        writer.move_to_collection.assert_called_once_with("ITEM1", "COL1", source_collection_key=None)
+
+    @patch("zotero_cli_agent.mcp_server._get_writer")
+    def test_moves_item_from_source_collection(self, mock_get_writer):
+        from zotero_cli_agent.mcp_server import _handle_collection_move
+
+        writer = MagicMock()
+        mock_get_writer.return_value = writer
+
+        result = _handle_collection_move("ITEM1", "DEST", source_collection_key="SRC")
+        assert result["source_collection_key"] == "SRC"
+        writer.move_to_collection.assert_called_once_with("ITEM1", "DEST", source_collection_key="SRC")
 
 
 class TestHandleCollectionDelete:

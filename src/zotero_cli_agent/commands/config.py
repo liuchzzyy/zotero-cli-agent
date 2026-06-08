@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -14,7 +15,7 @@ from zotero_cli_agent.config import (
     load_config,
     save_config,
 )
-from zotero_cli_agent.formatter import format_cache_list
+from zotero_cli_agent.formatter import envelope_ok, format_cache_list
 
 
 @click.group("config")
@@ -79,12 +80,36 @@ def config_init(
 
 @config_group.command("show")
 @click.option("--config-path", type=click.Path(), default=None, help="Config file path")
-def config_show(config_path: str | None) -> None:
+@click.pass_context
+def config_show(ctx: click.Context, config_path: str | None) -> None:
     """Show current configuration."""
     from zotero_cli_agent.config import get_data_dir
 
+    json_out = ctx.obj.get("json", False) if ctx.obj else False
     path = Path(config_path) if config_path else config_file_path()
     cfg = load_config(path)
+    data_dir = get_data_dir(cfg)
+    db_file = data_dir / "zotero.sqlite"
+    data_dir_exists = data_dir.exists()
+    database_ok = db_file.exists()
+    if json_out:
+        data = {
+            "config_path": str(path),
+            "library_id": cfg.library_id,
+            "api_key_set": bool(cfg.api_key),
+            "api_key_tail": cfg.api_key[-4:] if len(cfg.api_key) > 4 else "",
+            "data_dir": cfg.data_dir or "(auto-detect)",
+            "resolved_data_dir": str(data_dir),
+            "default_format": cfg.default_format,
+            "default_limit": cfg.default_limit,
+            "default_export_style": cfg.default_export_style,
+            "database_path": str(db_file),
+            "data_dir_exists": data_dir_exists,
+            "database_ok": database_ok,
+        }
+        click.echo(json.dumps(envelope_ok(data), indent=2, ensure_ascii=False))
+        return
+
     click.echo(f"Config:     {path}")
     click.echo(f"Library ID: {cfg.library_id}")
     click.echo(f"API Key:    {'***' + cfg.api_key[-4:] if len(cfg.api_key) > 4 else '(not set)'}")
@@ -94,11 +119,9 @@ def config_show(config_path: str | None) -> None:
     click.echo(f"Export:     {cfg.default_export_style}")
 
     # Path validation
-    data_dir = get_data_dir(cfg)
-    db_file = data_dir / "zotero.sqlite"
-    if not data_dir.exists():
+    if not data_dir_exists:
         click.echo(click.style(f"\nWARNING: Data directory not found: {data_dir}", fg="yellow"))
-    elif not db_file.exists():
+    elif not database_ok:
         click.echo(click.style(f"\nWARNING: zotero.sqlite not found in {data_dir}", fg="yellow"))
     else:
         click.echo(click.style(f"\nDatabase:   {db_file} (OK)", fg="green"))

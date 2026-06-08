@@ -42,6 +42,27 @@ def test_config_show(tmp_path):
     assert "123" in result.output
 
 
+def test_config_show_json_envelope(tmp_path):
+    import json
+
+    runner = CliRunner()
+    config_path = tmp_path / "config.toml"
+    data_dir = tmp_path / "zotero"
+    data_dir.mkdir()
+    (data_dir / "zotero.sqlite").write_text("", encoding="utf-8")
+    config_path.write_text(
+        f'[zotero]\nlibrary_id = "123"\napi_key = "abcdef"\ndata_dir = "{data_dir.as_posix()}"\n',
+        encoding="utf-8",
+    )
+    result = runner.invoke(main, ["--json", "config", "show", "--config-path", str(config_path)])
+    assert result.exit_code == 0
+    env = json.loads(result.output)
+    assert env["ok"] is True
+    assert env["data"]["api_key_set"] is True
+    assert env["data"]["api_key_tail"] == "cdef"
+    assert env["data"]["database_ok"] is True
+
+
 def test_cache_list_empty(tmp_path):
     from zotero_cli_agent.core import pdf_cache as pdf_cache_module
 

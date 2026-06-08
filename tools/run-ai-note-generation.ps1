@@ -194,6 +194,7 @@ function Remove-IntermediateAssets([string]$RunOutputDir) {
 
 $repoRoot = Get-RepoRoot
 $runOutputDir = New-RunOutputDir -RepoRoot $repoRoot -RequestedOutputDir $OutputDir
+Assert-WorkflowOutputDirSafe -RepoRoot $repoRoot -RunOutputDir $runOutputDir
 New-Item -ItemType Directory -Force -Path $runOutputDir | Out-Null
 Start-WorkflowRunLog -RunDirectory $runOutputDir -WorkflowName "ai-note-generation" -RepoRoot $repoRoot
 

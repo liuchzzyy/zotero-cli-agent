@@ -251,11 +251,45 @@ class ZoteroWriter:
         except PyZoteroError as e:
             raise _friendly_api_error(e) from e
 
-    def move_to_collection(self, item_key: str, collection_key: str) -> None:
+    def add_to_collection(self, item_key: str, collection_key: str) -> None:
+        """Add an item to a collection without removing existing collection memberships."""
         try:
             self._zot.addto_collection(collection_key, self._zot.item(item_key))
         except ResourceNotFoundError:
-            raise ZoteroWriteError("Item or collection not found")
+            raise ZoteroWriteError("Item or collection not found", code="not_found", retryable=False)
+        except HttpxHttpError as e:
+            raise ZoteroWriteError(f"Network error: {e}", code="network_error", retryable=True) from e
+        except PyZoteroError as e:
+            raise _friendly_api_error(e) from e
+
+    def move_to_collection(self, item_key: str, collection_key: str, source_collection_key: str | None = None) -> None:
+        """Move an item to a collection.
+
+        Without ``source_collection_key`` this preserves the historical behavior:
+        add the item to the target collection and keep all existing memberships.
+        When a source collection is provided, update the item membership list so
+        the source is removed and the target is present.
+        """
+        if source_collection_key is None:
+            self.add_to_collection(item_key, collection_key)
+            return
+        try:
+            item = self._zot.item(item_key)
+            data = item.setdefault("data", {})
+            collections = [str(c) for c in data.get("collections", []) if c]
+            if source_collection_key not in collections:
+                raise ZoteroWriteError(
+                    f"Item '{item_key}' is not in source collection '{source_collection_key}'",
+                    code="validation_error",
+                    retryable=False,
+                )
+            new_collections = [c for c in collections if c != source_collection_key]
+            if collection_key not in new_collections:
+                new_collections.append(collection_key)
+            data["collections"] = new_collections
+            self._zot.update_item(item)
+        except ResourceNotFoundError:
+            raise ZoteroWriteError("Item or collection not found", code="not_found", retryable=False)
         except HttpxHttpError as e:
             raise ZoteroWriteError(f"Network error: {e}", code="network_error", retryable=True) from e
         except PyZoteroError as e:

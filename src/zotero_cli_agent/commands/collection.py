@@ -84,9 +84,15 @@ def collection_create(ctx: click.Context, name: str, parent: str | None) -> None
 @collection_group.command("move")
 @click.argument("item_key")
 @click.argument("collection_key")
+@click.option(
+    "--from",
+    "source_collection",
+    default=None,
+    help="Source collection key to remove. Without this, the item is only added to the target collection.",
+)
 @click.pass_context
-def collection_move(ctx: click.Context, item_key: str, collection_key: str) -> None:
-    """Move an item to a collection."""
+def collection_move(ctx: click.Context, item_key: str, collection_key: str, source_collection: str | None) -> None:
+    """Add an item to a collection, or move it from a source collection."""
     cfg = load_config(profile=ctx.obj.get("profile"))
     json_out = ctx.obj.get("json", False)
     library_type = ctx.obj.get("library_type", "user")
@@ -102,8 +108,11 @@ def collection_move(ctx: click.Context, item_key: str, collection_key: str) -> N
         )
     writer = ZoteroWriter(library_id=library_id, api_key=api_key, library_type=library_type)
     try:
-        writer.move_to_collection(item_key, collection_key)
-        click.echo(f"Item {item_key} moved to collection {collection_key}")
+        writer.move_to_collection(item_key, collection_key, source_collection_key=source_collection)
+        if source_collection:
+            click.echo(f"Item {item_key} moved from collection {source_collection} to {collection_key}")
+        else:
+            click.echo(f"Item {item_key} added to collection {collection_key}")
         click.echo(SYNC_REMINDER)
     except ZoteroWriteError as e:
         print_error(
