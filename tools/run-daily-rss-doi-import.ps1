@@ -10,6 +10,8 @@ param(
     [int]$ProgressIntervalSeconds = 10,
     [string]$OutputDir = "",
     [switch]$KeepLog,
+    [switch]$SkipLibraryExport,
+    [switch]$SkipLocalDb,
     [switch]$HideProgressWatchCommands,
     [switch]$RunInCurrentWindow
 )
@@ -22,7 +24,7 @@ $commonScript = Join-Path $PSScriptRoot "zotero-workflow-common.ps1"
 
 if (-not $RunInCurrentWindow) {
     $windowRoot = if ($ZoteroRepoRoot) { (Resolve-Path $ZoteroRepoRoot).Path } else { Get-ZoteroRepoRootPath -ScriptPath $PSCommandPath }
-    Start-WorkflowInNewWindow -ScriptPath $PSCommandPath -WorkingDirectory $windowRoot -BoundParameters $PSBoundParameters -DisplayName "Zotero Daily RSS DOI Import"
+    Start-WorkflowInNewWindow -ScriptPath $PSCommandPath -WorkingDirectory $windowRoot -BoundParameters $PSBoundParameters -DisplayName "Zotero Daily RSS Item Import"
     return
 }
 
@@ -45,7 +47,7 @@ function New-RunOutputDir {
         }
         return Join-Path $RepoRoot $RequestedOutputDir
     }
-    return Join-Path $RepoRoot ("log\rss-daily-doi-import_{0}" -f $Date)
+    return Join-Path $RepoRoot ("log\rss-daily-item-import_{0}" -f $Date)
 }
 
 function Remove-EmptyLogRoot {
@@ -265,7 +267,7 @@ function Wait-ImportWithProgress {
     }
 }
 
-function Export-FailedDois {
+function Export-FailedItems {
     param(
         [Parameter(Mandatory = $true)]
         [string]$FailedResultsPath,
@@ -287,19 +289,25 @@ function Export-FailedDois {
         if (Test-Path -LiteralPath $OutputTxtPath) {
             Remove-Item -LiteralPath $OutputTxtPath -Force
         }
-        Write-Host "No failed DOIs to export."
+        Write-Host "No failed items to export."
         return 0
     }
 
-    $doiLines = foreach ($row in $rows) {
-        if ($row.doi) {
-            [string]$row.doi
+    $itemLines = foreach ($row in $rows) {
+        if ($row.item_id) {
+            [string]$row.item_id
+        }
+        elseif ($row.doi) {
+            "doi:{0}" -f [string]$row.doi
+        }
+        elseif ($row.url) {
+            "url:{0}" -f [string]$row.url
         }
     }
-    Set-Content -LiteralPath $OutputTxtPath -Value $doiLines -Encoding UTF8
+    Set-Content -LiteralPath $OutputTxtPath -Value $itemLines -Encoding UTF8
 
     Write-Host ""
-    Write-Host "Exported failed DOI file:"
+    Write-Host "Exported failed item file:"
     Write-Host ("  txt  : {0}" -f $OutputTxtPath)
     return $failedCount
 }
@@ -322,13 +330,13 @@ if ($runningImports.Count -gt 0) {
 }
 
 $runOutputDir = New-RunOutputDir -RepoRoot $ZoteroRepoRoot -Date $Date -RequestedOutputDir $OutputDir
-$importListDir = Join-Path $runOutputDir "rss_doi_import_list"
-$importDir = Join-Path $runOutputDir "rss_doi_import"
+$importListDir = Join-Path $runOutputDir "rss_item_import_list"
+$importDir = Join-Path $runOutputDir "rss_item_import"
 $importList = Join-Path $importListDir "import_list.json"
 $importListSummaryPath = Join-Path $importListDir "summary.json"
 $importSummaryPath = Join-Path $importDir "import_summary.json"
 $failedResultsPath = Join-Path $importDir "failed_results.json"
-$failedTxtPath = Join-Path $runOutputDir ("rss_failed_dois_{0}.txt" -f $Date)
+$failedTxtPath = Join-Path $runOutputDir ("rss_failed_items_{0}.txt" -f $Date)
 $legacyFailedTxtPath = Join-Path $ZoteroRepoRoot ("rss_failed_dois_{0}.txt" -f $Date)
 $completed = $false
 $failedCount = 0
@@ -342,7 +350,7 @@ try {
 
     Write-Host ("Selected JSON: {0}" -f $selectedJson)
     Write-Host ("Run output: {0}" -f $runOutputDir)
-    Start-WorkflowRunLog -RunDirectory $runOutputDir -WorkflowName "daily-rss-doi-import" -RepoRoot $ZoteroRepoRoot
+    Start-WorkflowRunLog -RunDirectory $runOutputDir -WorkflowName "daily-rss-item-import" -RepoRoot $ZoteroRepoRoot
     if (-not $HideProgressWatchCommands) {
         Write-ProgressWatchCommands -ImportSummaryPath $importSummaryPath -RunOutputDir $runOutputDir
     }
@@ -352,6 +360,9 @@ try {
         "--selected-json", $selectedJson,
         "--output-dir", $importListDir
     )
+    if ($SkipLibraryExport) {
+        $importListArgs += @("--skip-library-export")
+    }
     Invoke-UvCommand -Arguments $importListArgs -WorkingDirectory $ZoteroRepoRoot
 
     if (-not (Test-Path -LiteralPath $importList)) {
@@ -359,20 +370,25 @@ try {
     }
 
     $importListSummary = Read-JsonFile -Path $importListSummaryPath
-    $totalToImport = [int]$importListSummary.new_dois
+    $totalToImport = [int]$importListSummary.new_items
 
     Write-Host ""
     Write-Host "Import list summary:"
     Write-Host ("  total_selected_rows      : {0}" -f $importListSummary.total_selected_rows)
-    Write-Host ("  unique_selected_dois     : {0}" -f $importListSummary.unique_selected_dois)
+    Write-Host ("  selected_rows_with_doi   : {0}" -f $importListSummary.selected_rows_with_doi)
+    Write-Host ("  selected_rows_without_doi: {0}" -f $importListSummary.selected_rows_without_doi)
+    Write-Host ("  unique_selected_items    : {0}" -f $importListSummary.unique_selected_items)
+    Write-Host ("  unique_items_with_doi    : {0}" -f $importListSummary.unique_items_with_doi)
+    Write-Host ("  unique_items_without_doi : {0}" -f $importListSummary.unique_items_without_doi)
+    Write-Host ("  skipped_without_identifier: {0}" -f $importListSummary.skipped_without_identifier)
     Write-Host ("  already_in_library       : {0}" -f $importListSummary.already_in_library)
-    Write-Host ("  new_dois                 : {0}" -f $importListSummary.new_dois)
-    Write-Host ("  author_routed_new_dois   : {0}" -f $importListSummary.author_routed_new_dois)
+    Write-Host ("  new_items                : {0}" -f $importListSummary.new_items)
+    Write-Host ("  author_routed_new_items  : {0}" -f $importListSummary.author_routed_new_items)
 
     if ($totalToImport -le 0) {
         New-Item -ItemType Directory -Force -Path $importDir | Out-Null
         Write-Host ""
-        Write-Host "No new DOIs to import; skipping import-list step." -ForegroundColor Yellow
+        Write-Host "No new RSS items to import; skipping import-list step." -ForegroundColor Yellow
         $previewPath = Join-Path $importDir "import_preview.json"
         $resumeStatePath = Join-Path $importDir "resume_state.json"
         $checkpointPath = Join-Path $importDir "checkpoint.json"
@@ -389,7 +405,7 @@ try {
             existing_items_detected = 0
             pending_import = 0
             entries_needing_collection_repair = 0
-            sample_pending_dois = @()
+            sample_pending_items = @()
             sample_collection_repairs = @()
             checkpoint_path = $checkpointPath
         })
@@ -437,6 +453,9 @@ try {
         if ($RecentCutoffUtc) {
             $importArgs += @("--recent-cutoff-utc", $RecentCutoffUtc)
         }
+        if ($SkipLocalDb) {
+            $importArgs += @("--skip-local-db")
+        }
 
         Write-Host ""
         Write-Host ("Import progress will update every {0}s." -f $ProgressIntervalSeconds)
@@ -454,7 +473,7 @@ try {
     Write-Host ("  collection_repairs       : {0}" -f $importSummary.collection_repairs)
     Write-Host ("  failed                   : {0}" -f $importSummary.failed)
 
-    $failedCount = Export-FailedDois -FailedResultsPath $failedResultsPath -OutputTxtPath $failedTxtPath -Date $Date
+    $failedCount = Export-FailedItems -FailedResultsPath $failedResultsPath -OutputTxtPath $failedTxtPath -Date $Date
     $failedExportChecked = $true
     if ([int]$importSummary.failed -gt 0) {
         throw "Import finished with $($importSummary.failed) failures. Review: $failedResultsPath"
@@ -468,7 +487,7 @@ try {
 }
 finally {
     if (-not $failedExportChecked) {
-        $failedCount = Export-FailedDois -FailedResultsPath $failedResultsPath -OutputTxtPath $failedTxtPath -Date $Date
+        $failedCount = Export-FailedItems -FailedResultsPath $failedResultsPath -OutputTxtPath $failedTxtPath -Date $Date
     }
     if ($completed -and (-not $KeepLog) -and (Test-Path -LiteralPath $runOutputDir)) {
         Complete-WorkflowRunLog -Status "completed"

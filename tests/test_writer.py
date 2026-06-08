@@ -81,6 +81,28 @@ def test_add_item_read_error_is_retryable(mock_zotero_cls):
 
 
 @patch("zotero_cli_agent.core.writer.zotero.Zotero")
+def test_add_journal_article_with_url_uses_journal_template(mock_zotero_cls):
+    mock_zot = MagicMock()
+    mock_zotero_cls.return_value = mock_zot
+    mock_zot.item_template.return_value = {"itemType": "journalArticle", "DOI": "", "url": ""}
+    mock_zot.create_items.return_value = {"successful": {"0": {"key": "J1"}}}
+
+    writer = ZoteroWriter(library_id="123", api_key="abc")
+    result = writer.add_journal_article(
+        url="https://example.org/paper",
+        extra_fields={"title": "URL only paper", "publicationTitle": "Example Journal"},
+    )
+
+    assert result == "J1"
+    mock_zot.item_template.assert_called_once_with("journalArticle")
+    payload = mock_zot.create_items.call_args[0][0][0]
+    assert payload["itemType"] == "journalArticle"
+    assert payload["url"] == "https://example.org/paper"
+    assert payload["title"] == "URL only paper"
+    assert payload["publicationTitle"] == "Example Journal"
+
+
+@patch("zotero_cli_agent.core.writer.zotero.Zotero")
 def test_add_note_api_failure(mock_zotero_cls):
     mock_zot = MagicMock()
     mock_zotero_cls.return_value = mock_zot

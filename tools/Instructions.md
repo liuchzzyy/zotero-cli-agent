@@ -89,11 +89,11 @@ uv run zot --json update --from-jsonl log\metadata-cleanup-YYYYMMDD-HHMM\cleaned
 - 汇报进度必须基于 wrapper 输出、`run.log`、`progress.jsonl` 或实际产物变化，不要只说“已开始”。
 - 所有 stdout/stderr、中间文件和诊断日志都必须放在各自 `log\...` 运行目录；不要散落到仓库根目录、`tools\`、`src\zotero_cli_workflows\`、`tmp\` 或临时 `.workspace\...` 中。
 
-在 E:\Desktop\CodingDaily\zotero-cli-agent 下执行 Daily RSS DOI Import。
+在 E:\Desktop\CodingDaily\zotero-cli-agent 下执行 Daily RSS Item Import。
 
-本指令独立包含运行文件规则：import_list、checkpoint、summary、failed_results、progress 和恢复审计文件都放在 log\rss-daily-doi-import_YYYY-MM-DD；不要放在仓库根目录散文件、tmp\ 或临时 .workspace\... 运行目录中。成功且 failed=0 时默认清理本次 log 目录；失败、中断或需要恢复时保留该目录。
+本指令独立包含运行文件规则：import_list、checkpoint、summary、failed_results、progress 和恢复审计文件都放在 log\rss-daily-item-import_YYYY-MM-DD；不要放在仓库根目录散文件、tmp\ 或临时 .workspace\... 运行目录中。成功且 failed=0 时默认清理本次 log 目录；失败、中断或需要恢复时保留该目录。
 
-日常运行不要手动拆开清洗/导入步骤，直接调用 wrapper。默认调用会重新打开一个新的 PowerShell 窗口，实际 import 在新窗口中运行；wrapper 把本次 import_list、checkpoint、summary、failed_results、`run.log`、`progress.jsonl` 等运行文件放到 log\rss-daily-doi-import_YYYY-MM-DD，并在 failed=0 成功完成后自动删除本次 log 目录：
+日常运行不要手动拆开清洗/导入步骤，直接调用 wrapper。默认调用会重新打开一个新的 PowerShell 窗口，实际 import 在新窗口中运行；wrapper 把本次 import_list、checkpoint、summary、failed_results、`run.log`、`progress.jsonl` 等运行文件放到 log\rss-daily-item-import_YYYY-MM-DD，并在 failed=0 成功完成后自动删除本次 log 目录：
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-daily-rss-doi-import.ps1 -Date YYYY-MM-DD -ProgressIntervalSeconds 5
 
 推荐直接在 PowerShell 中运行 wrapper，保留新窗口输出；进度以新窗口输出、`run.log`、`progress.jsonl` 和 import_summary.json 为准。只有调试/CI 才追加 `-RunInCurrentWindow`。
@@ -101,25 +101,33 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-daily-rss-doi-impo
 默认读取：
 E:\Desktop\CodingDaily\rss-cli-agent\storage\exports\daily_exports\YYYY-MM-DD.selected.json
 
+GitHub Actions 定时运行：
+- workflow: `.github/workflows/daily-rss-zotero-import.yml`
+- 定时：北京时间每天 02:40；GitHub cron 使用 UTC，所以配置为 `40 18 * * *`。
+- JSON 来源：`https://raw.githubusercontent.com/liuchzzyy/rss-cli-agent/main/storage/exports/daily_exports/YYYY-MM-DD.selected.json`
+- 必需 Actions secrets：`ZOT_LIBRARY_ID`、`ZOT_API_KEY`。
+- 可选 Actions secrets：`ZOT_CROSSREF_MAILTO`；`RSS_REPO_TOKEN` 仅在 rss-cli-agent 变为私有仓库时需要。
+- GitHub runner 没有本地 Zotero SQLite；workflow 必须使用 `-SkipLibraryExport -SkipLocalDb`，让导入阶段只依赖 Zotero Web API。
+
 如果 RSS selected JSON 在非默认位置，必须显式传入完整路径：
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-daily-rss-doi-import.ps1 -Date YYYY-MM-DD -SelectedJson "E:\Desktop\CodingDaily\rss-cli-agent\storage\exports\daily_exports\YYYY-MM-DD.selected.json" -ProgressIntervalSeconds 5
 
 如果需要保留成功运行记录用于审查，加 `-KeepLog`；否则不要保留成功运行的 log 目录。
 
-运行时必须显示实时进度。关注 processed/total、created_new、reused_existing、already_routed、failed。长时间停在 preflight/import starting 时，检查 log\rss-daily-doi-import_YYYY-MM-DD\rss_doi_import\import_summary.json 和是否仍有 import_rss_build_zotero_items.py 进程，不要凭表面输出判断卡死。
-如果 import list summary 显示 new_dois=0，wrapper 应直接写出 created_new=0、reused_existing=0、already_routed=0、failed=0 的 summary，并跳过 import-list 子命令；不要为 0 个 DOI 启动空导入进程。
+运行时必须显示实时进度。关注 processed/total、created_new、reused_existing、already_routed、failed。长时间停在 preflight/import starting 时，检查 log\rss-daily-item-import_YYYY-MM-DD\rss_item_import\import_summary.json 和是否仍有 import_rss_build_zotero_items.py 进程，不要凭表面输出判断卡死。
+如果 import list summary 显示 new_items=0，wrapper 应直接写出 created_new=0、reused_existing=0、already_routed=0、failed=0 的 summary，并跳过 import-list 子命令；不要为 0 个 RSS item 启动空导入进程。
 
 如果 wrapper 已经完成且 failed=0：
-- 本次 log\rss-daily-doi-import_YYYY-MM-DD 应该已被自动删除；如果使用过 -KeepLog，复核无误后手动删除。
+- 本次 log\rss-daily-item-import_YYYY-MM-DD 应该已被自动删除；如果使用过 -KeepLog，复核无误后手动删除。
 - 删除旧版本残留的根目录 rss_failed_dois_YYYY-MM-DD.txt（如果存在）。
 - 提醒用户 Zotero Web API 写入后需要 Zotero 同步，本地 SQLite 才会完全反映。
 
-如果中途失败或被中断且 log\rss-daily-doi-import_YYYY-MM-DD 还在：
+如果中途失败或被中断且 log\rss-daily-item-import_YYYY-MM-DD 还在：
 - 不要立刻重跑 wrapper；wrapper 会重建本次输出目录，可能丢掉 checkpoint。
 - 先确认没有残留 import_rss_build_zotero_items.py 进程。
 - 用同一个 import_list 和 output_dir 恢复：
-.\.venv\Scripts\python.exe src\zotero_cli_workflows\import_rss_build_zotero_items.py import-list --import-list log\rss-daily-doi-import_YYYY-MM-DD\rss_doi_import_list\import_list.json --output-dir log\rss-daily-doi-import_YYYY-MM-DD\rss_doi_import --library user --apply
-- 恢复完成后检查 failed_results.json；若为空且 checkpoint 覆盖全部 import_list entries，再删除旧版本残留的根目录 rss_failed_dois_YYYY-MM-DD.txt，并清理本次 log\rss-daily-doi-import_YYYY-MM-DD。
+.\.venv\Scripts\python.exe src\zotero_cli_workflows\import_rss_build_zotero_items.py import-list --import-list log\rss-daily-item-import_YYYY-MM-DD\rss_item_import_list\import_list.json --output-dir log\rss-daily-item-import_YYYY-MM-DD\rss_item_import --library user --apply
+- 恢复完成后检查 failed_results.json；若为空且 checkpoint 覆盖全部 import_list entries，再删除旧版本残留的根目录 rss_failed_dois_YYYY-MM-DD.txt，并清理本次 log\rss-daily-item-import_YYYY-MM-DD。
 - 如果失败来自 metadata/Crossref 解析异常，先修复代码并补测试，再基于原 checkpoint 恢复；不要清空本次 log 目录。
 ```
 

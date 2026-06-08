@@ -1,0 +1,136 @@
+name: Daily RSS Zotero Import
+
+on:
+  schedule:
+    # GitHub Actions cron uses UTC. 18:40 UTC is 02:40 Asia/Shanghai.
+    - cron: "40 18 * * *"
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "Import date in Asia/Shanghai, format YYYY-MM-DD. Defaults to today's Beijing date."
+        required: false
+        type: string
+      keep_run_log:
+        description: "Upload the run log artifact even if the import succeeds."
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daily-rss-zotero-import
+  cancel-in-progress: false
+
+jobs:
+  import:
+    name: Import RSS selected JSON into Zotero
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      ZOT_LIBRARY_ID: ${{ secrets.ZOT_LIBRARY_ID }}
+      ZOT_API_KEY: ${{ secrets.ZOT_API_KEY }}
+      ZOT_CROSSREF_MAILTO: ${{ secrets.ZOT_CROSSREF_MAILTO }}
+      RSS_REPO_TOKEN: ${{ secrets.RSS_REPO_TOKEN }}
+      REQUESTED_DATE: ${{ inputs.date }}
+      KEEP_RUN_LOG: ${{ inputs.keep_run_log }}
+
+    steps:
+      - name: Check out zotero-cli-agent
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install uv
+
+      - name: Install dependencies
+        shell: pwsh
+        run: uv sync --locked
+
+      - name: Resolve Beijing import date
+        shell: pwsh
+        run: |
+          $date = $env:REQUESTED_DATE
+          if ([string]::IsNullOrWhiteSpace($date)) {
+            $date = [DateTime]::UtcNow.AddHours(8).ToString("yyyy-MM-dd")
+          }
+          if ($date -notmatch '^\d{4}-\d{2}-\d{2}$') {
+            throw "Invalid import date '$date'. Use YYYY-MM-DD."
+          }
+          "IMPORT_DATE=$date" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "Using Beijing import date: $date" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+
+      - name: Validate required secrets
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:ZOT_LIBRARY_ID)) {
+            throw "Missing required GitHub Actions secret: ZOT_LIBRARY_ID"
+          }
+          if ([string]::IsNullOrWhiteSpace($env:ZOT_API_KEY)) {
+            throw "Missing required GitHub Actions secret: ZOT_API_KEY"
+          }
+
+      - name: Download selected JSON from rss-cli-agent
+        shell: pwsh
+        run: |
+          $selectedJson = Join-Path $env:RUNNER_TEMP "$env:IMPORT_DATE.selected.json"
+          $url = "https://raw.githubusercontent.com/liuchzzyy/rss-cli-agent/main/storage/exports/daily_exports/$env:IMPORT_DATE.selected.json"
+          $headers = @{}
+          if (-not [string]::IsNullOrWhiteSpace($env:RSS_REPO_TOKEN)) {
+            $headers["Authorization"] = "Bearer $env:RSS_REPO_TOKEN"
+          }
+          Invoke-WebRequest -Uri $url -Headers $headers -OutFile $selectedJson
+          if (-not (Test-Path -LiteralPath $selectedJson)) {
+            throw "Selected JSON was not downloaded: $selectedJson"
+          }
+          "SELECTED_JSON=$selectedJson" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "Downloaded selected JSON from rss-cli-agent: $url" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+
+      - name: Run Daily RSS Zotero import
+        shell: pwsh
+        run: |
+          $args = @(
+            "-RunInCurrentWindow",
+            "-Date", $env:IMPORT_DATE,
+            "-SelectedJson", $env:SELECTED_JSON,
+            "-ProgressIntervalSeconds", "30",
+            "-SkipLibraryExport",
+            "-SkipLocalDb",
+            "-HideProgressWatchCommands"
+          )
+          if ($env:KEEP_RUN_LOG -eq "true") {
+            $args += "-KeepLog"
+          }
+          & .\tools\run-daily-rss-doi-import.ps1 @args
+
+      - name: Summarize retained run output
+        if: always()
+        shell: pwsh
+        run: |
+          $runDir = "log\rss-daily-item-import_$env:IMPORT_DATE"
+          $summary = Join-Path $runDir "rss_item_import\import_summary.json"
+          if (Test-Path -LiteralPath $summary) {
+            "## Import summary" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+            "````json" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+            Get-Content -Raw -LiteralPath $summary | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+            "````" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          } else {
+            "Run output directory was removed after successful import, or the import failed before summary creation." |
+              Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          }
+
+      - name: Upload run logs when needed
+        if: failure() || (github.event_name == 'workflow_dispatch' && inputs.keep_run_log)
+        uses: actions/upload-artifact@v4
+        with:
+          name: rss-zotero-import-${{ env.IMPORT_DATE }}
+          path: log/rss-daily-item-import_${{ env.IMPORT_DATE }}
+          if-no-files-found: ignore

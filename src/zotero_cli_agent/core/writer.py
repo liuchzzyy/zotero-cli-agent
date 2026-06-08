@@ -133,6 +133,31 @@ class ZoteroWriter:
         except PyZoteroError as e:
             raise _friendly_api_error(e) from e
 
+    def add_journal_article(
+        self,
+        *,
+        doi: str | None = None,
+        url: str | None = None,
+        extra_fields: dict[str, object] | None = None,
+    ) -> str:
+        """Create a journalArticle from DOI/URL plus caller-supplied metadata."""
+        if not doi and not url and not extra_fields:
+            raise ValueError("DOI, URL, or metadata fields must be provided")
+        try:
+            template = self._zot.item_template("journalArticle")
+            if doi:
+                template["DOI"] = doi
+            if url:
+                template["url"] = url
+            if extra_fields:
+                template.update(extra_fields)
+            resp = self._zot.create_items([template])
+            return self._check_response(resp)
+        except HttpxHttpError as e:
+            raise ZoteroWriteError(f"Network error: {e}", code="network_error", retryable=True) from e
+        except PyZoteroError as e:
+            raise _friendly_api_error(e) from e
+
     def update_item(self, key: str, fields: dict[str, str]) -> None:
         """Update item metadata fields."""
         try:

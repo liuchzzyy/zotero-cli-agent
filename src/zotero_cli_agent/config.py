@@ -326,6 +326,9 @@ def resolve_semantic_scholar_api_key(config: AppConfig, explicit: str | None = N
 
 
 def resolve_crossref_mailto(config: AppConfig) -> str:
+    env_mailto = os.environ.get("ZOT_CROSSREF_MAILTO", "").strip()
+    if env_mailto:
+        return env_mailto
     return config.crossref_mailto.strip()
 
 

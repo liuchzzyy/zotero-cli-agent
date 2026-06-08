@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 from pyzotero import zotero
@@ -23,24 +24,42 @@ AUTHOR_WATCH_ROOT_COLLECTION = "00_INBOX/10_AUTHOR_WATCH"
 
 
 @dataclass
-class DoiImportListRow:
-    doi: str
+class RssImportListRow:
+    item_id: str
+    doi: str | None
+    url: str | None
     title: str
     journal: str | None
+    abstract: str | None = None
+    date: str | None = None
     entry_uids: list[str] = field(default_factory=list)
     topics: list[str] = field(default_factory=list)
     keywords: list[str] = field(default_factory=list)
-    tags: list[str] = field(default_factory=list)
+    rss_tags: list[str] = field(default_factory=list)
     tracked_authors: list[str] = field(default_factory=list)
     source_links: list[str] = field(default_factory=list)
 
     def merge_entry(self, entry: dict[str, Any]) -> None:
+        if not self.title:
+            self.title = str(entry.get("title") or "").strip()
+        if not self.journal and entry.get("journal"):
+            self.journal = str(entry.get("journal")).strip()
+        if not self.abstract and entry.get("abstract"):
+            self.abstract = str(entry.get("abstract")).strip()
+        if not self.date:
+            self.date = _extract_entry_date(entry)
         self.entry_uids.extend(_as_unique_strings([entry.get("entry_uid")], self.entry_uids))
         self.topics.extend(_as_unique_strings([entry.get("topic")], self.topics))
         self.keywords.extend(_as_unique_strings(entry.get("keywords") or [], self.keywords))
-        self.tags.extend(_as_unique_strings(entry.get("tags") or [], self.tags))
-        self.tracked_authors.extend(_as_unique_strings(_extract_tracked_authors(entry.get("tags") or []), self.tracked_authors))
+        self.rss_tags.extend(_as_unique_strings(entry.get("tags") or [], self.rss_tags))
+        self.tracked_authors.extend(
+            _as_unique_strings(_extract_tracked_authors(entry.get("tags") or []), self.tracked_authors)
+        )
         self.source_links.extend(_as_unique_strings([_nested_get(entry, "source", "link")], self.source_links))
+
+    @property
+    def match_item_ids(self) -> list[str]:
+        return _item_ids_from_values(doi=self.doi, url=self.url)
 
     @property
     def alert_type(self) -> str:
@@ -56,9 +75,13 @@ class DoiImportListRow:
 
     def to_dict(self, *, already_in_library: bool) -> dict[str, Any]:
         return {
+            "item_id": self.item_id,
             "doi": self.doi,
+            "url": self.url,
             "title": self.title,
             "journal": self.journal,
+            "abstract": self.abstract,
+            "date": self.date,
             "alert_type": self.alert_type,
             "tracked_authors": self.tracked_authors,
             "target_collections": self.target_collections,
@@ -66,7 +89,7 @@ class DoiImportListRow:
             "entry_uids": self.entry_uids,
             "topics": self.topics,
             "keywords": self.keywords,
-            "tags": self.tags,
+            "rss_tags": self.rss_tags,
             "source_links": self.source_links,
         }
 
@@ -117,6 +140,62 @@ def _as_unique_strings(values: list[Any], existing: list[str]) -> list[str]:
     return out
 
 
+def _normalize_url(raw: Any) -> str | None:
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    try:
+        parsed = urlsplit(text)
+    except ValueError:
+        return text
+    if not parsed.scheme or not parsed.netloc:
+        return text
+    path = parsed.path.rstrip("/") if parsed.path != "/" else parsed.path
+    return urlunsplit((parsed.scheme.lower(), parsed.netloc.lower(), path, parsed.query, ""))
+
+
+def _item_ids_from_values(*, doi: str | None, url: str | None) -> list[str]:
+    item_ids: list[str] = []
+    normalized_doi = _normalize_doi(doi)
+    if normalized_doi:
+        item_ids.append(f"doi:{normalized_doi}")
+    normalized_url = _normalize_url(url)
+    if normalized_url:
+        item_ids.append(f"url:{normalized_url}")
+    return item_ids
+
+
+def _build_item_id(*, doi: str | None, url: str | None) -> str | None:
+    item_ids = _item_ids_from_values(doi=doi, url=url)
+    return item_ids[0] if item_ids else None
+
+
+def _extract_entry_url(entry: dict[str, Any]) -> str | None:
+    return _normalize_url(_nested_get(entry, "source", "link"))
+
+
+def _extract_entry_date(entry: dict[str, Any]) -> str | None:
+    for raw in (
+        _nested_get(entry, "source", "published_at"),
+        _nested_get(entry, "source", "updated_at"),
+        _nested_get(entry, "source", "first_seen_at"),
+    ):
+        if raw is None:
+            continue
+        text = str(raw).strip()
+        if not text:
+            continue
+        if len(text) >= 10 and text[4] == "-" and text[7] == "-":
+            return text[:10]
+        parsed = _parse_iso_datetime(text)
+        if parsed is not None:
+            return parsed.date().isoformat()
+        return text
+    return None
+
+
 def _load_selected_items(path: Path) -> list[dict[str, Any]]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, list):
@@ -128,37 +207,41 @@ def _load_selected_items(path: Path) -> list[dict[str, Any]]:
     return items
 
 
-def _build_doi_rows(items: list[dict[str, Any]]) -> dict[str, DoiImportListRow]:
-    doi_rows: dict[str, DoiImportListRow] = {}
+def _build_rss_item_rows(items: list[dict[str, Any]]) -> dict[str, RssImportListRow]:
+    item_rows: dict[str, RssImportListRow] = {}
     for entry in items:
         doi = _normalize_doi(entry.get("doi"))
-        if doi is None:
+        url = _extract_entry_url(entry)
+        item_id = _build_item_id(doi=doi, url=url)
+        if item_id is None:
             continue
-        row = doi_rows.get(doi)
+        row = item_rows.get(item_id)
         if row is None:
-            row = DoiImportListRow(
+            row = RssImportListRow(
+                item_id=item_id,
                 doi=doi,
+                url=url,
                 title=str(entry.get("title") or "").strip(),
                 journal=(str(entry.get("journal")).strip() if entry.get("journal") else None),
+                abstract=(str(entry.get("abstract")).strip() if entry.get("abstract") else None),
+                date=_extract_entry_date(entry),
             )
-            doi_rows[doi] = row
+            item_rows[item_id] = row
         row.merge_entry(entry)
-    return doi_rows
+    return item_rows
 
 
-def _load_library_dois_from_export(path: Path) -> set[str]:
+def _load_library_item_ids_from_export(path: Path) -> set[str]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     data = payload.get("data") if isinstance(payload, dict) else payload
     if not isinstance(data, list):
         raise ValueError(f"Expected export JSON to contain a list under 'data': {path}")
-    dois: set[str] = set()
+    item_ids: set[str] = set()
     for row in data:
         if not isinstance(row, dict):
             continue
-        doi = _normalize_doi(row.get("doi"))
-        if doi:
-            dois.add(doi)
-    return dois
+        item_ids.update(_item_ids_from_values(doi=row.get("doi") or row.get("DOI"), url=row.get("url") or row.get("URL")))
+    return item_ids
 
 
 def _export_current_library(repo_root: Path, export_path: Path) -> None:
@@ -189,75 +272,97 @@ def build_rss_zotero_items_outputs(
     output_dir: Path,
     repo_root: Path,
     zotero_export_json: Path | None,
+    skip_library_export: bool = False,
 ) -> dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     export_path = zotero_export_json or output_dir / "zotero_before.json"
-    if zotero_export_json is None:
+    if skip_library_export:
+        export_path = None
+    elif zotero_export_json is None:
         _export_current_library(repo_root, export_path)
 
     selected_items = _load_selected_items(selected_json)
-    doi_rows = _build_doi_rows(selected_items)
-    library_dois = _load_library_dois_from_export(export_path)
+    item_rows = _build_rss_item_rows(selected_items)
+    library_item_ids = set() if export_path is None else _load_library_item_ids_from_export(export_path)
 
-    all_doi_rows: list[dict[str, Any]] = []
-    new_doi_rows: list[dict[str, Any]] = []
-    root_only_dois: list[str] = []
+    all_item_rows: list[dict[str, Any]] = []
+    new_item_rows: list[dict[str, Any]] = []
+    root_only_item_ids: list[str] = []
     author_routes: dict[str, list[str]] = defaultdict(list)
 
-    for doi in sorted(doi_rows):
-        row = doi_rows[doi]
-        already_in_library = doi in library_dois
+    for item_id in sorted(item_rows):
+        row = item_rows[item_id]
+        already_in_library = any(match_id in library_item_ids for match_id in row.match_item_ids)
         row_dict = row.to_dict(already_in_library=already_in_library)
-        all_doi_rows.append(row_dict)
+        all_item_rows.append(row_dict)
         if already_in_library:
             continue
-        new_doi_rows.append(row_dict)
+        new_item_rows.append(row_dict)
         if row.tracked_authors:
             for author in row.tracked_authors:
-                author_routes[author].append(doi)
+                author_routes[author].append(item_id)
         else:
-            root_only_dois.append(doi)
+            root_only_item_ids.append(item_id)
 
-    all_doi_entries_path = output_dir / "all_doi_entries.json"
-    new_doi_entries_path = output_dir / "new_doi_entries.json"
-    new_dois_path = output_dir / "new_dois.txt"
+    all_entries_path = output_dir / "all_entries.json"
+    new_entries_path = output_dir / "new_entries.json"
+    new_item_ids_path = output_dir / "new_item_ids.txt"
     import_list_path = output_dir / "import_list.json"
     summary_path = output_dir / "summary.json"
 
-    _write_json(all_doi_entries_path, all_doi_rows)
-    _write_json(new_doi_entries_path, new_doi_rows)
-    new_dois_path.write_text("\n".join(row["doi"] for row in new_doi_rows) + ("\n" if new_doi_rows else ""), encoding="utf-8")
+    _write_json(all_entries_path, all_item_rows)
+    _write_json(new_entries_path, new_item_rows)
+    new_item_ids_path.write_text(
+        "\n".join(row["item_id"] for row in new_item_rows) + ("\n" if new_item_rows else ""),
+        encoding="utf-8",
+    )
 
     import_list = {
         "root_collection": INBOX_UNSORTED_COLLECTION,
-        "root_only_dois": root_only_dois,
+        "root_only_item_ids": root_only_item_ids,
         "author_collections": [
             {
                 "author": author,
                 "collection_path": ["00_INBOX", "10_AUTHOR_WATCH", author],
-                "dois": sorted(dois),
+                "item_ids": sorted(item_ids),
             }
-            for author, dois in sorted(author_routes.items())
+            for author, item_ids in sorted(author_routes.items())
         ],
-        "entries": new_doi_rows,
+        "entries": new_item_rows,
     }
     _write_json(import_list_path, import_list)
 
+    selected_rows_with_doi = sum(1 for item in selected_items if _normalize_doi(item.get("doi")))
+    selected_rows_without_doi = len(selected_items) - selected_rows_with_doi
+    unique_items_with_doi = sum(1 for row in all_item_rows if row.get("doi"))
+    unique_items_without_doi = len(all_item_rows) - unique_items_with_doi
+    skipped_without_identifier = sum(
+        1
+        for item in selected_items
+        if _build_item_id(doi=_normalize_doi(item.get("doi")), url=_extract_entry_url(item)) is None
+    )
+
     summary = {
         "selected_json": str(selected_json),
-        "zotero_export_json": str(export_path),
+        "zotero_export_json": (str(export_path) if export_path is not None else None),
+        "skipped_library_export": bool(skip_library_export),
         "total_selected_rows": len(selected_items),
-        "unique_selected_dois": len(all_doi_rows),
-        "already_in_library": len(all_doi_rows) - len(new_doi_rows),
-        "new_dois": len(new_doi_rows),
-        "root_only_new_dois": len(root_only_dois),
-        "author_routed_new_dois": sum(len(dois) for dois in author_routes.values()),
+        "selected_rows_with_doi": selected_rows_with_doi,
+        "selected_rows_without_doi": selected_rows_without_doi,
+        "unique_selected_items": len(all_item_rows),
+        "unique_items_with_doi": unique_items_with_doi,
+        "unique_items_without_doi": unique_items_without_doi,
+        "skipped_without_identifier": skipped_without_identifier,
+        "already_in_library": len(all_item_rows) - len(new_item_rows),
+        "new_items": len(new_item_rows),
+        "root_only_new_items": len(root_only_item_ids),
+        "author_routed_new_items": sum(len(item_ids) for item_ids in author_routes.values()),
         "author_collection_count": len(author_routes),
         "output_files": {
-            "all_doi_entries": str(all_doi_entries_path),
-            "new_doi_entries": str(new_doi_entries_path),
-            "new_dois": str(new_dois_path),
+            "all_entries": str(all_entries_path),
+            "new_entries": str(new_entries_path),
+            "new_item_ids": str(new_item_ids_path),
             "import_list": str(import_list_path),
             "summary": str(summary_path),
         },
@@ -268,10 +373,33 @@ def build_rss_zotero_items_outputs(
 
 @dataclass
 class ImportEntry:
-    doi: str
+    item_id: str
+    doi: str | None
+    url: str | None
     title: str
+    journal: str | None
+    abstract: str | None
+    date: str | None
     target_collections: list[str]
     tracked_authors: list[str]
+
+    @property
+    def match_item_ids(self) -> list[str]:
+        return _item_ids_from_values(doi=self.doi, url=self.url)
+
+    def zotero_fields(self) -> dict[str, object]:
+        fields: dict[str, object] = {}
+        if self.title:
+            fields["title"] = self.title
+        if self.journal:
+            fields["publicationTitle"] = self.journal
+        if self.abstract:
+            fields["abstractNote"] = self.abstract
+        if self.date:
+            fields["date"] = self.date
+        if self.url:
+            fields["url"] = self.url
+        return fields
 
 
 @dataclass
@@ -325,11 +453,18 @@ def _load_import_entries(import_list_path: Path, *, limit: int | None = None) ->
         if not isinstance(raw, dict):
             continue
         doi = _normalize_doi(raw.get("doi"))
-        if not doi:
+        url = _normalize_url(raw.get("url"))
+        item_id = str(raw.get("item_id") or "").strip() or _build_item_id(doi=doi, url=url)
+        if not item_id:
             continue
         entry = ImportEntry(
+            item_id=item_id,
             doi=doi,
+            url=url,
             title=str(raw.get("title") or "").strip(),
+            journal=(str(raw.get("journal")).strip() if raw.get("journal") else None),
+            abstract=(str(raw.get("abstract")).strip() if raw.get("abstract") else None),
+            date=(str(raw.get("date")).strip() if raw.get("date") else None),
             target_collections=[str(x) for x in raw.get("target_collections") or [] if str(x).strip()],
             tracked_authors=[str(x) for x in raw.get("tracked_authors") or [] if str(x).strip()],
         )
@@ -452,7 +587,7 @@ def _update_checkpoint(
     checkpoint: dict[str, Any],
     checkpoint_path: Path,
     *,
-    doi: str,
+    entry: ImportEntry,
     status: str,
     key: str | None = None,
     completed_collections: list[str] | None = None,
@@ -460,33 +595,36 @@ def _update_checkpoint(
     error: dict[str, Any] | None = None,
 ) -> None:
     items = checkpoint.setdefault("items", {})
-    entry = items.get(doi)
-    if not isinstance(entry, dict):
-        entry = {"doi": doi}
-        items[doi] = entry
-    entry["doi"] = doi
-    entry["status"] = status
+    checkpoint_entry = items.get(entry.item_id)
+    if not isinstance(checkpoint_entry, dict):
+        checkpoint_entry = {"item_id": entry.item_id}
+        items[entry.item_id] = checkpoint_entry
+    checkpoint_entry["item_id"] = entry.item_id
+    checkpoint_entry["doi"] = entry.doi
+    checkpoint_entry["url"] = entry.url
+    checkpoint_entry["title"] = entry.title
+    checkpoint_entry["status"] = status
     if key:
-        entry["key"] = key
+        checkpoint_entry["key"] = key
     if completed_collections is not None:
-        entry["completed_collections"] = list(completed_collections)
+        checkpoint_entry["completed_collections"] = list(completed_collections)
     if target_collections is not None:
-        entry["target_collections"] = list(target_collections)
+        checkpoint_entry["target_collections"] = list(target_collections)
     if error is not None:
-        entry["error"] = error
-    entry["updated_at"] = datetime.now(timezone.utc).isoformat()
-    checkpoint["updated_at"] = entry["updated_at"]
+        checkpoint_entry["error"] = error
+    checkpoint_entry["updated_at"] = datetime.now(timezone.utc).isoformat()
+    checkpoint["updated_at"] = checkpoint_entry["updated_at"]
     _write_json_atomic(checkpoint_path, checkpoint)
 
 
 def _serialize_known_items(known_items: dict[str, dict[str, KnownItemKey]]) -> dict[str, Any]:
     out: dict[str, Any] = {}
-    for doi in sorted(known_items):
+    for item_id in sorted(known_items):
         key_payloads = []
         union_collections: set[str] = set()
         union_sources: set[str] = set()
-        for key in sorted(known_items[doi]):
-            slot = known_items[doi][key]
+        for key in sorted(known_items[item_id]):
+            slot = known_items[item_id][key]
             union_collections.update(slot.collections)
             union_sources.update(slot.sources)
             key_payloads.append(
@@ -497,8 +635,8 @@ def _serialize_known_items(known_items: dict[str, dict[str, KnownItemKey]]) -> d
                     "sources": sorted(slot.sources),
                 }
             )
-        out[doi] = {
-            "doi": doi,
+        out[item_id] = {
+            "item_id": item_id,
             "keys": key_payloads,
             "all_collections": sorted(union_collections),
             "all_sources": sorted(union_sources),
@@ -509,16 +647,16 @@ def _serialize_known_items(known_items: dict[str, dict[str, KnownItemKey]]) -> d
 def _record_known_item(
     known_items: dict[str, dict[str, KnownItemKey]],
     *,
-    doi: str,
+    item_id: str,
     key: str,
     collections: list[str] | set[str] | None,
     date_added: str | None,
     source: str,
 ) -> None:
-    slot = known_items.setdefault(doi, {}).get(key)
+    slot = known_items.setdefault(item_id, {}).get(key)
     if slot is None:
         slot = KnownItemKey(key=key)
-        known_items[doi][key] = slot
+        known_items[item_id][key] = slot
     if collections:
         slot.collections.update(path for path in collections if path)
     if date_added and not slot.date_added:
@@ -526,7 +664,59 @@ def _record_known_item(
     slot.sources.add(source)
 
 
-def _choose_best_known_key(known_for_doi: dict[str, KnownItemKey], target_collections: list[str]) -> str:
+def _record_known_identifiers(
+    known_items: dict[str, dict[str, KnownItemKey]],
+    *,
+    doi: str | None,
+    url: str | None,
+    key: str,
+    collections: list[str] | set[str] | None,
+    date_added: str | None,
+    source: str,
+) -> None:
+    for item_id in _item_ids_from_values(doi=doi, url=url):
+        _record_known_item(
+            known_items,
+            item_id=item_id,
+            key=key,
+            collections=collections,
+            date_added=date_added,
+            source=source,
+        )
+
+
+def _record_known_entry(
+    known_items: dict[str, dict[str, KnownItemKey]],
+    *,
+    entry: ImportEntry,
+    key: str,
+    collections: list[str] | set[str] | None,
+    date_added: str | None,
+    source: str,
+) -> None:
+    _record_known_identifiers(
+        known_items,
+        doi=entry.doi,
+        url=entry.url,
+        key=key,
+        collections=collections,
+        date_added=date_added,
+        source=source,
+    )
+
+
+def _find_known_for_entry(
+    known_items: dict[str, dict[str, KnownItemKey]],
+    entry: ImportEntry,
+) -> tuple[str | None, dict[str, KnownItemKey] | None]:
+    for item_id in entry.match_item_ids:
+        known_for_item = known_items.get(item_id)
+        if known_for_item:
+            return item_id, known_for_item
+    return None, None
+
+
+def _choose_best_known_key(known_for_item: dict[str, KnownItemKey], target_collections: list[str]) -> str:
     target_set = set(target_collections)
 
     def _score(item: tuple[str, KnownItemKey]) -> tuple[int, datetime, str]:
@@ -535,7 +725,7 @@ def _choose_best_known_key(known_for_doi: dict[str, KnownItemKey], target_collec
         date_added = _parse_iso_datetime(meta.date_added) or datetime.min.replace(tzinfo=timezone.utc)
         return matched, date_added, key
 
-    return max(known_for_doi.items(), key=_score)[0]
+    return max(known_for_item.items(), key=_score)[0]
 
 
 def _build_server_collection_maps(
@@ -621,13 +811,15 @@ def _collect_import_server_state(
         for item in items:
             data = item.get("data", {})
             doi = _normalize_doi(data.get("DOI"))
-            if not doi:
+            url = _normalize_url(data.get("url"))
+            if not doi and not url:
                 continue
             collections = [path]
             collections.extend(key_to_path.get(key, key) for key in data.get("collections") or [] if key)
-            _record_known_item(
+            _record_known_identifiers(
                 known_items,
                 doi=doi,
+                url=url,
                 key=str(item.get("key") or ""),
                 collections=collections,
                 date_added=str(data.get("dateAdded") or ""),
@@ -645,7 +837,7 @@ def _collect_import_server_state(
 def _collect_recent_matching_items(
     *,
     client: zotero.Zotero,
-    doi_filter: set[str],
+    item_id_filter: set[str],
     key_to_path: dict[str, str],
     cutoff: datetime,
     max_pages: int = 100,
@@ -673,13 +865,16 @@ def _collect_recent_matching_items(
                 page_oldest = parsed
                 oldest_seen = date_added_raw
             doi = _normalize_doi(data.get("DOI"))
-            if not doi or doi not in doi_filter:
+            url = _normalize_url(data.get("url"))
+            item_ids = _item_ids_from_values(doi=doi, url=url)
+            if not item_ids or not any(item_id in item_id_filter for item_id in item_ids):
                 continue
             matched_items += 1
             collections = [key_to_path.get(key, key) for key in data.get("collections") or [] if key]
-            _record_known_item(
+            _record_known_identifiers(
                 known_items,
                 doi=doi,
+                url=url,
                 key=str(item.get("key") or ""),
                 collections=collections,
                 date_added=date_added_raw,
@@ -705,11 +900,11 @@ def _merge_known_maps(
     base: dict[str, dict[str, KnownItemKey]],
     incoming: dict[str, dict[str, KnownItemKey]],
 ) -> None:
-    for doi, by_key in incoming.items():
+    for item_id, by_key in incoming.items():
         for key, slot in by_key.items():
             _record_known_item(
                 base,
-                doi=doi,
+                item_id=item_id,
                 key=key,
                 collections=slot.collections,
                 date_added=slot.date_added,
@@ -725,7 +920,7 @@ def _merge_checkpoint_state(
     items = checkpoint.get("items")
     if not isinstance(items, dict):
         return
-    for doi, raw in items.items():
+    for item_id, raw in items.items():
         if not isinstance(raw, dict):
             continue
         key = raw.get("key")
@@ -736,7 +931,7 @@ def _merge_checkpoint_state(
             completed = []
         _record_known_item(
             known_items,
-            doi=str(doi),
+            item_id=str(item_id),
             key=str(key),
             collections=[str(path) for path in completed if str(path).strip()],
             date_added=None,
@@ -765,6 +960,7 @@ def import_rss_zotero_items(
     limit: int | None,
     apply: bool,
     recent_cutoff_utc: str | None,
+    skip_local_db: bool = False,
 ) -> dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
     library_ctx = _parse_library(library)
@@ -832,7 +1028,7 @@ def import_rss_zotero_items(
             "server_missing_collection_paths": [],
             "local_existing_collection_paths": [],
             "local_missing_collection_paths": [],
-            "sample_pending_dois": [],
+            "sample_pending_items": [],
             "sample_collection_repairs": [],
             "checkpoint_path": str(checkpoint_path),
             "server_state_files": {
@@ -868,7 +1064,7 @@ def import_rss_zotero_items(
         return summary
 
     client = _build_client(profile, library_ctx)
-    local_collection_paths = _load_local_collection_paths(profile, library_ctx)
+    local_collection_paths = {} if skip_local_db else _load_local_collection_paths(profile, library_ctx)
     server_path_to_key, server_key_to_path = _build_server_collection_maps(client)
 
     known_items, collection_diagnostics, auto_recent_cutoff = _collect_import_server_state(
@@ -885,7 +1081,7 @@ def import_rss_zotero_items(
     if cutoff_dt is not None:
         recent_known, recent_diagnostics = _collect_recent_matching_items(
             client=client,
-            doi_filter={entry.doi for entry in all_entries},
+            item_id_filter={item_id for entry in all_entries for item_id in entry.match_item_ids},
             key_to_path=server_key_to_path,
             cutoff=cutoff_dt,
         )
@@ -898,22 +1094,25 @@ def import_rss_zotero_items(
     repair_entries: list[dict[str, Any]] = []
 
     for entry in all_entries:
-        known_for_doi = known_items.get(entry.doi)
-        if not known_for_doi:
+        matched_item_id, known_for_item = _find_known_for_entry(known_items, entry)
+        if not known_for_item:
             pending_import_entries.append(entry)
             continue
         entries_with_existing_item += 1
-        chosen_key = _choose_best_known_key(known_for_doi, entry.target_collections)
-        existing_collections = set(known_for_doi[chosen_key].collections)
+        chosen_key = _choose_best_known_key(known_for_item, entry.target_collections)
+        existing_collections = set(known_for_item[chosen_key].collections)
         missing = [path for path in entry.target_collections if path not in existing_collections]
         if missing:
             entries_needing_collection_repair += 1
             repair_entries.append(
                 {
+                    "item_id": entry.item_id,
+                    "matched_item_id": matched_item_id,
                     "doi": entry.doi,
+                    "url": entry.url,
                     "key": chosen_key,
                     "missing_collections": missing,
-                    "known_keys": sorted(known_for_doi),
+                    "known_keys": sorted(known_for_item),
                 }
             )
 
@@ -929,7 +1128,10 @@ def import_rss_zotero_items(
         "server_missing_collection_paths": sorted(path for path in needed_paths if path not in server_path_to_key),
         "local_existing_collection_paths": sorted(path for path in needed_paths if path in local_collection_paths),
         "local_missing_collection_paths": sorted(path for path in needed_paths if path not in local_collection_paths),
-        "sample_pending_dois": [entry.doi for entry in pending_import_entries[:10]],
+        "sample_pending_items": [
+            {"item_id": entry.item_id, "doi": entry.doi, "url": entry.url, "title": entry.title}
+            for entry in pending_import_entries[:10]
+        ],
         "sample_collection_repairs": repair_entries[:10],
         "checkpoint_path": str(checkpoint_path),
         "server_state_files": {
@@ -996,12 +1198,12 @@ def import_rss_zotero_items(
         failure_key: str | None = None
         failure_completed_collections: list[str] = []
         try:
-            known_for_doi = known_items.get(entry.doi)
-            if known_for_doi:
-                key = _choose_best_known_key(known_for_doi, entry.target_collections)
+            matched_item_id, known_for_item = _find_known_for_entry(known_items, entry)
+            if known_for_item:
+                key = _choose_best_known_key(known_for_item, entry.target_collections)
                 failure_key = key
                 target_paths = list(entry.target_collections)
-                completed_paths = set(known_for_doi[key].collections)
+                completed_paths = set(known_for_item[key].collections)
                 failure_completed_collections = sorted(completed_paths)
                 moved_to: list[str] = []
                 for collection_path in target_paths:
@@ -1018,16 +1220,24 @@ def import_rss_zotero_items(
                     completed_paths.add(collection_path)
                     failure_completed_collections = sorted(completed_paths)
                     moved_to.append(collection_path)
-                    known_for_doi[key].collections.add(collection_path)
+                    known_for_item[key].collections.add(collection_path)
                     _update_checkpoint(
                         checkpoint,
                         checkpoint_path,
-                        doi=entry.doi,
+                        entry=entry,
                         status="routing-existing",
                         key=key,
                         completed_collections=sorted(completed_paths),
                         target_collections=target_paths,
                     )
+                _record_known_entry(
+                    known_items,
+                    entry=entry,
+                    key=key,
+                    collections=completed_paths,
+                    date_added=None,
+                    source=f"matched-existing:{matched_item_id}",
+                )
                 action = "already_routed"
                 if moved_to:
                     action = "reused_existing"
@@ -1038,7 +1248,7 @@ def import_rss_zotero_items(
                 _update_checkpoint(
                     checkpoint,
                     checkpoint_path,
-                    doi=entry.doi,
+                    entry=entry,
                     status=action,
                     key=key,
                     completed_collections=sorted(completed_paths),
@@ -1048,13 +1258,16 @@ def import_rss_zotero_items(
                     {
                         "index": index,
                         "action": action,
+                        "item_id": entry.item_id,
+                        "matched_item_id": matched_item_id,
                         "doi": entry.doi,
+                        "url": entry.url,
                         "key": key,
                         "title": entry.title,
                         "target_collections": target_paths,
                         "moved_to": moved_to,
                         "tracked_authors": entry.tracked_authors,
-                        "known_keys": sorted(known_for_doi),
+                        "known_keys": sorted(known_for_item),
                     }
                 )
                 _write_progress_files(
@@ -1065,12 +1278,23 @@ def import_rss_zotero_items(
                 )
                 continue
 
-            extra_fields, resolve_warning = _resolve_metadata(entry.doi)
-            key = writer.add_item(doi=entry.doi, extra_fields=extra_fields)
-            failure_key = key
-            _record_known_item(
-                known_items,
+            rss_fields = entry.zotero_fields()
+            resolved_fields: dict[str, Any] | None = None
+            resolve_warning: str | None = None
+            if entry.doi:
+                resolved_fields, resolve_warning = _resolve_metadata(entry.doi)
+            extra_fields = dict(rss_fields)
+            if resolved_fields:
+                extra_fields.update(resolved_fields)
+            key = writer.add_journal_article(
                 doi=entry.doi,
+                url=entry.url,
+                extra_fields=extra_fields or None,
+            )
+            failure_key = key
+            _record_known_entry(
+                known_items,
+                entry=entry,
                 key=key,
                 collections=[],
                 date_added=None,
@@ -1080,7 +1304,7 @@ def import_rss_zotero_items(
             _update_checkpoint(
                 checkpoint,
                 checkpoint_path,
-                doi=entry.doi,
+                entry=entry,
                 status="created",
                 key=key,
                 completed_collections=completed_paths,
@@ -1097,11 +1321,12 @@ def import_rss_zotero_items(
                 writer.move_to_collection(key, collection_key)
                 completed_paths.append(collection_path)
                 failure_completed_collections = list(completed_paths)
-                known_items[entry.doi][key].collections.add(collection_path)
+                for item_id in entry.match_item_ids:
+                    known_items[item_id][key].collections.add(collection_path)
                 _update_checkpoint(
                     checkpoint,
                     checkpoint_path,
-                    doi=entry.doi,
+                    entry=entry,
                     status="routing-new",
                     key=key,
                     completed_collections=completed_paths,
@@ -1110,14 +1335,17 @@ def import_rss_zotero_items(
             row: dict[str, Any] = {
                 "index": index,
                 "action": "created_new",
+                "item_id": entry.item_id,
                 "doi": entry.doi,
+                "url": entry.url,
                 "key": key,
                 "title": entry.title,
+                "journal": entry.journal,
                 "target_collections": list(entry.target_collections),
                 "tracked_authors": entry.tracked_authors,
             }
-            if extra_fields:
-                row["resolved"] = _resolved_summary(extra_fields)
+            if resolved_fields:
+                row["resolved"] = _resolved_summary(resolved_fields)
             elif resolve_warning is not None:
                 row["resolve_warning"] = resolve_warning
             processed_results.append(row)
@@ -1125,7 +1353,7 @@ def import_rss_zotero_items(
             _update_checkpoint(
                 checkpoint,
                 checkpoint_path,
-                doi=entry.doi,
+                entry=entry,
                 status="created_new",
                 key=key,
                 completed_collections=completed_paths,
@@ -1134,7 +1362,9 @@ def import_rss_zotero_items(
         except ZoteroWriteError as exc:
             failure = {
                 "index": index,
+                "item_id": entry.item_id,
                 "doi": entry.doi,
+                "url": entry.url,
                 "title": entry.title,
                 "target_collections": entry.target_collections,
                 "tracked_authors": entry.tracked_authors,
@@ -1151,7 +1381,7 @@ def import_rss_zotero_items(
             _update_checkpoint(
                 checkpoint,
                 checkpoint_path,
-                doi=entry.doi,
+                entry=entry,
                 status="failed",
                 key=failure_key,
                 completed_collections=failure_completed_collections,
@@ -1161,7 +1391,9 @@ def import_rss_zotero_items(
         except Exception as exc:
             failure = {
                 "index": index,
+                "item_id": entry.item_id,
                 "doi": entry.doi,
+                "url": entry.url,
                 "title": entry.title,
                 "target_collections": entry.target_collections,
                 "tracked_authors": entry.tracked_authors,
@@ -1179,7 +1411,7 @@ def import_rss_zotero_items(
             _update_checkpoint(
                 checkpoint,
                 checkpoint_path,
-                doi=entry.doi,
+                entry=entry,
                 status="failed",
                 key=failure_key,
                 completed_collections=failure_completed_collections,
@@ -1208,7 +1440,7 @@ def import_rss_zotero_items(
 def parse_args() -> argparse.Namespace:
     repo_root = Path(__file__).resolve().parents[2]
     parser = argparse.ArgumentParser(
-        description="Build RSS DOI import lists and import matching Zotero items."
+        description="Build RSS import lists and import matching Zotero journalArticle items."
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -1220,7 +1452,7 @@ def parse_args() -> argparse.Namespace:
     build_parser.add_argument(
         "--output-dir",
         type=Path,
-        default=repo_root / "log" / "rss_doi_import_list",
+        default=repo_root / "log" / "rss_item_import_list",
         help="Directory for generated import list files.",
     )
     build_parser.add_argument(
@@ -1229,10 +1461,15 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional existing summarize-all JSON export. If omitted, the script runs 'uv run zot --json --detail full summarize-all'.",
     )
+    build_parser.add_argument(
+        "--skip-library-export",
+        action="store_true",
+        help="Do not read a local Zotero export while building the list. Use this in GitHub Actions or other Web-API-only runs.",
+    )
 
     import_parser = subparsers.add_parser(
         "import-list",
-        help="Import DOI entries from import_list.json into Zotero.",
+        help="Import RSS journalArticle entries from import_list.json into Zotero.",
     )
     import_parser.add_argument(
         "--import-list",
@@ -1243,16 +1480,21 @@ def parse_args() -> argparse.Namespace:
     import_parser.add_argument(
         "--output-dir",
         type=Path,
-        default=repo_root / "log" / "rss_doi_import",
+        default=repo_root / "log" / "rss_item_import",
         help="Directory for import preview/results.",
     )
     import_parser.add_argument("--profile", default=None, help="Optional zot profile name.")
     import_parser.add_argument("--library", default="user", help="Library: 'user' or 'group:<id>'.")
-    import_parser.add_argument("--limit", type=int, default=None, help="Optionally limit the number of DOI entries.")
+    import_parser.add_argument("--limit", type=int, default=None, help="Optionally limit the number of RSS item entries.")
     import_parser.add_argument(
         "--recent-cutoff-utc",
         default=None,
         help="Optional ISO timestamp in UTC for recent top-item orphan scan, e.g. 2026-05-25T09:00:00Z.",
+    )
+    import_parser.add_argument(
+        "--skip-local-db",
+        action="store_true",
+        help="Skip local Zotero SQLite diagnostics. Use this in GitHub Actions or other Web-API-only runs.",
     )
     import_parser.add_argument("--apply", action="store_true", help="Actually import and route items. Default is dry-run only.")
     return parser.parse_args()
@@ -1267,6 +1509,7 @@ def main() -> int:
             output_dir=args.output_dir.resolve(),
             repo_root=repo_root,
             zotero_export_json=(args.zotero_export_json.resolve() if args.zotero_export_json else None),
+            skip_library_export=args.skip_library_export,
         )
     elif args.command == "import-list":
         summary = import_rss_zotero_items(
@@ -1277,6 +1520,7 @@ def main() -> int:
             limit=args.limit,
             apply=args.apply,
             recent_cutoff_utc=args.recent_cutoff_utc,
+            skip_local_db=args.skip_local_db,
         )
     else:
         raise ValueError(f"Unsupported command: {args.command}")
