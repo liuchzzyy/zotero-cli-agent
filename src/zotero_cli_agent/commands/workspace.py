@@ -1173,7 +1173,7 @@ def workspace_embed(
     default="any",
     help="Restrict PDF results to main paper or supplementary PDF chunks",
 )
-@click.option("--rerank", is_flag=True, help="Rerank fused retrieval candidates with the configured local reranker.")
+@click.option("--rerank", is_flag=True, help="Rerank fused retrieval candidates with the configured reranker.")
 @click.option(
     "--rerank-top-n",
     type=click.IntRange(min=1),

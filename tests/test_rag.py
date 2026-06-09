@@ -260,8 +260,26 @@ class TestEmbedding:
             assert result[0] == [0.1, 0.2, 0.3]
             call_args = mock_urlopen.call_args[0][0]
             body = json.loads(call_args.data)
+            assert call_args.full_url == "http://test/v1/embeddings"
             assert body["model"] == "model"
             assert body["input"] == ["hello world"]
+
+    def test_embed_texts_gitee_api_call(self):
+        cfg = EmbeddingConfig(url="https://ai.gitee.com/v1", api_key="key", model="bge-m3", provider="gitee")
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps({"data": [{"embedding": [0.1, 0.2, 0.3]}]}).encode()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        with patch("urllib.request.urlopen", return_value=mock_response) as mock_urlopen:
+            result = embed_texts(["hello world"], cfg)
+
+        assert result == [[0.1, 0.2, 0.3]]
+        call_args = mock_urlopen.call_args[0][0]
+        body = json.loads(call_args.data)
+        assert call_args.full_url == "https://ai.gitee.com/v1/embeddings"
+        assert body["model"] == "bge-m3"
+        assert body["input"] == ["hello world"]
 
     def test_sentence_transformers_provider_uses_query_prompt(self):
         class FakeEmbeddings:

@@ -5,6 +5,7 @@ from collections.abc import Callable
 
 from zotero_cli_agent.config import RerankConfig
 from zotero_cli_agent.core.providers.bge_reranker import BgeRerankerProvider
+from zotero_cli_agent.core.providers.gitee_reranker import GiteeRerankerProvider
 
 RankedChunk = tuple[int, float, dict]
 
@@ -19,16 +20,25 @@ def rerank_chunks(
 ) -> list[RankedChunk] | None:
     if not candidates or not config.is_configured or top_n <= 0:
         return None
-    if config.provider != "bge_reranker":
-        raise RuntimeError(f"Unsupported reranker provider: {config.provider}")
 
     selected = candidates[:top_n]
-    provider = BgeRerankerProvider(
-        model=config.model,
-        hf_token=config.hf_token,
-        batch_size=config.batch_size,
-        max_length=config.max_length,
-    )
+    if config.provider == "bge_reranker":
+        provider: BgeRerankerProvider | GiteeRerankerProvider = BgeRerankerProvider(
+            model=config.model,
+            hf_token=config.hf_token,
+            batch_size=config.batch_size,
+            max_length=config.max_length,
+        )
+    elif config.provider == "gitee":
+        provider = GiteeRerankerProvider(
+            api_key=config.api_key,
+            url=config.url,
+            model=config.model,
+            batch_size=config.batch_size,
+        )
+    else:
+        raise RuntimeError(f"Unsupported reranker provider: {config.provider}")
+
     try:
         scores = provider.score(query, [str(chunk["content"]) for _cid, _score, chunk in selected], progress_callback)
     except Exception as e:

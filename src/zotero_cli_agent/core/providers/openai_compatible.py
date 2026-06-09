@@ -9,24 +9,27 @@ from collections.abc import Callable
 from zotero_cli_agent.core.embedding_provider import EmbeddingProvider
 
 
-class AliyunProvider(EmbeddingProvider):
+class OpenAICompatibleEmbeddingProvider(EmbeddingProvider):
     def __init__(
         self,
+        *,
         api_key: str,
-        model: str = "text-embedding-v3",
-        base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        model: str,
+        base_url: str,
+        name: str = "openai_compatible",
         batch_size: int = 10,
         max_retries: int = 3,
-    ):
+    ) -> None:
         self.api_key = api_key
         self.model = model
-        self.base_url = base_url
+        self.base_url = base_url.rstrip("/")
+        self._name = name
         self.batch_size = batch_size
         self.max_retries = max_retries
 
     @property
     def name(self) -> str:
-        return "aliyun"
+        return self._name
 
     def embed(
         self,
@@ -62,18 +65,19 @@ class AliyunProvider(EmbeddingProvider):
                     data = json_mod.loads(resp.read())
                 embeddings_data = data.get("data") or []
                 return [item["embedding"] for item in embeddings_data]
-            except urllib.error.HTTPError as e:
-                last_error = e
-                if e.code == 413:
+            except urllib.error.HTTPError as exc:
+                body_text = exc.read().decode("utf-8", "replace")
+                last_error = RuntimeError(f"HTTP {exc.code}: {body_text}")
+                if exc.code == 413:
                     return self._fallback_to_individual(batch)
                 time.sleep(2**attempt)
-            except urllib.error.URLError as e:
-                last_error = e
+            except urllib.error.URLError as exc:
+                last_error = exc
                 time.sleep(2**attempt)
 
         if last_error:
             raise RuntimeError(
-                f"Aliyun embedding failed after {self.max_retries} retries: {last_error}"
+                f"{self.name} embedding failed after {self.max_retries} retries: {last_error}"
             ) from last_error
         return []
 

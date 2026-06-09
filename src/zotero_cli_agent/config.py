@@ -106,6 +106,7 @@ class AppConfig:
 
 @dataclass
 class EmbeddingConfig:
+    active: str = ""
     url: str = "https://api.jina.ai/v1/embeddings"
     api_key: str = ""
     model: str = "jina-embeddings-v3"
@@ -123,7 +124,10 @@ class EmbeddingConfig:
 
 @dataclass
 class RerankConfig:
+    active: str = ""
     provider: str = ""
+    url: str = ""
+    api_key: str = ""
     model: str = "BAAI/bge-reranker-v2-m3"
     hf_token: str = ""
     batch_size: int = 4
@@ -131,6 +135,8 @@ class RerankConfig:
 
     @property
     def is_configured(self) -> bool:
+        if self.provider == "gitee":
+            return bool(self.url and self.api_key and self.model)
         return bool(self.provider and self.model)
 
 
@@ -199,8 +205,12 @@ def load_embedding_config(path: Path | None = None, *, apply_env_overrides: bool
     defaults = EmbeddingConfig()
     data = _load_toml_data(path)
     if data:
-        emb = data.get("embedding", {})
+        emb = _select_provider_config(
+            data.get("embedding", {}),
+            env_active="ZOT_EMBEDDING_ACTIVE" if apply_env_overrides else "",
+        )
         defaults = EmbeddingConfig(
+            active=emb.get("active", defaults.active),
             url=emb.get("url", defaults.url),
             api_key=emb.get("api_key", defaults.api_key),
             model=emb.get("model", defaults.model),
@@ -210,6 +220,7 @@ def load_embedding_config(path: Path | None = None, *, apply_env_overrides: bool
             batch_size=int(emb.get("batch_size", defaults.batch_size)),
         )
     if apply_env_overrides:
+        defaults.active = os.environ.get("ZOT_EMBEDDING_ACTIVE", defaults.active)
         defaults.url = os.environ.get("ZOT_EMBEDDING_URL", defaults.url)
         defaults.api_key = os.environ.get("ZOT_EMBEDDING_KEY", defaults.api_key)
         defaults.model = os.environ.get("ZOT_EMBEDDING_MODEL", defaults.model)
@@ -224,22 +235,59 @@ def load_rerank_config(path: Path | None = None, *, apply_env_overrides: bool = 
     defaults = RerankConfig()
     data = _load_toml_data(path)
     if data:
-        emb = data.get("embedding", {})
-        rerank = data.get("rerank", {})
+        emb = _select_provider_config(
+            data.get("embedding", {}),
+            env_active="ZOT_EMBEDDING_ACTIVE" if apply_env_overrides else "",
+        )
+        rerank = _select_provider_config(
+            data.get("rerank", {}),
+            env_active="ZOT_RERANK_ACTIVE" if apply_env_overrides else "",
+        )
         defaults = RerankConfig(
+            active=rerank.get("active", defaults.active),
             provider=rerank.get("provider", defaults.provider),
+            url=rerank.get("url", defaults.url),
+            api_key=rerank.get("api_key", defaults.api_key),
             model=rerank.get("model", defaults.model),
             hf_token=rerank.get("hf_token", emb.get("hf_token", defaults.hf_token)),
             batch_size=int(rerank.get("batch_size", defaults.batch_size)),
             max_length=int(rerank.get("max_length", defaults.max_length)),
         )
     if apply_env_overrides:
+        defaults.active = os.environ.get("ZOT_RERANK_ACTIVE", defaults.active)
         defaults.provider = os.environ.get("ZOT_RERANK_PROVIDER", defaults.provider)
+        defaults.url = os.environ.get("ZOT_RERANK_URL", defaults.url)
+        defaults.api_key = os.environ.get("ZOT_RERANK_KEY", defaults.api_key)
         defaults.model = os.environ.get("ZOT_RERANK_MODEL", defaults.model)
         defaults.hf_token = os.environ.get("ZOT_RERANK_HF_TOKEN", defaults.hf_token)
         defaults.batch_size = int(os.environ.get("ZOT_RERANK_BATCH_SIZE", defaults.batch_size))
         defaults.max_length = int(os.environ.get("ZOT_RERANK_MAX_LENGTH", defaults.max_length))
     return defaults
+
+
+def _select_provider_config(section: Any, *, env_active: str = "") -> dict[str, Any]:
+    if not isinstance(section, dict):
+        return {}
+
+    active = os.environ.get(env_active, "") if env_active else ""
+    active = active or str(section.get("active", "")).strip()
+    if not active:
+        return {key: value for key, value in section.items() if not isinstance(value, dict)}
+
+    selected: dict[str, Any] = {}
+    current: Any = section
+    for part in active.split("."):
+        if not isinstance(current, dict):
+            return selected
+        selected.update(
+            {key: value for key, value in current.items() if key != "active" and not isinstance(value, dict)}
+        )
+        current = current.get(part, {})
+
+    if isinstance(current, dict):
+        selected.update({key: value for key, value in current.items() if not isinstance(value, dict)})
+    selected["active"] = active
+    return selected
 
 
 def load_pdf_config(path: Path | None = None) -> PdfConfig:

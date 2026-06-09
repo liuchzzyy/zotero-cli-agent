@@ -4,8 +4,8 @@ from collections.abc import Callable
 
 from zotero_cli_agent.config import EmbeddingConfig
 from zotero_cli_agent.core.embedding_provider import EmbeddingProvider
-from zotero_cli_agent.core.providers.aliyun import AliyunProvider
 from zotero_cli_agent.core.providers.jina import JinaProvider
+from zotero_cli_agent.core.providers.openai_compatible import OpenAICompatibleEmbeddingProvider
 
 
 class EmbeddingRouter:
@@ -27,14 +27,18 @@ class EmbeddingRouter:
                 model=model,
                 url=jina_url,
             )
-        elif self.config.provider == "aliyun":
+        elif self.config.provider in {"aliyun", "gitee"}:
             if not api_key:
                 return
-            aliyun_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-            self.providers["aliyun"] = AliyunProvider(
+            api_url = _normalize_embeddings_base_url(
+                self.config.url or _default_openai_compatible_base_url(self.config.provider)
+            )
+            self.providers[self.config.provider] = OpenAICompatibleEmbeddingProvider(
                 api_key=api_key,
                 model=model,
-                base_url=aliyun_url,
+                base_url=api_url,
+                name=self.config.provider,
+                batch_size=self.config.batch_size,
             )
         elif self.config.provider == "sentence_transformers":
             from zotero_cli_agent.core.providers.sentence_transformers import SentenceTransformersProvider
@@ -63,8 +67,22 @@ class EmbeddingRouter:
         raise RuntimeError("No embedding provider configured")
 
     def _find_provider(self) -> EmbeddingProvider | None:
-        priority = ["sentence_transformers", "aliyun", "jina"]
+        priority = ["sentence_transformers", "gitee", "aliyun", "jina"]
         for name in priority:
             if name in self.providers:
                 return self.providers[name]
         return None
+
+
+def _normalize_embeddings_base_url(url: str) -> str:
+    """Return the OpenAI-compatible base URL without the /embeddings suffix."""
+    normalized = url.rstrip("/")
+    if normalized.endswith("/embeddings"):
+        return normalized[: -len("/embeddings")]
+    return normalized
+
+
+def _default_openai_compatible_base_url(provider: str) -> str:
+    if provider == "gitee":
+        return "https://ai.gitee.com/v1"
+    return "https://dashscope.aliyuncs.com/compatible-mode/v1"

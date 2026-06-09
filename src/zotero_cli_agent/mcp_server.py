@@ -918,7 +918,7 @@ def _handle_workspace_index(name: str, force: bool = False, library: str = "user
         idx.set_meta("indexed_at", datetime.now(timezone.utc).isoformat())
 
         mode_label = "bm25"
-        emb_cfg = load_embedding_config()
+        emb_cfg = load_embedding_config(apply_env_overrides=True)
         if emb_cfg.is_configured and all_chunk_texts:
             try:
                 vectors = embed_texts(all_chunk_texts, emb_cfg)
@@ -978,7 +978,7 @@ def _handle_workspace_query(
             bm25_results = bm25_score_chunks(idx, question)
 
         if effective_mode in ("semantic", "hybrid") and has_embeddings:
-            emb_cfg = load_embedding_config()
+            emb_cfg = load_embedding_config(apply_env_overrides=True)
             if emb_cfg.is_configured:
                 try:
                     q_vecs = embed_texts([question], emb_cfg, input_type="query")
@@ -996,7 +996,7 @@ def _handle_workspace_query(
 
         filtered = filter_ranked_results_by_pdf_kind(merged, pdf_kind)
         if rerank and filtered:
-            rerank_cfg = load_rerank_config()
+            rerank_cfg = load_rerank_config(apply_env_overrides=True)
             if not rerank_cfg.is_configured:
                 return {"error": "Reranker provider is not configured."}
             reranked = rerank_chunks(question, filtered, rerank_cfg, top_n=rerank_top_n)

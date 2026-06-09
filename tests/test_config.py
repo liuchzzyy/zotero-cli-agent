@@ -206,6 +206,68 @@ batch_size = 2
     assert cfg.batch_size == 2
 
 
+def test_load_embedding_config_from_active_profile(tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text("""
+[embedding]
+active = "api.gitee"
+
+[embedding.local.cpu]
+provider = "sentence_transformers"
+url = ""
+model = "BAAI/bge-m3"
+device = "cpu"
+batch_size = 4
+
+[embedding.api.gitee]
+provider = "gitee"
+url = "https://ai.gitee.com/v1"
+api_key = "gitee-key"
+model = "bge-m3"
+batch_size = 10
+""")
+    from zotero_cli_agent.config import load_embedding_config
+
+    cfg = load_embedding_config(path=config_file)
+    assert cfg.active == "api.gitee"
+    assert cfg.provider == "gitee"
+    assert cfg.url == "https://ai.gitee.com/v1"
+    assert cfg.api_key == "gitee-key"
+    assert cfg.model == "bge-m3"
+    assert cfg.batch_size == 10
+
+
+def test_load_embedding_config_active_env_selects_local_gpu(tmp_path, monkeypatch):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text("""
+[embedding]
+active = "api.gitee"
+
+[embedding.api.gitee]
+provider = "gitee"
+url = "https://ai.gitee.com/v1"
+api_key = "gitee-key"
+model = "bge-m3"
+
+[embedding.local.gpu]
+provider = "sentence_transformers"
+url = ""
+model = "BAAI/bge-m3"
+device = "cuda"
+batch_size = 1
+""")
+    monkeypatch.setenv("ZOT_EMBEDDING_ACTIVE", "local.gpu")
+    from zotero_cli_agent.config import load_embedding_config
+
+    cfg = load_embedding_config(path=config_file, apply_env_overrides=True)
+    assert cfg.active == "local.gpu"
+    assert cfg.provider == "sentence_transformers"
+    assert cfg.url == ""
+    assert cfg.model == "BAAI/bge-m3"
+    assert cfg.device == "cuda"
+    assert cfg.batch_size == 1
+
+
 def test_load_embedding_config_defaults(tmp_path):
     config_file = tmp_path / "config.toml"
     config_file.write_text("[zotero]\ndata_dir = '/tmp'\n")
@@ -258,6 +320,8 @@ hf_token = "hf-from-embedding"
 
 [rerank]
 provider = "bge_reranker"
+url = "https://example.invalid/rerank"
+api_key = "rerank-key"
 model = "BAAI/bge-reranker-v2-m3"
 batch_size = 2
 max_length = 384
@@ -266,6 +330,8 @@ max_length = 384
 
     cfg = load_rerank_config(path=config_file)
     assert cfg.provider == "bge_reranker"
+    assert cfg.url == "https://example.invalid/rerank"
+    assert cfg.api_key == "rerank-key"
     assert cfg.model == "BAAI/bge-reranker-v2-m3"
     assert cfg.hf_token == "hf-from-embedding"
     assert cfg.batch_size == 2
@@ -273,10 +339,70 @@ max_length = 384
     assert cfg.is_configured is True
 
 
+def test_load_rerank_config_from_active_profile(tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text("""
+[rerank]
+active = "api.gitee"
+
+[rerank.local.bge]
+provider = "bge_reranker"
+model = "BAAI/bge-reranker-v2-m3"
+batch_size = 4
+max_length = 512
+
+[rerank.api.gitee]
+provider = "gitee"
+url = "https://ai.gitee.com/v1/rerank"
+api_key = "gitee-key"
+model = "bge-reranker-v2-m3"
+batch_size = 16
+""")
+    from zotero_cli_agent.config import load_rerank_config
+
+    cfg = load_rerank_config(path=config_file)
+    assert cfg.active == "api.gitee"
+    assert cfg.provider == "gitee"
+    assert cfg.url == "https://ai.gitee.com/v1/rerank"
+    assert cfg.api_key == "gitee-key"
+    assert cfg.model == "bge-reranker-v2-m3"
+    assert cfg.batch_size == 16
+    assert cfg.is_configured is True
+
+
+def test_load_rerank_config_active_env_selects_local(tmp_path, monkeypatch):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text("""
+[rerank]
+active = "api.gitee"
+
+[rerank.api.gitee]
+provider = "gitee"
+url = "https://ai.gitee.com/v1/rerank"
+api_key = "gitee-key"
+model = "bge-reranker-v2-m3"
+
+[rerank.local.bge]
+provider = "bge_reranker"
+model = "BAAI/bge-reranker-v2-m3"
+batch_size = 4
+""")
+    monkeypatch.setenv("ZOT_RERANK_ACTIVE", "local.bge")
+    from zotero_cli_agent.config import load_rerank_config
+
+    cfg = load_rerank_config(path=config_file, apply_env_overrides=True)
+    assert cfg.active == "local.bge"
+    assert cfg.provider == "bge_reranker"
+    assert cfg.model == "BAAI/bge-reranker-v2-m3"
+    assert cfg.batch_size == 4
+
+
 def test_load_rerank_config_env_override(tmp_path, monkeypatch):
     config_file = tmp_path / "config.toml"
     config_file.write_text("[rerank]\nprovider = ''\n")
     monkeypatch.setenv("ZOT_RERANK_PROVIDER", "bge_reranker")
+    monkeypatch.setenv("ZOT_RERANK_URL", "https://example.invalid/rerank")
+    monkeypatch.setenv("ZOT_RERANK_KEY", "rerank-key")
     monkeypatch.setenv("ZOT_RERANK_MODEL", "custom-reranker")
     monkeypatch.setenv("ZOT_RERANK_HF_TOKEN", "hf-rerank")
     monkeypatch.setenv("ZOT_RERANK_BATCH_SIZE", "3")
@@ -285,6 +411,8 @@ def test_load_rerank_config_env_override(tmp_path, monkeypatch):
 
     cfg = load_rerank_config(path=config_file, apply_env_overrides=True)
     assert cfg.provider == "bge_reranker"
+    assert cfg.url == "https://example.invalid/rerank"
+    assert cfg.api_key == "rerank-key"
     assert cfg.model == "custom-reranker"
     assert cfg.hf_token == "hf-rerank"
     assert cfg.batch_size == 3
