@@ -4,7 +4,7 @@ param(
     [string]$Extractor = "mineru",
     [int]$ScanLimit = 100000,
     [int]$ProgressEvery = 100,
-    [int]$EmbedBatchSize = 1,
+    [int]$EmbedBatchSize = 100,
     [int]$EmbedLimit = 0,
     [int]$EmbedMaxRetries = 8,
     [double]$EmbedRetrySleep = 10.0,
