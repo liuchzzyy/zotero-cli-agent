@@ -354,9 +354,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-citation-key-updat
 - 条目范围：本地 Zotero SQLite 中 `00_PROJECT_INBOX` 与 `00_TOPIC_INBOX` 两个集合的并集，再筛选“至少有一个本地存在 PDF 附件”的父条目。
 - 索引方式：phase-by-phase。先维护 .workspace\full-library-rag\workspace.toml；再调用 uv run zot workspace index full-library-rag --extractor mineru --progress-lines --item-progress --no-embed，让所有待处理条目先完成 PDF 抽取、chunk、BM25；最后统一调用 uv run zot workspace embed full-library-rag --progress-lines 回填 chunks.embedding IS NULL。
 - 增量规则：workspace 只新增缺失 key；RAG index 只索引尚未进入 rag.idx.sqlite 的 item key；embedding 只回填 chunks.embedding IS NULL 的 chunk；PDF 文本抽取复用 .zot\state\pdf_cache.sqlite。
-- index 阶段按 Zotero 父条目逐个处理、逐个 commit，但只写 BM25，不生成 embedding；中断后重跑会跳过已进入 rag.idx.sqlite 的 item key，继续剩余条目。embed 阶段默认按 1 个 chunk 一个提交批次回填，并在 provider 请求开始、等待、内部进度和 batch 完成时输出进度行；中断、provider 断连或手动停止后重跑会跳过已有 embedding 的 chunk。
-- 本地 sentence-transformers 默认使用 CPU：安装 `uv sync --dev --extra mcp --extra local-embeddings-cpu`，并在 `.zot/config.toml` 的 `[embedding]` 里设置 `device = "cpu"`。GPU 运行使用 `uv sync --dev --extra mcp --extra local-embeddings-gpu`，并设置 `device = "cuda"`，也可以在 wrapper 中用 `-EmbeddingDevice cuda` 临时覆盖。同一个 `.venv` 不能同时安装 CPU 和 CUDA 两份 torch wheel；CUDA wheel 仍可通过 `device = "cpu"` 或 `-EmbeddingDevice cpu` 走 CPU fallback，不要为此创建 `.venv-gpu`。
-- 本机 GPU 路径已验证为：NVIDIA GeForce GTX 960M + NVIDIA driver 522.25 + torch 2.7.1+cu118 + CUDA runtime 11.8。GTX 960M 只有 4GB 显存，`BAAI/bge-m3` 全量 GPU 回填风险高；wrapper 会在 CUDA embedding 前运行 `nvidia-smi` 和 PyTorch CUDA 预检，并默认阻止低于 6144 MiB 的 GPU 进入全量回填。需要低显存 GPU smoke test 时必须显式加 `-AllowLowVramGpu -EmbedBatchSize 1 -EmbedLimit N`；完整回填优先用 `-EmbeddingDevice cpu`。
+- index 阶段按 Zotero 父条目逐个处理、逐个 commit，但只写 BM25，不生成 embedding；中断后重跑会跳过已进入 rag.idx.sqlite 的 item key，继续剩余条目。embed 阶段默认按 10 个 chunk 一个提交批次回填，并在 provider 请求开始、等待、内部进度和 batch 完成时输出进度行；中断、provider 断连或手动停止后重跑会跳过已有 embedding 的 chunk。
+- API embedding provider 使用 `-EmbeddingDevice api` 或省略 `-EmbeddingDevice`；日志应显示 `embedding runtime: api`，不应显示 CPU/GPU device。`-EmbeddingDevice none` 只作为“不传本地 device”的兼容别名。
+- 本地 sentence-transformers 默认使用 CPU：安装 `uv sync --dev --extra mcp --extra local-embeddings-cpu`，并在 `.zot/config.toml` 的 `[embedding]` 里设置 `device = "cpu"`。GPU 运行使用 `uv sync --dev --extra mcp --extra local-embeddings-gpu`，并设置 `device = "cuda"`，也可以在 wrapper 中用 `-EmbeddingDevice cuda` 或 `-EmbeddingDevice gpu` 临时覆盖。同一个 `.venv` 不能同时安装 CPU 和 CUDA 两份 torch wheel；CUDA wheel 仍可通过 `device = "cpu"` 或 `-EmbeddingDevice cpu` 走 CPU fallback，不要为此创建 `.venv-gpu`。
+- 本机 GPU 路径已验证为：NVIDIA GeForce GTX 960M + NVIDIA driver 522.25 + torch 2.7.1+cu118 + CUDA runtime 11.8。GTX 960M 只有 4GB 显存，`BAAI/bge-m3` 全量本地 GPU 回填风险高；wrapper 会在 CUDA embedding 前运行 `nvidia-smi` 和 PyTorch CUDA 预检，并默认阻止低于 6144 MiB 的 GPU 进入全量回填。需要低显存 GPU smoke test 时必须显式加 `-AllowLowVramGpu -EmbedBatchSize 1 -EmbedLimit N`；本地完整回填优先用 `-EmbeddingDevice cpu`。
 
 集合参数：
 - wrapper 支持 `-Collections`，值为逗号分隔的 collection 名称或 key；inventory 阶段会对这些集合取并集并去重，再筛选“至少有一个本地存在 PDF 附件”的父条目。
@@ -369,18 +370,18 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -Dr
 默认会打开新 PowerShell 7/pwsh 窗口；调试时才追加 `-RunInCurrentWindow`。
 
 正式增量运行。成功后自动删除本次 log\rag-full-library-YYYYMMDD-HHMMSS 运行目录；持久 workspace/index 仍保留在 .workspace\full-library-rag：
-pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -EmbeddingDevice cpu
+pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -EmbeddingDevice api
 正式运行顺序是 inventory -> 全部待处理条目 item index/BM25 -> 全部缺失 chunks embedding 回填。不要手动单独启动后台 backfill，除非 wrapper 无法满足排查需求。
 
-只回填旧索引 embedding，不重跑 PDF 提取或 index。适用于 rag.idx.sqlite 已有 chunks 但 chunks.embedding 为空或部分为空的情况；4GB GPU 上优先走 CPU：
-pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -EmbedOnly -EmbeddingDevice cpu -KeepLog
+只回填旧索引 embedding，不重跑 PDF 提取或 index。适用于 rag.idx.sqlite 已有 chunks 但 chunks.embedding 为空或部分为空的情况；API provider 用 api，本地 4GB GPU 上优先走 CPU：
+pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -EmbedOnly -EmbeddingDevice api -KeepLog
 
 只小批量测试 GPU embedding，不重跑 PDF 提取或 index：
 uv run python -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else None)"
 pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -EmbedOnly -EmbedLimit 1 -EmbedBatchSize 1 -EmbeddingDevice cuda -AllowLowVramGpu -KeepLog
 
 00_PROJECT_INBOX + 00_TOPIC_INBOX 默认正式运行。长任务建议加 -KeepLog，方便完成后复核 index.log：
-pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -EmbeddingDevice cpu -KeepLog
+pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -EmbeddingDevice api -KeepLog
 
 边界：
 - 默认不排除 book/bookSection，因为 RAG 的目标是“集合内含 PDF 条目”，不是 AI note 论文分析。
@@ -395,7 +396,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -Em
 - inventory 阶段会显示 scanned/local_pdf_items/pdf_but_missing。
 - inventory 阶段还会显示 indexed_chunk_count、chunks_with_embeddings、chunks_missing_embeddings；如果 chunks_missing_embeddings > 0 且没有 -NoEmbed/-ForceRebuild，wrapper 只记录缺口，等 item index 完成后统一运行 logs\embed.log 中的 embedding backfill。
 - index 阶段默认使用 `--progress-lines --item-progress --no-embed`，按条目输出 `[item:start]`、`[item:N:extract:cache]`、`[item:N:extract:upload]`、`[item:N:extract:process]`、`[item:N:extract:download]`、`[item:pdf-error]`、`[item:done]` 等逐行进度。
-- embed 阶段默认使用 `--progress-lines`，按批输出 `[embed:start]`、等待 provider 时按 `-EmbedHeartbeatSeconds` 输出 `[embed:wait]`、provider 内部分批完成时输出 `[embed:provider]`、batch 完成时输出 `[embed:done]`，commit 后输出 `[embed] attempted=... stored=... skipped=... last_id=... rate=... eta=...`；provider 断连时会按参数重试并继续可恢复提交。wrapper 默认 `-EmbedBatchSize 1`，这是“每次 provider 调用和提交的 chunk 数”；sentence-transformers 内部批量仍由 `.zot/config.toml` 的 `[embedding].batch_size` 或 `ZOT_EMBEDDING_BATCH_SIZE` 控制。
+- embed 阶段默认使用 `--progress-lines`，按批输出 `[embed:start]`、等待 provider 时按 `-EmbedHeartbeatSeconds` 输出 `[embed:wait]`、provider 内部分批完成时输出 `[embed:provider]`、batch 完成时输出 `[embed:done]`，commit 后输出 `[embed] attempted=... stored=... skipped=... last_id=... rate=... eta=...`；provider 断连时会按参数重试并继续可恢复提交。wrapper 默认 `-EmbedBatchSize 10`，这是“每次 provider 调用和提交的 chunk 数”；wrapper 会用该值临时覆盖 provider 内部 `ZOT_EMBEDDING_BATCH_SIZE`，因此给了就覆盖，没给就默认 10。
 - `[item:done]` 表示该 item 已写入并 commit 到 rag.idx.sqlite；中断重跑时这类 key 会被跳过。
 - 所有运行日志写入 log\rag-full-library-YYYYMMDD-HHMMSS\logs\inventory.log、log\rag-full-library-YYYYMMDD-HHMMSS\logs\index.log 和 log\rag-full-library-YYYYMMDD-HHMMSS\logs\embed.log。
 - 可用 rag.idx.sqlite 中的 distinct item_key 数、chunks 数、embedding IS NOT NULL/IS NULL 数复核实际进展；不要直接修改该 SQLite。
@@ -420,9 +421,9 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-evidence-search.ps1 
 
 常用命令：
 pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -DryRun -ScanLimit 500 -KeepLog
-pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -EmbeddingDevice cpu
+pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -EmbeddingDevice api
 pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -DryRun -KeepLog
-pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -EmbeddingDevice cpu -KeepLog
+pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -EmbeddingDevice api -KeepLog
 pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -EmbedOnly -KeepLog
 pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -EmbedOnly -EmbedLimit 1 -EmbedBatchSize 1 -EmbeddingDevice cuda -AllowLowVramGpu -KeepLog
 pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -NoIndex

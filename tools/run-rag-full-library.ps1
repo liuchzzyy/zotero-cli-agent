@@ -4,7 +4,7 @@ param(
     [string]$Extractor = "mineru",
     [int]$ScanLimit = 100000,
     [int]$ProgressEvery = 100,
-    [int]$EmbedBatchSize = 100,
+    [int]$EmbedBatchSize = 10,
     [int]$EmbedLimit = 0,
     [int]$EmbedMaxRetries = 8,
     [double]$EmbedRetrySleep = 10.0,
@@ -289,6 +289,18 @@ function Get-EffectiveEmbeddingSetting {
         return $env:ZOT_EMBEDDING_PROVIDER
     }
 
+    Push-Location $RepoRoot
+    try {
+        $pythonCode = "from zotero_cli_agent.config import load_embedding_config; cfg = load_embedding_config(apply_env_overrides=True); print(getattr(cfg, '$Name', '') or '')"
+        $pythonValue = & uv run python -c $pythonCode 2>$null
+        if (($LASTEXITCODE -eq 0) -and $pythonValue) {
+            return ([string]$pythonValue).Trim()
+        }
+    }
+    finally {
+        Pop-Location
+    }
+
     $configPath = Join-Path $RepoRoot ".zot\config.toml"
     return Get-TomlSectionValue -Path $configPath -Section "embedding" -Name $Name
 }
@@ -388,9 +400,33 @@ function Invoke-RagEmbeddingBackfill {
         [switch]$SkipGpuPreflight
     )
 
-    $effectiveDevice = Get-EffectiveEmbeddingSetting -RepoRoot $RepoRoot -OverrideDevice $Device -Name "device"
-    $effectiveModel = Get-EffectiveEmbeddingSetting -RepoRoot $RepoRoot -OverrideDevice "" -Name "model"
     $effectiveProvider = Get-EffectiveEmbeddingSetting -RepoRoot $RepoRoot -OverrideDevice "" -Name "provider"
+    $effectiveModel = Get-EffectiveEmbeddingSetting -RepoRoot $RepoRoot -OverrideDevice "" -Name "model"
+    $deviceRequest = $Device.Trim().ToLowerInvariant()
+    $isLocalEmbeddingProvider = (-not $effectiveProvider) -or ($effectiveProvider -eq "sentence_transformers")
+    $cliDevice = ""
+
+    if ($isLocalEmbeddingProvider) {
+        if ($deviceRequest -eq "api") {
+            throw "-EmbeddingDevice api is only valid for API embedding providers; active provider is sentence_transformers."
+        }
+        elseif ($deviceRequest -eq "none") {
+            $cliDevice = ""
+        }
+        elseif ($deviceRequest -eq "gpu") {
+            $cliDevice = "cuda"
+        }
+        elseif ($Device) {
+            $cliDevice = $Device
+        }
+    }
+    else {
+        if ($deviceRequest -and ($deviceRequest -notin @("api", "none"))) {
+            throw "-EmbeddingDevice $Device is only valid for local sentence-transformers embeddings; active provider is $effectiveProvider. Use -EmbeddingDevice api or omit -EmbeddingDevice for API embeddings."
+        }
+    }
+
+    $effectiveDevice = Get-EffectiveEmbeddingSetting -RepoRoot $RepoRoot -OverrideDevice $cliDevice -Name "device"
     Invoke-EmbeddingGpuPreflight `
         -RepoRoot $RepoRoot `
         -Device $effectiveDevice `
@@ -411,21 +447,40 @@ function Invoke-RagEmbeddingBackfill {
     if ($Limit -gt 0) {
         $embedCmd += @("--limit", "$Limit")
     }
-    if ($Device) {
-        $embedCmd += @("--device", $Device)
+    if ($cliDevice) {
+        $embedCmd += @("--device", $cliDevice)
     }
 
     Write-RunSection "Embedding Backfill"
     Write-RunSetting "progress log" $LogPath
-    if ($effectiveDevice) {
+    Write-RunSetting "embedding provider" $effectiveProvider
+    if ($isLocalEmbeddingProvider) {
+        Write-RunSetting "embedding runtime" "local"
         Write-RunSetting "effective device" $effectiveDevice
+        if ($Device) {
+            Write-RunSetting "device request" $Device
+        }
+        if ($cliDevice -and ($cliDevice -ne $Device)) {
+            Write-RunSetting "device override" $cliDevice
+        }
     }
-    if ($Device) {
-        Write-RunSetting "device override" $Device
+    else {
+        Write-RunSetting "embedding runtime" "api"
+        if ($Device) {
+            Write-RunSetting "device request" $Device
+        }
     }
     Write-RunSetting "embed batch size" $BatchSize
+    Write-RunSetting "provider batch size override" $BatchSize
     Write-RunSetting "heartbeat seconds" $HeartbeatSeconds
-    Invoke-LoggedCommand -RepoRoot $RepoRoot -LogPath $LogPath -Command $embedCmd
+    $previousProviderBatchSize = [Environment]::GetEnvironmentVariable("ZOT_EMBEDDING_BATCH_SIZE", "Process")
+    [Environment]::SetEnvironmentVariable("ZOT_EMBEDDING_BATCH_SIZE", "$BatchSize", "Process")
+    try {
+        Invoke-LoggedCommand -RepoRoot $RepoRoot -LogPath $LogPath -Command $embedCmd
+    }
+    finally {
+        [Environment]::SetEnvironmentVariable("ZOT_EMBEDDING_BATCH_SIZE", $previousProviderBatchSize, "Process")
+    }
 }
 
 function Write-InventoryScript([string]$ScriptPath) {
@@ -658,7 +713,7 @@ Write-RunSetting "embed_only" $EmbedOnly
 Write-RunSetting "force_rebuild" $ForceRebuild
 Write-RunSetting "keep_log" $KeepLog
 if ($EmbeddingDevice) {
-    Write-RunSetting "embedding_device" $EmbeddingDevice
+    Write-RunSetting "embedding_device_request" $EmbeddingDevice
 }
 Write-RunSetting "embed_batch_size" $EmbedBatchSize
 Write-RunSetting "embed_heartbeat_seconds" $EmbedHeartbeatSeconds

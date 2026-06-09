@@ -928,8 +928,30 @@ def workspace_embed(
         )
 
     emb_cfg = load_embedding_config(apply_env_overrides=True)
-    if device:
-        emb_cfg.device = device
+    device_request = device.strip().lower()
+    if emb_cfg.provider == "sentence_transformers":
+        if device_request == "api":
+            emit_error(
+                "validation_error",
+                "--device api is only valid for API embedding providers",
+                output_json=json_out,
+                hint="Use --device cpu/cuda/gpu for local sentence-transformers embeddings",
+                context="workspace embed",
+            )
+        elif device_request == "none":
+            pass
+        elif device_request == "gpu":
+            emb_cfg.device = "cuda"
+        elif device:
+            emb_cfg.device = device
+    elif device and device_request not in {"api", "none"}:
+        emit_error(
+            "validation_error",
+            f"--device {device} is only valid for local sentence-transformers embeddings",
+            output_json=json_out,
+            hint="Use --device api or omit --device for API embedding providers",
+            context="workspace embed",
+        )
     if not emb_cfg.is_configured:
         emit_error(
             "configuration_error",
@@ -954,10 +976,14 @@ def workspace_embed(
         after_id = 0
         expected_dim: int | None = None
 
+        runtime = "local" if emb_cfg.provider == "sentence_transformers" else "api"
+        runtime_details = f"runtime={runtime}"
+        if runtime == "local":
+            runtime_details += f" device={emb_cfg.device}"
         click.echo(
             f"Backfilling embeddings for '{name}': missing={missing} target={target} "
             f"provider={emb_cfg.provider} model={emb_cfg.model} "
-            f"device={emb_cfg.device} provider_batch_size={emb_cfg.batch_size}"
+            f"{runtime_details} provider_batch_size={emb_cfg.batch_size}"
         )
 
         def emit_progress_line(message: str, *, err: bool = False) -> None:
