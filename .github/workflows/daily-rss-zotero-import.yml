@@ -35,6 +35,8 @@ jobs:
       RSS_REPO_TOKEN: ${{ secrets.RSS_REPO_TOKEN }}
       REQUESTED_DATE: ${{ inputs.date }}
       KEEP_RUN_LOG: ${{ inputs.keep_run_log }}
+      ZOT_RSS_INBOX_COLLECTION: 00_INBOX/000_Inbox
+      ZOT_RSS_AUTHOR_ROOT_COLLECTION: 00_INBOX/001_Author
 
     steps:
       - name: Check out zotero-cli-agent
@@ -102,6 +104,8 @@ jobs:
               -RunInCurrentWindow `
               -Date $env:IMPORT_DATE `
               -SelectedJson $env:SELECTED_JSON `
+              -InboxCollection $env:ZOT_RSS_INBOX_COLLECTION `
+              -AuthorRootCollection $env:ZOT_RSS_AUTHOR_ROOT_COLLECTION `
               -ProgressIntervalSeconds 30 `
               -SkipLibraryExport `
               -SkipLocalDb `
@@ -112,6 +116,8 @@ jobs:
               -RunInCurrentWindow `
               -Date $env:IMPORT_DATE `
               -SelectedJson $env:SELECTED_JSON `
+              -InboxCollection $env:ZOT_RSS_INBOX_COLLECTION `
+              -AuthorRootCollection $env:ZOT_RSS_AUTHOR_ROOT_COLLECTION `
               -ProgressIntervalSeconds 30 `
               -SkipLibraryExport `
               -SkipLocalDb `

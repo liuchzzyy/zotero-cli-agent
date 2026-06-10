@@ -25,7 +25,7 @@ def test_import_records_unexpected_entry_exception(tmp_path, monkeypatch):
     import_list.write_text(
         json.dumps(
             {
-                "root_collection": "00_INBOX",
+                "root_collection": "00_INBOX/000_Inbox",
                 "entries": [
                     {
                         "item_id": "doi:10.1234/example",
@@ -33,7 +33,7 @@ def test_import_records_unexpected_entry_exception(tmp_path, monkeypatch):
                         "url": "https://example.org/paper",
                         "title": "Example paper",
                         "journal": "Example Journal",
-                        "target_collections": ["00_INBOX/00_UNSORTED"],
+                        "target_collections": ["00_INBOX/000_Inbox"],
                         "tracked_authors": [],
                     }
                 ],
@@ -123,17 +123,82 @@ def test_build_list_includes_url_only_journal_items(tmp_path):
     assert summary["unique_selected_items"] == 2
     assert summary["unique_items_without_doi"] == 1
     assert summary["new_items"] == 2
+    assert summary["root_only_new_items"] == 1
+    assert summary["author_routed_new_items"] == 1
+    assert summary["author_collection_count"] == 1
     assert "new_dois" not in summary
 
     import_list = json.loads((tmp_path / "out" / "import_list.json").read_text(encoding="utf-8"))
+    assert import_list["root_collection"] == "00_INBOX/000_Inbox"
+    assert import_list["author_collections"] == [
+        {
+            "author": "Jane Doe",
+            "collection_path": ["00_INBOX", "001_Author", "Jane Doe"],
+            "item_ids": ["doi:10.1234/example"],
+        }
+    ]
     url_only = next(row for row in import_list["entries"] if row["doi"] is None)
     assert url_only["item_id"] == "url:https://example.org/paper"
     assert url_only["url"] == "https://example.org/paper"
     assert url_only["journal"] == "Example Journal"
     assert url_only["abstract"] == "RSS abstract"
     assert url_only["date"] == "2026-06-08"
-    assert url_only["target_collections"] == ["00_INBOX/00_UNSORTED"]
+    assert url_only["target_collections"] == ["00_INBOX/000_Inbox"]
+    doi_item = next(row for row in import_list["entries"] if row["doi"] == "10.1234/example")
+    assert doi_item["tracked_authors"] == ["Jane Doe"]
+    assert doi_item["target_collections"] == ["00_INBOX/001_Author/Jane Doe"]
     assert "tags" not in url_only
+
+
+def test_build_list_honors_explicit_collection_paths(tmp_path):
+    selected_json = tmp_path / "selected.json"
+    selected_json.write_text(
+        json.dumps(
+            [
+                {
+                    "entry_uid": "A",
+                    "doi": "10.1234/general",
+                    "title": "General paper",
+                    "journal": "Example Journal",
+                    "source": {"link": "https://example.org/general"},
+                    "tags": ["alert_type:keyword"],
+                },
+                {
+                    "entry_uid": "B",
+                    "doi": "10.1234/author",
+                    "title": "Author paper",
+                    "journal": "Author Journal",
+                    "source": {"link": "https://example.org/author"},
+                    "tags": ["alert_type:author", "tracked_author:Jane Doe"],
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    workflow.build_rss_zotero_items_outputs(
+        selected_json=selected_json,
+        output_dir=tmp_path / "out",
+        repo_root=tmp_path,
+        zotero_export_json=None,
+        skip_library_export=True,
+        inbox_collection="00_INBOX/000_Inbox",
+        author_root_collection="00_INBOX/001_Author",
+    )
+
+    import_list = json.loads((tmp_path / "out" / "import_list.json").read_text(encoding="utf-8"))
+    assert import_list["root_collection"] == "00_INBOX/000_Inbox"
+    assert import_list["author_collections"] == [
+        {
+            "author": "Jane Doe",
+            "collection_path": ["00_INBOX", "001_Author", "Jane Doe"],
+            "item_ids": ["doi:10.1234/author"],
+        }
+    ]
+    general = next(row for row in import_list["entries"] if row["doi"] == "10.1234/general")
+    author = next(row for row in import_list["entries"] if row["doi"] == "10.1234/author")
+    assert general["target_collections"] == ["00_INBOX/000_Inbox"]
+    assert author["target_collections"] == ["00_INBOX/001_Author/Jane Doe"]
 
 
 def test_import_url_only_entry_as_journal_article(tmp_path, monkeypatch):
@@ -141,7 +206,7 @@ def test_import_url_only_entry_as_journal_article(tmp_path, monkeypatch):
     import_list.write_text(
         json.dumps(
             {
-                "root_collection": "00_INBOX",
+                "root_collection": "00_INBOX/000_Inbox",
                 "entries": [
                     {
                         "item_id": "url:https://example.org/paper",
@@ -151,7 +216,7 @@ def test_import_url_only_entry_as_journal_article(tmp_path, monkeypatch):
                         "journal": "Example Journal",
                         "abstract": "RSS abstract",
                         "date": "2026-06-08",
-                        "target_collections": ["00_INBOX/00_UNSORTED"],
+                        "target_collections": ["00_INBOX/000_Inbox"],
                         "tracked_authors": [],
                     }
                 ],

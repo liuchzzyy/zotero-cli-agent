@@ -19,8 +19,8 @@ from zotero_cli_agent.core.reader import ZoteroReader
 from zotero_cli_agent.core.writer import SYNC_REMINDER, ZoteroWriteError, ZoteroWriter
 from zotero_cli_agent.models import Collection
 
-INBOX_UNSORTED_COLLECTION = "00_INBOX/00_UNSORTED"
-AUTHOR_WATCH_ROOT_COLLECTION = "00_INBOX/10_AUTHOR_WATCH"
+INBOX_COLLECTION = "00_INBOX/000_Inbox"
+AUTHOR_ROOT_COLLECTION = "00_INBOX/001_Author"
 
 
 @dataclass
@@ -67,13 +67,25 @@ class RssImportListRow:
 
     @property
     def target_collections(self) -> list[str]:
-        if not self.tracked_authors:
-            return [INBOX_UNSORTED_COLLECTION]
-        targets = [INBOX_UNSORTED_COLLECTION]
-        targets.extend(f"{AUTHOR_WATCH_ROOT_COLLECTION}/{author}" for author in self.tracked_authors)
-        return targets
+        return self.target_collections_for()
 
-    def to_dict(self, *, already_in_library: bool) -> dict[str, Any]:
+    def target_collections_for(
+        self,
+        *,
+        inbox_collection: str = INBOX_COLLECTION,
+        author_root_collection: str = AUTHOR_ROOT_COLLECTION,
+    ) -> list[str]:
+        if self.tracked_authors:
+            return [f"{author_root_collection}/{author}" for author in self.tracked_authors]
+        return [inbox_collection]
+
+    def to_dict(
+        self,
+        *,
+        already_in_library: bool,
+        inbox_collection: str = INBOX_COLLECTION,
+        author_root_collection: str = AUTHOR_ROOT_COLLECTION,
+    ) -> dict[str, Any]:
         return {
             "item_id": self.item_id,
             "doi": self.doi,
@@ -84,7 +96,10 @@ class RssImportListRow:
             "date": self.date,
             "alert_type": self.alert_type,
             "tracked_authors": self.tracked_authors,
-            "target_collections": self.target_collections,
+            "target_collections": self.target_collections_for(
+                inbox_collection=inbox_collection,
+                author_root_collection=author_root_collection,
+            ),
             "already_in_library": already_in_library,
             "entry_uids": self.entry_uids,
             "topics": self.topics,
@@ -273,6 +288,8 @@ def build_rss_zotero_items_outputs(
     repo_root: Path,
     zotero_export_json: Path | None,
     skip_library_export: bool = False,
+    inbox_collection: str = INBOX_COLLECTION,
+    author_root_collection: str = AUTHOR_ROOT_COLLECTION,
 ) -> dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -294,7 +311,11 @@ def build_rss_zotero_items_outputs(
     for item_id in sorted(item_rows):
         row = item_rows[item_id]
         already_in_library = any(match_id in library_item_ids for match_id in row.match_item_ids)
-        row_dict = row.to_dict(already_in_library=already_in_library)
+        row_dict = row.to_dict(
+            already_in_library=already_in_library,
+            inbox_collection=inbox_collection,
+            author_root_collection=author_root_collection,
+        )
         all_item_rows.append(row_dict)
         if already_in_library:
             continue
@@ -319,12 +340,12 @@ def build_rss_zotero_items_outputs(
     )
 
     import_list = {
-        "root_collection": INBOX_UNSORTED_COLLECTION,
+        "root_collection": inbox_collection,
         "root_only_item_ids": root_only_item_ids,
         "author_collections": [
             {
                 "author": author,
-                "collection_path": ["00_INBOX", "10_AUTHOR_WATCH", author],
+                "collection_path": [part for part in author_root_collection.split("/") if part] + [author],
                 "item_ids": sorted(item_ids),
             }
             for author, item_ids in sorted(author_routes.items())
@@ -1466,6 +1487,16 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Do not read a local Zotero export while building the list. Use this in GitHub Actions or other Web-API-only runs.",
     )
+    build_parser.add_argument(
+        "--inbox-collection",
+        default=INBOX_COLLECTION,
+        help="Collection path for general RSS imports.",
+    )
+    build_parser.add_argument(
+        "--author-root-collection",
+        default=AUTHOR_ROOT_COLLECTION,
+        help="Root collection path for tracked-author RSS imports.",
+    )
 
     import_parser = subparsers.add_parser(
         "import-list",
@@ -1510,6 +1541,8 @@ def main() -> int:
             repo_root=repo_root,
             zotero_export_json=(args.zotero_export_json.resolve() if args.zotero_export_json else None),
             skip_library_export=args.skip_library_export,
+            inbox_collection=args.inbox_collection,
+            author_root_collection=args.author_root_collection,
         )
     elif args.command == "import-list":
         summary = import_rss_zotero_items(

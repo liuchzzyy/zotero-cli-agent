@@ -7,6 +7,8 @@ param(
     [string]$Library = "user",
     [string]$Profile = "",
     [string]$RecentCutoffUtc = "",
+    [string]$InboxCollection = "00_INBOX/000_Inbox",
+    [string]$AuthorRootCollection = "00_INBOX/001_Author",
     [int]$ProgressIntervalSeconds = 10,
     [string]$OutputDir = "",
     [switch]$KeepLog,
@@ -359,7 +361,9 @@ try {
     $importListArgs = @(
         "run", "python", "src/zotero_cli_workflows/import_rss_build_zotero_items.py", "build-list",
         "--selected-json", $selectedJson,
-        "--output-dir", $importListDir
+        "--output-dir", $importListDir,
+        "--inbox-collection", $InboxCollection,
+        "--author-root-collection", $AuthorRootCollection
     )
     if ($SkipLibraryExport) {
         $importListArgs += @("--skip-library-export")
