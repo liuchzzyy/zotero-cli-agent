@@ -1,4 +1,4 @@
-## 通用执行规则
+﻿## 通用执行规则
 
 本文件中的 Zotero workflow 默认通过对应 `tools\*.ps1` wrapper 重新打开一个新的 PowerShell 窗口运行。wrapper 会在新窗口中输出阶段进度，写入运行目录中的 `run.log` 和 `progress.jsonl`；不要再依赖额外的 watch 命令作为主进度来源。
 
@@ -26,17 +26,17 @@
 在 E:\Desktop\CodingDaily\zotero-cli-agent 下执行 metadata cleanup。先建立本次运行目录：log\metadata-cleanup-YYYYMMDD-HHMM。
 本指令独立包含运行文件规则：metadata-export、cleaned jsonl、dry-run/apply 输出、batch 文件、续跑文件和诊断记录都只放在本次 log\metadata-cleanup-YYYYMMDD-HHMM 目录；不要放在仓库根目录散文件、tmp\ 或临时 .workspace\... 运行目录中。失败、中断、等待确认或需要排查时保留该目录；复核无误后删除本次目录，如果 log\ 已空也删除 log\。
 
-如果在本仓库内单独执行 metadata cleanup，先读取 Zotero 条目 metadata。默认导出命令必须同时跳过已清理 tag 和不需要清理的 holding collections：
-uv run zot --json --detail full summarize-all --exclude-tag workflow/metadata --exclude-tag update/metadata --exclude-collection-key JJ6JSGT5 --exclude-collection-key 6HREN2FT --limit 5000 > log\metadata-cleanup-YYYYMMDD-HHMM\metadata-export.json
+如果在本仓库内单独执行 metadata cleanup，先读取 Zotero 条目 metadata。默认导出命令必须同时跳过已清理 tag 和 20_ARCHIVE 全部 holding collections：
+uv run zot --json --detail full summarize-all --exclude-tag workflow/metadata --exclude-tag update/metadata --exclude-collection-key RHBNIDLJ --exclude-collection-key 4W3JSHVT --exclude-collection-key JDL5AMLK --exclude-collection-key AC9IN8II --exclude-collection-key X8KH35G2 --exclude-collection-key 9J9BWP2K --exclude-collection-key LPVR4N2G --limit 5000 > log\metadata-cleanup-YYYYMMDD-HHMM\metadata-export.json
 
 默认排除集合：
-- `80_TRASH` (`JJ6JSGT5`)：无关/丢弃 holding collection，不做 metadata cleanup。
-- `90_ARCHIVE` (`6HREN2FT`)：归档 holding collection，不做日常 metadata cleanup。
-- `40_WORKSPACE` (`AFTJQCQA`) 默认不排除；只有明确不需要清理 workspace 条目时，才额外追加 `--exclude-collection-key AFTJQCQA`，或在总控 wrapper 中使用 `-ExcludeWorkspaceMetadata`。
+- `20_ARCHIVE` (`RHBNIDLJ`) 及其子集合：归档/holding collections，不做日常 metadata cleanup。
+- 当前归档子集合 key：`4W3JSHVT` (`200_Zn`), `JDL5AMLK` (`2000_Zn_Inbox`), `AC9IN8II` (`201_Liuqid_Metal`), `X8KH35G2` (`2001_Liquid_Inbox`), `9J9BWP2K` (`202_Cellulose`), `LPVR4N2G` (`2002_Cellulose_Inbox`)。
+- `50_WORKSPACE` (`AFTJQCQA`) 默认不排除；只有明确不需要清理 workspace 条目时，才额外追加 `--exclude-collection-key AFTJQCQA`，或在总控 wrapper 中使用 `-ExcludeWorkspaceMetadata`。
 
 导出后检查 metadata-export.json 的 meta：
 - `excluded_tags` 应包含 `workflow/metadata` 和 `update/metadata`。
-- `excluded_collection_keys` 应默认包含 `JJ6JSGT5` 和 `6HREN2FT`。
+- `excluded_collection_keys` 应默认包含 `RHBNIDLJ`, `4W3JSHVT`, `JDL5AMLK`, `AC9IN8II`, `X8KH35G2`, `9J9BWP2K`, `LPVR4N2G`。
 - `count` 是本次需要交给代理判断的条目数；不要对已排除集合生成 cleaned-metadata.jsonl。
 
 只清洗这些字段的格式问题：title、abstractNote、publicationTitle、journalAbbreviation、language、publisher。
@@ -83,6 +83,8 @@ uv run zot --json update --from-jsonl log\metadata-cleanup-YYYYMMDD-HHMM\cleaned
 
 在 E:\Desktop\CodingDaily\zotero-cli-agent 下执行 Daily RSS Item Import。
 
+默认目标集合按条目类型二选一：普通条目放入 `00_INBOX/000_Inbox`；带 `tracked_author:*` 的作者提醒条目只放入 `00_INBOX/001_Author/<作者名>`，不要同时放入根 `00_INBOX` 或 `00_INBOX/000_Inbox`。不要自动放入 `002_Stage`、`003_Cleaned` 或其他子集合。
+
 本指令独立包含运行文件规则：import_list、checkpoint、summary、failed_results、progress 和恢复审计文件都放在 log\rss-daily-item-import_YYYY-MM-DD；不要放在仓库根目录散文件、tmp\ 或临时 .workspace\... 运行目录中。成功且 failed=0 时默认清理本次 log 目录；失败、中断或需要恢复时保留该目录。
 
 日常运行不要手动拆开清洗/导入步骤，直接调用 wrapper。默认调用会重新打开一个新的 PowerShell 窗口，实际 import 在新窗口中运行；wrapper 把本次 import_list、checkpoint、summary、failed_results、`run.log`、`progress.jsonl` 等运行文件放到 log\rss-daily-item-import_YYYY-MM-DD，并在 failed=0 成功完成后自动删除本次 log 目录：
@@ -123,28 +125,34 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-daily-rss-doi-impo
 - 如果失败来自 metadata/Crossref 解析异常，先修复代码并补测试，再基于原 checkpoint 恢复；不要清空本次 log 目录。
 ```
 
-## Daily 00_UNSORTED Review
+## Daily 002_Stage Review
 
 ### 推荐给代理的直接提示词
 ```text
 使用 skill zotero-cli-agent。
-在 E:\Desktop\CodingDaily\zotero-cli-agent 下读取 Zotero 的 00_INBOX/00_UNSORTED 集合条目，按每 100 条为一批返回给我。
+在 E:\Desktop\CodingDaily\zotero-cli-agent 下处理 Zotero 的 `00_INBOX/002_Stage` 日常审阅与归档分流。这个流程先只读审阅，再给出分类候选；我确认后，才把确认的条目从 `002_Stage` 移动到 `20_ARCHIVE` 下的专题 inbox。
 
-这是只读审阅流程，不写 Zotero，不改 zotero.sqlite，不生成 cleaned-metadata/update/delete 文件。默认直接在回复中返回结果；除非我明确要求保存快照，不要把结果散落到仓库根目录、tools\、tmp\ 或临时 .workspace\... 中。
+总体安全边界：
+- 审阅和分类候选阶段只读，不写 Zotero，不改 zotero.sqlite，不生成 cleaned-metadata/update/delete 文件。默认直接在回复中返回结果；除非我明确要求保存快照，不要把结果散落到仓库根目录、tools\、tmp\ 或临时 .workspace\... 中。
+- 写入阶段只在我确认后执行；写入只通过 Zotero Web API 或 `zot collection move` 这类 Web API 写命令完成，永远不要直接写 `zotero.sqlite`。
+- 不要把条目移入 Zotero trash，除非我明确说“移入回收站/删除 Zotero 条目”。我在这个流程里说“删除”时，默认含义是从 `002_Stage` 移除源集合归属。
 
-执行顺序：
-1. 先运行 `uv run zot --json collection list`，从当前 live collection tree 中确认 `00_INBOX/00_UNSORTED` 的 collection key。历史上常见 key 是 `QFGBGJTZ`，但每天都必须重新确认，不要直接复用旧 key。
-2. 再运行 `uv run zot --json collection items <UNSORTED_COLLECTION_KEY>` 读取当前集合条目，记录本次总数和当前批次范围。
-3. 按 Zotero 当前返回顺序从 1 开始编号。第一批返回 1-100；我说“下一批”时返回 101-200，依此类推。
-4. 每条只返回四列，固定表头必须写成：`序号 / key / 中文标题 / 期刊`。
-5. 推荐用 Markdown 表格返回，表头固定为：`| 序号 | key | 中文标题 | 期刊 |`。
-6. 期刊字段优先取 `extra.publicationTitle`，没有时再取 `extra.journalAbbreviation`，再没有时取 `extra.publisher`；期刊名保持 Zotero 原文，不强行翻译。
-7. 标题翻译成中文时保留专有名词、缩写、模型名、材料名和化学式的准确性，例如 MnO2、Zn2+、CO2、LiFePO4、LLM、RAG、VSR、MXene 不要拆坏或过度意译。
-8. 返回前说明：`第一批：1-100 / 共 N 条` 或 `第 X 批：A-B / 共 N 条`。
+阶段 0：确认集合 key
+1. 先运行 `uv run zot --json collection list`，从当前 live collection tree 中确认源集合和目标集合名称/key。不要直接复用旧 key。
+2. 当前常用映射仅作核对提示：源集合 `00_INBOX/002_Stage` = `CECXU7YE`；`20_ARCHIVE/200_Zn/2000_Zn_Inbox` = `JDL5AMLK`；`20_ARCHIVE/201_Liuqid_Metal/2001_Liquid_Inbox` = `X8KH35G2`；`20_ARCHIVE/202_Cellulose/2002_Cellulose_Inbox` = `LPVR4N2G`。
+
+阶段 1：返回 002_Stage 审阅表
+1. 运行 `uv run zot --json collection items <STAGE_COLLECTION_KEY>` 读取当前集合条目，记录本次总数和当前批次范围。如果刚执行过 Web API 写入且本地 Zotero 还没有同步，则优先用 Zotero Web API 分页读取 `002_Stage` 的远程当前条目。
+2. 按 Zotero 当前返回顺序从 1 开始编号。第一批返回 1-100；我说“下一批”时返回 101-200，依此类推。
+3. 每条只返回四列，固定表头必须写成：`序号 / key / 中文标题 / 期刊`。
+4. 推荐用 Markdown 表格返回，表头固定为：`| 序号 | key | 中文标题 | 期刊 |`。
+5. 期刊字段优先取 `extra.publicationTitle`，没有时再取 `extra.journalAbbreviation`，再没有时取 `extra.publisher`；期刊名保持 Zotero 原文，不强行翻译。
+6. 标题翻译成中文时保留专有名词、缩写、模型名、材料名和化学式的准确性，例如 MnO2、Zn2+、CO2、LiFePO4、LLM、RAG、VSR、MXene 不要拆坏或过度意译。
+7. 返回前说明：`第一批：1-100 / 共 N 条` 或 `第 X 批：A-B / 共 N 条`。
 
 可用的字段抽取命令示例：
 $env:PYTHONIOENCODING='utf-8'
-$j = uv run zot --json collection items <UNSORTED_COLLECTION_KEY> | ConvertFrom-Json
+$j = uv run zot --json collection items <STAGE_COLLECTION_KEY> | ConvertFrom-Json
 $offset = 0
 $limit = 100
 $i = $offset
@@ -157,7 +165,78 @@ $j.data | Select-Object -Skip $offset -First $limit | ForEach-Object {
   [pscustomobject]@{ n=$i; key=$_.key; title=$_.title; journal=$journal }
 } | ConvertTo-Json -Depth 8
 
-如果我后续要根据序号删除、移动或保留条目，必须把本次审阅输出对应的 number-to-key 映射视为唯一依据。不要在集合变化后重新读取并套用旧序号；执行任何写操作前先复述将要处理的序号、key 和目标集合，等我确认。
+如果我后续要根据序号删除、移动、保留或分类条目，必须把本次审阅输出对应的 number-to-key 映射视为唯一依据。不要在集合变化后重新读取并套用旧序号；执行任何写操作前先复述将要处理的序号、key 和目标集合，等我确认。
+
+阶段 2：给出归档分流候选
+1. 在同一批次或完整 `002_Stage` 条目上筛选 `20_ARCHIVE` 专题 inbox 候选。分类可以交叉；同一条目可以进入多个目标集合。
+2. 分类目标：
+   - Zn 负极相关：移动到 `2000_Zn_Inbox`。优先匹配明确的 Zn/zinc anode、Zn metal anode、Zn metal battery、Zn deposition/electrodeposition、Zn dendrite/corrosion/HER/side reaction/plating/stripping/interphase/SEI/desolvation/protective layer/current collector 等。普通 Zn-ion cathode 或只泛泛说水系锌电池的不算，除非摘要明确涉及 Zn 负极/沉积/界面失效。
+   - 液态金属相关：移动到 `2001_Liquid_Inbox`。匹配 liquid metal、liquid alloy、liquid metal batteries、molten metal/alloy、Na-K liquid alloy、EGaIn、Galinstan、gallium-based liquid metal 等。普通 liquid electrolyte、bulk liquids、liquid water、liquid-solid phase coexistence 不算。
+   - 纤维素相关：移动到 `2002_Cellulose_Inbox`。匹配 cellulose、nanocellulose、bacterial cellulose、carboxymethyl cellulose、CMC/CMC-Na、lignocellulosic、cellulosic 等。
+3. 确认前输出格式：
+   - 先说明 `002_Stage` 当前总数、已审阅范围和候选唯一条目数。
+   - 按目标集合分组列出候选，表头固定为：`分类 / 目标集合 / 序号 / key / 中文标题 / 期刊 / 判断`。
+   - 如果有交叉分类，单独列出“交叉项”，说明同一 key 将进入哪些目标集合。
+   - 对弱匹配或边界项单独列出“暂不建议移动的边界项”，说明不建议移动的原因。
+   - 最后明确写出“确认后将移动 N 个唯一条目，并从 002_Stage 移除这些条目的源集合归属”。
+
+阶段 3：确认后执行移动
+1. 只处理我确认的序号/key 和目标集合，不要重新筛选后扩大范围。
+2. 单目标条目可用 `uv run zot --json collection move <ITEM_KEY> <TARGET_COLLECTION_KEY> --from <STAGE_COLLECTION_KEY>`。
+3. 交叉分类条目要确保最终 `collections` 同时包含所有确认的目标集合且不再包含 `002_Stage`。可以通过 Zotero Web API 一次性更新完整 `collections` 列表；如果用 CLI 分步执行，先移入一个目标并移除源集合，再追加其他目标集合，最后必须逐项 Web API 验证。
+4. 写入后必须用 Web API 逐项验证：目标集合包含该 key，源集合不再包含该 key。不要用本地 `zot collection items` 作为刚写完后的最终真相。
+5. 执行后汇报每个 key 的动作和 Web API 验证结果：`failed=0`、`verification_failed=0` 或列出失败原因。
+```
+
+## Full Library Collection Membership Audit
+
+### 推荐给代理的直接提示词
+```text
+使用 skill zotero-cli-agent。
+在 E:\Desktop\CodingDaily\zotero-cli-agent 下执行 Zotero 全库集合成员关系审计与修复。
+
+目标：理清全库父条目的集合归属，只修复普通集合成员关系，不删除条目，不改 metadata、tags、notes、attachments，不直接写 zotero.sqlite。
+
+固定规则：
+- `00_INBOX` 及其所有子集合是入口/暂存区。条目如果已经属于任何更高优先级集合，就不应该继续挂在 `00_INBOX` 或其子集合中。
+- `20_ARCHIVE` 及其所有子集合是归档/holding 区。条目如果已经属于 `30_PROJECT`、`40_TOPIC`、`50_WORKSPACE`、`60_CHARACTERIZATION` 中任一根集合或其子集合，就不应该继续挂在 `20_ARCHIVE` 或其子集合中。
+- `我的出版物` 是 Zotero 的特殊 My Publications 状态，不是普通 collection。不要查找、创建或移动到名为“我的出版物”的普通集合；只通过 Zotero Web API 的 publications endpoint 或本地 `publicationsItems` 识别。
+- `我的出版物` 中的条目只能保留普通集合 `30_PROJECT`、`40_TOPIC`、`50_WORKSPACE`、`60_CHARACTERIZATION` 及其子集合；如果还挂在 `00_INBOX`、`20_ARCHIVE` 或其他普通集合，要移除这些普通集合归属，但保留 My Publications 状态。
+- 普通集合优先级：`我的出版物` > `30_PROJECT = 40_TOPIC = 50_WORKSPACE = 60_CHARACTERIZATION` > `20_ARCHIVE` > `00_INBOX`。如果 live tree 中未来出现独立 `10_*` staging 根集合，先报告 key，并按最低优先级处理，除非我重新定义。
+
+执行顺序：
+1. 先检查是否有正在运行的 Zotero 写入/导入/清理进程；如果有可能同时改集合成员，先报告，不要并发写入。
+2. 建立本次运行目录：`log\collection-membership-audit-YYYYMMDD-HHMMSS`。所有审计、计划、apply、verify、postcheck 文件都放在这个目录；不要散落到仓库根目录、tools\、tmp\ 或临时 .workspace\... 中。
+3. 通过 live Zotero Web API 或 `uv run zot --json collection list` 读取当前 collection tree，重新解析 root key 和完整 path。不要复用旧 key。
+4. 当前常见 root key 仅作核对提示，不能直接当作真值：`00_INBOX=AG7NQ5UW`，`20_ARCHIVE=RHBNIDLJ`，`30_PROJECT=VU3HIBI2`，`40_TOPIC=FAPUW5I2`，`50_WORKSPACE=AFTJQCQA`，`60_CHARACTERIZATION=E6NFXC2N`。
+5. 用 Zotero Web API 分页读取全库 top-level parent items，并读取 My Publications 列表。不要用附件、note、annotation 参与集合冲突判断。
+6. 生成只读审计产物：
+   - `summary.json`
+   - `collections.json`
+   - `all-top-items.json`
+   - `repair-plan.json`
+   - `repair-plan.jsonl`
+   - `manual-review.json`
+   - `unchanged-conflicts.json`
+7. 如果出现未知 root、live tree 缺少预期根集合、`manual-review.json` 非空，先停止并把人工复核项返回给我，不要猜测写入。
+8. 如果冲突都能按固定优先级自动判定，则只更新每个父条目的 `data.collections` 列表：移除低优先级集合 key，保留高优先级集合 key。不要删除 Zotero 条目，不要移入 trash，不要改 My Publications 状态。
+9. 写入前逐条重新读取 live item。如果 live `collections` 与审计时的 `current_collections` 不一致，标记 `skipped_live_drift` 并跳过该条，避免覆盖我或 Zotero 同步刚产生的新变化。
+10. 写入只能通过 Zotero Web API / pyzotero `update_item` 完成；永远不要直接写 `zotero.sqlite`。
+11. 每条写入后立即 Web API 读回验证：`live_after_collections` 必须与计划中的 `new_collections` 一致。把结果写入 `apply-results.json`。
+12. 全部写入后重新跑一次全库 postcheck，生成：
+   - `postcheck-summary.json`
+   - `postcheck-remaining-plan.json`
+   只有 `remaining_planned_update_count=0` 且 `remaining_manual_review_count=0` 才算完成。
+
+汇报格式：
+- 说明本次读取的 top-level parent item 数、My Publications 数、计划更新数、已更新数、跳过 live drift 数、验证失败数、postcheck 剩余冲突数。
+- 给出本次 log 目录和关键文件路径。
+- 提醒 Zotero Web API 写入后需要 Zotero 桌面同步，本地 SQLite/界面才会完全反映。
+
+边界：
+- `30_PROJECT`、`40_TOPIC`、`50_WORKSPACE`、`60_CHARACTERIZATION` 同级，可以并存，不互相排斥。
+- `20_ARCHIVE` 内不同子集合之间的交叉归属不在本流程自动裁决，除非它同时冲突于更高优先级根集合。
+- 没有普通集合的 My Publications 条目可以保持无普通 collection；不要为了规则强行塞进 `30/40/50/60`。
 ```
 
 ## Remove Newer DOI Duplicates
@@ -197,11 +276,11 @@ $j.data | Select-Object -Skip $offset -First $limit | ForEach-Object {
 使用 E:\Desktop\CodingDaily\zotero-cli-agent\tools\run-ai-note-generation.ps1 批量生成 Zotero AI note，不要手动拼长命令逐条跑。
 
 目标：
-对尚未带有 `workflow/ai_note` 或旧 `update/AInote` 的非书籍条目，读取所有本地 PDF 附件，使用 MinerU 抽取 Markdown 和图片，经 CLIProxyAPI 的 gpt-5.4（reasoning effort=`high`）生成“AI条目分析 - <title>”note，写回 Zotero Web API，并给父条目打 tag `workflow/ai_note`。
+对尚未带有 `workflow/ai_note` 或旧 `update/AInote` 的非书籍条目，读取所有本地 PDF 附件，使用 MinerU 抽取 Markdown 和图片，经 CLIProxyAPI 的 gpt-5.5（reasoning effort=`xhigh`）生成“AI条目分析 - <title>”note，写回 Zotero Web API，并给父条目打 tag `workflow/ai_note`。
 
 本指令独立包含运行文件规则：checkpoint、preview、results、failures、notes、MinerU 临时资产和 batch logs 都放在 log\ai-note-analysis-batch-YYYYMMDD-HHMMSS；不要放在仓库根目录散文件、tmp\ 或临时 .workspace\... 运行目录中。完整成功并复核无误后清理本次目录；失败、中断、等待审查或需要保留 MinerU 原始材料时保留。
 
-默认命令。wrapper 默认把 checkpoint、preview、results、failures、notes、MinerU 临时资产和 batch logs 放到 log\ai-note-analysis-batch-YYYYMMDD-HHMMSS，并在完整成功后自动清理本次 log 目录：
+默认命令。wrapper 默认扫描 `00_INBOX/003_Cleaned` 集合，默认把 checkpoint、preview、results、failures、notes、MinerU 临时资产和 batch logs 放到 log\ai-note-analysis-batch-YYYYMMDD-HHMMSS，并在完整成功后自动清理本次 log 目录：
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-ai-note-generation.ps1 -BatchSize 3
 默认会打开新 PowerShell 窗口；调试时才追加 `-RunInCurrentWindow`。
 
@@ -350,8 +429,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-citation-key-updat
 
 默认目标：
 - workspace 名称：full-library-rag。
-- 默认集合：00_PROJECT_INBOX + 00_TOPIC_INBOX；wrapper 默认参数已经设置为 `-WorkspaceName full-library-rag -Collections "00_PROJECT_INBOX,00_TOPIC_INBOX"`。
-- 条目范围：本地 Zotero SQLite 中 `00_PROJECT_INBOX` 与 `00_TOPIC_INBOX` 两个集合的并集，再筛选“至少有一个本地存在 PDF 附件”的父条目。
+- 默认集合：30_PROJECT + 40_TOPIC；wrapper 默认参数已经设置为 `-WorkspaceName full-library-rag -Collections "30_PROJECT,40_TOPIC"`，不自动包含对应子集合。
+- 条目范围：本地 Zotero SQLite 中 `30_PROJECT` 与 `40_TOPIC` 两个根集合的直接条目并集，再筛选“至少有一个本地存在 PDF 附件”的父条目。
 - 索引方式：phase-by-phase。先维护 .workspace\full-library-rag\workspace.toml；再调用 uv run zot workspace index full-library-rag --extractor mineru --progress-lines --item-progress --no-embed，让所有待处理条目先完成 PDF 抽取、chunk、BM25；最后统一调用 uv run zot workspace embed full-library-rag --progress-lines 回填 chunks.embedding IS NULL。
 - 增量规则：workspace 只新增缺失 key；RAG index 只索引尚未进入 rag.idx.sqlite 的 item key；embedding 只回填 chunks.embedding IS NULL 的 chunk；PDF 文本抽取复用 .zot\state\pdf_cache.sqlite。
 - index 阶段按 Zotero 父条目逐个处理、逐个 commit，但只写 BM25，不生成 embedding；中断后重跑会跳过已进入 rag.idx.sqlite 的 item key，继续剩余条目。embed 阶段默认按 10 个 chunk 一个提交批次回填，并在 provider 请求开始、等待、内部进度和 batch 完成时输出进度行；中断、provider 断连或手动停止后重跑会跳过已有 embedding 的 chunk。
@@ -380,7 +459,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -Em
 uv run python -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else None)"
 pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -EmbedOnly -EmbedLimit 1 -EmbedBatchSize 1 -EmbeddingDevice cuda -AllowLowVramGpu -KeepLog
 
-00_PROJECT_INBOX + 00_TOPIC_INBOX 默认正式运行。长任务建议加 -KeepLog，方便完成后复核 index.log：
+30_PROJECT + 40_TOPIC 默认正式运行。长任务建议加 -KeepLog，方便完成后复核 index.log：
 pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -EmbeddingDevice api -KeepLog
 
 边界：
