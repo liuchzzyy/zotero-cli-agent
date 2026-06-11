@@ -55,7 +55,7 @@ class RssImportListRow:
         self.tracked_authors.extend(
             _as_unique_strings(_extract_tracked_authors(entry.get("tags") or []), self.tracked_authors)
         )
-        self.source_links.extend(_as_unique_strings([_nested_get(entry, "source", "link")], self.source_links))
+        self.source_links.extend(_as_unique_strings([_extract_entry_url(entry)], self.source_links))
 
     @property
     def match_item_ids(self) -> list[str]:
@@ -188,11 +188,13 @@ def _build_item_id(*, doi: str | None, url: str | None) -> str | None:
 
 
 def _extract_entry_url(entry: dict[str, Any]) -> str | None:
-    return _normalize_url(_nested_get(entry, "source", "link"))
+    return _normalize_url(entry.get("url") or _nested_get(entry, "source", "link"))
 
 
 def _extract_entry_date(entry: dict[str, Any]) -> str | None:
     for raw in (
+        entry.get("date"),
+        entry.get("time"),
         _nested_get(entry, "source", "published_at"),
         _nested_get(entry, "source", "updated_at"),
         _nested_get(entry, "source", "first_seen_at"),

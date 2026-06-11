@@ -150,6 +150,56 @@ def test_build_list_includes_url_only_journal_items(tmp_path):
     assert "tags" not in url_only
 
 
+def test_build_list_accepts_flat_rss_export_rows(tmp_path):
+    selected_json = tmp_path / "selected.json"
+    selected_json.write_text(
+        json.dumps(
+            [
+                {
+                    "entry_uid": "flat-url-only",
+                    "title": "Flat URL only paper",
+                    "doi": None,
+                    "time": "2026-06-11 04:00:00",
+                    "url": "https://arxiv.org/abs/2606.12182",
+                    "state": "selected",
+                },
+                {
+                    "entry_uid": "flat-doi",
+                    "title": "Flat DOI paper",
+                    "doi": "10.1021/acsaem.6c00911",
+                    "time": "2026-06-11 19:00:00",
+                    "url": "http://dx.doi.org/10.1021/acsaem.6c00911",
+                    "state": "selected",
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    summary = workflow.build_rss_zotero_items_outputs(
+        selected_json=selected_json,
+        output_dir=tmp_path / "out",
+        repo_root=tmp_path,
+        zotero_export_json=None,
+        skip_library_export=True,
+    )
+
+    assert summary["total_selected_rows"] == 2
+    assert summary["selected_rows_with_doi"] == 1
+    assert summary["selected_rows_without_doi"] == 1
+    assert summary["unique_selected_items"] == 2
+    assert summary["unique_items_without_doi"] == 1
+    assert summary["skipped_without_identifier"] == 0
+
+    import_list = json.loads((tmp_path / "out" / "import_list.json").read_text(encoding="utf-8"))
+    url_only = next(row for row in import_list["entries"] if row["doi"] is None)
+    assert url_only["item_id"] == "url:https://arxiv.org/abs/2606.12182"
+    assert url_only["url"] == "https://arxiv.org/abs/2606.12182"
+    assert url_only["date"] == "2026-06-11"
+    assert url_only["entry_uids"] == ["flat-url-only"]
+    assert url_only["source_links"] == ["https://arxiv.org/abs/2606.12182"]
+
+
 def test_build_list_honors_explicit_collection_paths(tmp_path):
     selected_json = tmp_path / "selected.json"
     selected_json.write_text(

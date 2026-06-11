@@ -93,18 +93,20 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-daily-rss-doi-impo
 推荐直接在 PowerShell 中运行 wrapper，保留新窗口输出；进度以新窗口输出、`run.log`、`progress.jsonl` 和 import_summary.json 为准。只有调试/CI 才追加 `-RunInCurrentWindow`。
 
 默认读取：
-E:\Desktop\CodingDaily\rss-cli-agent\storage\exports\daily_exports\YYYY-MM-DD.selected.json
+E:\Desktop\CodingDaily\rss-cli-agent\storage\exports\YYYY-MM-DD.selected.json
+
+当前 RSS selected JSON 是扁平数组，字段为 `entry_uid/title/doi/time/url/state`；导入器必须使用顶层 `url` 处理无 DOI 条目，并用顶层 `time` 写入 Zotero date。不要再假设存在旧版 `source.link` 或 `source.published_at` 嵌套字段。
 
 GitHub Actions 定时运行：
 - workflow: `.github/workflows/daily-rss-zotero-import.yml`
 - 定时：北京时间每天 03:10；GitHub cron 使用 UTC，所以配置为 `10 19 * * *`。
-- JSON 来源：`https://raw.githubusercontent.com/liuchzzyy/rss-cli-agent/main/storage/exports/daily_exports/YYYY-MM-DD.selected.json`
+- JSON 来源：`https://raw.githubusercontent.com/liuchzzyy/rss-cli-agent/main/storage/exports/YYYY-MM-DD.selected.json`
 - 必需 Actions secrets：`ZOT_LIBRARY_ID`、`ZOT_API_KEY`。
 - 可选 Actions secrets：`ZOT_CROSSREF_MAILTO`；`RSS_REPO_TOKEN` 仅在 rss-cli-agent 变为私有仓库时需要。
 - GitHub runner 没有本地 Zotero SQLite；workflow 必须使用 `-SkipLibraryExport -SkipLocalDb`，让导入阶段只依赖 Zotero Web API。
 
 如果 RSS selected JSON 在非默认位置，必须显式传入完整路径：
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-daily-rss-doi-import.ps1 -Date YYYY-MM-DD -SelectedJson "E:\Desktop\CodingDaily\rss-cli-agent\storage\exports\daily_exports\YYYY-MM-DD.selected.json" -ProgressIntervalSeconds 5
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-daily-rss-doi-import.ps1 -Date YYYY-MM-DD -SelectedJson "E:\Desktop\CodingDaily\rss-cli-agent\storage\exports\YYYY-MM-DD.selected.json" -ProgressIntervalSeconds 5
 
 如果需要保留成功运行记录用于审查，加 `-KeepLog`；否则不要保留成功运行的 log 目录。
 

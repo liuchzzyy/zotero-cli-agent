@@ -316,7 +316,7 @@ function Export-FailedItems {
 
 $selectedJson = $SelectedJson
 if (-not $selectedJson) {
-    $selectedJson = Join-Path $RssRepoRoot ("storage\exports\daily_exports\{0}.selected.json" -f $Date)
+    $selectedJson = Join-Path $RssRepoRoot ("storage\exports\{0}.selected.json" -f $Date)
 }
 else {
     $selectedJson = (Resolve-Path $selectedJson).Path

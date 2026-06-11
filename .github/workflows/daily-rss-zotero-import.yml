@@ -84,7 +84,7 @@ jobs:
         shell: pwsh
         run: |
           $selectedJson = Join-Path $env:RUNNER_TEMP "$env:IMPORT_DATE.selected.json"
-          $url = "https://raw.githubusercontent.com/liuchzzyy/rss-cli-agent/main/storage/exports/daily_exports/$env:IMPORT_DATE.selected.json"
+          $url = "https://raw.githubusercontent.com/liuchzzyy/rss-cli-agent/main/storage/exports/$env:IMPORT_DATE.selected.json"
           $headers = @{}
           if (-not [string]::IsNullOrWhiteSpace($env:RSS_REPO_TOKEN)) {
             $headers["Authorization"] = "Bearer $env:RSS_REPO_TOKEN"
