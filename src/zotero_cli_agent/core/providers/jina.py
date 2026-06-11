@@ -17,12 +17,14 @@ class JinaProvider(EmbeddingProvider):
         url: str = "https://api.jina.ai/v1/embeddings",
         batch_size: int = 10,
         max_retries: int = 3,
+        timeout: float = 60.0,
     ):
         self.api_key = api_key
         self.model = model
         self.url = url
         self.batch_size = batch_size
         self.max_retries = max_retries
+        self.timeout = timeout
 
     @property
     def name(self) -> str:
@@ -58,7 +60,7 @@ class JinaProvider(EmbeddingProvider):
         last_error: Exception | None = None
         for attempt in range(self.max_retries):
             try:
-                with urllib.request.urlopen(req) as resp:
+                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                     data = json_mod.loads(resp.read())
                 embeddings_data = data.get("data") or data.get("output", {}).get("embeddings", [])
                 return [item["embedding"] for item in embeddings_data]
@@ -68,6 +70,9 @@ class JinaProvider(EmbeddingProvider):
                     return self._fallback_to_individual(batch)
                 time.sleep(2**attempt)
             except urllib.error.URLError as e:
+                last_error = e
+                time.sleep(2**attempt)
+            except TimeoutError as e:
                 last_error = e
                 time.sleep(2**attempt)
 
@@ -84,7 +89,7 @@ class JinaProvider(EmbeddingProvider):
                 req.add_header("Content-Type", "application/json")
                 req.add_header("Authorization", f"Bearer {self.api_key}")
                 req.add_header("User-Agent", "zot-cli/0.2.0")
-                with urllib.request.urlopen(req) as resp:
+                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                     data = json_mod.loads(resp.read())
                 embedding = (
                     data.get("data", [{}])[0].get("embedding") or data.get("output", {}).get("embeddings", [None])[0]

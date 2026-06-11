@@ -2,10 +2,12 @@ param(
     [int]$BatchSize = 3,
     [int]$ScanLimit = 100000,
     [string[]]$Keys = @(),
-    [string]$Model = "gpt-5.4",
+    [string]$Collection = "003_Cleaned",
+    [string]$Model = "gpt-5.5",
     [string]$BaseUrl = "http://127.0.0.1:8317/v1",
     [string]$PdfInputMode = "mineru-markdown-images",
     [string]$ApiMode = "auto",
+    [string]$ReasoningEffort = "xhigh",
     [string]$OutputDir = "",
     [int]$MaxImages = 24,
     [int]$MaxImageMb = 8,
@@ -26,6 +28,14 @@ param(
 
 $ErrorActionPreference = "Stop"
 $script:UseCliProxyAuth = $false
+
+if ($Keys.Count -eq 1 -and $Keys[0].Contains(",")) {
+    $Keys = @(
+        $Keys[0].Split(",", [System.StringSplitOptions]::RemoveEmptyEntries) |
+            ForEach-Object { $_.Trim() } |
+            Where-Object { $_ }
+    )
+}
 
 $commonScript = Join-Path $PSScriptRoot "zotero-workflow-common.ps1"
 . $commonScript
@@ -118,6 +128,7 @@ function Invoke-AiNoteGenerationBatch {
         "--api-mode", $ApiMode,
         "--model", $Model,
         "--base-url", $BaseUrl,
+        "--reasoning-effort", $ReasoningEffort,
         "--output-dir", $RunOutputDir,
         "--checkpoint", $checkpoint,
         "--max-images", "$MaxImages",
@@ -147,6 +158,9 @@ function Invoke-AiNoteGenerationBatch {
     if ($Keys.Count -gt 0) {
         $cmd += "--keys"
         $cmd += $Keys
+    }
+    if ($Collection) {
+        $cmd += @("--collection", $Collection)
     }
 
     Write-Host ""
@@ -179,6 +193,24 @@ function Read-BatchSummary([string]$RunOutputDir) {
         return Get-Content -LiteralPath $previewPath -Raw | ConvertFrom-Json
     }
     return $null
+}
+
+function Get-NextBatchIteration([string]$RunOutputDir) {
+    $logsDir = Join-Path $RunOutputDir "logs"
+    if (-not (Test-Path -LiteralPath $logsDir)) {
+        return 1
+    }
+
+    $maxIteration = 0
+    Get-ChildItem -LiteralPath $logsDir -Filter "batch-*.log" -File | ForEach-Object {
+        if ($_.BaseName -match '^batch-(\d+)$') {
+            $iteration = [int]$Matches[1]
+            if ($iteration -gt $maxIteration) {
+                $maxIteration = $iteration
+            }
+        }
+    }
+    return ($maxIteration + 1)
 }
 
 function Remove-IntermediateAssets([string]$RunOutputDir) {
@@ -214,7 +246,7 @@ if (-not $HideProgressWatchCommands) {
     Write-ProgressWatchCommands -RunOutputDir $runOutputDir
 }
 
-$iteration = 1
+$iteration = Get-NextBatchIteration -RunOutputDir $runOutputDir
 $completed = $false
 while ($true) {
     Invoke-AiNoteGenerationBatch -RepoRoot $repoRoot -RunOutputDir $runOutputDir -Iteration $iteration

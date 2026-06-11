@@ -79,7 +79,7 @@ def summarize_all_cmd(
       zot summarize-all --limit 100       First 100 items
       zot summarize-all --offset 100      Skip first 100 (pagination)
       zot summarize-all --exclude-tag update/metadata
-      zot summarize-all --exclude-collection-key JJ6JSGT5
+      zot summarize-all --exclude-collection-key RHBNIDLJ
       zot --detail full summarize-all     Include full item metadata + writable field map
     """
     cfg = load_config(profile=ctx.obj.get("profile"))

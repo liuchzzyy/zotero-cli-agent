@@ -19,6 +19,7 @@ class OpenAICompatibleEmbeddingProvider(EmbeddingProvider):
         name: str = "openai_compatible",
         batch_size: int = 10,
         max_retries: int = 3,
+        timeout: float = 60.0,
     ) -> None:
         self.api_key = api_key
         self.model = model
@@ -26,6 +27,7 @@ class OpenAICompatibleEmbeddingProvider(EmbeddingProvider):
         self._name = name
         self.batch_size = batch_size
         self.max_retries = max_retries
+        self.timeout = timeout
 
     @property
     def name(self) -> str:
@@ -61,7 +63,7 @@ class OpenAICompatibleEmbeddingProvider(EmbeddingProvider):
         last_error: Exception | None = None
         for attempt in range(self.max_retries):
             try:
-                with urllib.request.urlopen(req) as resp:
+                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                     data = json_mod.loads(resp.read())
                 embeddings_data = data.get("data") or []
                 return [item["embedding"] for item in embeddings_data]
@@ -72,6 +74,9 @@ class OpenAICompatibleEmbeddingProvider(EmbeddingProvider):
                     return self._fallback_to_individual(batch)
                 time.sleep(2**attempt)
             except urllib.error.URLError as exc:
+                last_error = exc
+                time.sleep(2**attempt)
+            except TimeoutError as exc:
                 last_error = exc
                 time.sleep(2**attempt)
 
@@ -90,7 +95,7 @@ class OpenAICompatibleEmbeddingProvider(EmbeddingProvider):
                 req.add_header("Content-Type", "application/json")
                 req.add_header("Authorization", f"Bearer {self.api_key}")
                 req.add_header("User-Agent", "zot-cli/0.2.0")
-                with urllib.request.urlopen(req) as resp:
+                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                     data = json_mod.loads(resp.read())
                 embedding = data.get("data", [{}])[0].get("embedding")
                 results.append(embedding if embedding else [])

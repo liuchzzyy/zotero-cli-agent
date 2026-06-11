@@ -1,6 +1,6 @@
 param(
     [string]$WorkspaceName = "full-library-rag",
-    [string]$Collections = "00_PROJECT_INBOX,00_TOPIC_INBOX",
+    [string]$Collections = "30_PROJECT,40_TOPIC",
     [string]$Extractor = "mineru",
     [int]$ScanLimit = 100000,
     [int]$ProgressEvery = 100,

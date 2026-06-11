@@ -168,6 +168,8 @@ def update_checkpoint(
         entry.update(data)
     if error:
         entry["error"] = error
+    elif status != "failed":
+        entry.pop("error", None)
     checkpoint["updated_at"] = entry["updated_at"]
     write_json_atomic(path, checkpoint)
 

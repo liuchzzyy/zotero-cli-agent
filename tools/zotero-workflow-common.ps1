@@ -58,10 +58,11 @@ function Get-ForwardedWorkflowArguments {
 
         if ($null -ne $item.Value -and "$($item.Value)" -ne "") {
             if ($item.Value -is [array]) {
-                foreach ($value in @($item.Value)) {
-                    $arguments.Add("-$($item.Key)")
-                    $arguments.Add([string]$value)
+                $arguments.Add("-$($item.Key)")
+                $values = @($item.Value) | ForEach-Object {
+                    ConvertTo-WorkflowArgument -Value ([string]$_)
                 }
+                $arguments.Add(($values -join ","))
                 continue
             }
 

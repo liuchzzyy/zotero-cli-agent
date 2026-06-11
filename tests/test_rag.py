@@ -9,6 +9,7 @@ import pytest
 
 from zotero_cli_agent.config import EmbeddingConfig
 from zotero_cli_agent.core.providers.jina import JinaProvider
+from zotero_cli_agent.core.providers.openai_compatible import OpenAICompatibleEmbeddingProvider
 from zotero_cli_agent.core.providers.sentence_transformers import SentenceTransformersProvider
 from zotero_cli_agent.core.rag import (
     bm25_score_chunks,
@@ -369,10 +370,33 @@ class TestEmbedding:
 
         assert result == [[0.1, 0.2, 0.3]]
         call_args = mock_urlopen.call_args[0][0]
+        assert mock_urlopen.call_args.kwargs["timeout"] == 60.0
         body = json.loads(call_args.data)
         assert body["model"] == "jina-embeddings-v3"
         assert body["input"] == ["hello world"]
         assert body["truncate"] is True
+
+    def test_openai_compatible_provider_uses_timeout(self):
+        provider = OpenAICompatibleEmbeddingProvider(
+            api_key="key",
+            model="bge-m3",
+            base_url="http://test/v1",
+            name="gitee",
+        )
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps({"data": [{"embedding": [0.1, 0.2, 0.3]}]}).encode()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        with patch("urllib.request.urlopen", return_value=mock_response) as mock_urlopen:
+            result = provider.embed(["hello world"])
+
+        assert result == [[0.1, 0.2, 0.3]]
+        call_args = mock_urlopen.call_args[0][0]
+        assert mock_urlopen.call_args.kwargs["timeout"] == 60.0
+        body = json.loads(call_args.data)
+        assert body["model"] == "bge-m3"
+        assert body["input"] == ["hello world"]
 
     def test_embed_texts_surfaces_provider_error(self, capsys):
         cfg = EmbeddingConfig(url="http://test/v1/embeddings", api_key="key", model="model", provider="aliyun")
