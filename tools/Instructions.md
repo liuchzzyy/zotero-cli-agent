@@ -421,94 +421,78 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-citation-key-updat
 
 ### 推荐给代理的直接提示词
 ```text
-执行与日志规则：
-- 默认通过对应 wrapper 重新打开新的 PowerShell 窗口运行；除非调试或 CI，不要追加 `-RunInCurrentWindow`。
-- 保留新窗口，进度以新窗口输出和运行目录中的 `run.log`、`progress.jsonl` 为主；不要把额外 watch 命令当作主进度来源。
-- 汇报进度必须基于 wrapper 输出、`run.log`、`progress.jsonl`、`logs\index.log`、`logs\embed.log`、`rag.idx.sqlite` 实际产物变化，不要只说“已开始”。
-- 所有 stdout/stderr、中间文件和诊断日志都必须放在各自 `log\...` 运行目录；不要散落到仓库根目录、`tools\`、`src\zotero_cli_workflows\`、`tmp\` 或临时 `.workspace\...` 中。
+当前日常目标是 F:\ChengL1u\10_Coding\zotero-cli-agent\.workspace\501-mno2-zn，
+对应 Zotero 集合 501-MnO2-Zn 及其子集合。full-library-rag 已删除，不要再把它当默认目标。
 
-使用 E:\Desktop\CodingDaily\zotero-cli-agent\tools\run-rag-full-library.ps1 为 Zotero 含 PDF 的父条目建立/更新 RAG 索引并回填 embedding，不要手动逐条添加 workspace item，不直接写 rag.idx.sqlite。查证据使用 E:\Desktop\CodingDaily\zotero-cli-agent\tools\run-rag-evidence-search.ps1，不要临时拼长命令。
+集合 key：
+KRI7W5QZ,8FAPWVJM,8J9NPUPR,PD6IDJ2R,PUR627E3,R7VCZW46,S67ZHINI,WR5PK9MT,XIWCAHQT,ZF6UGG6U
 
-默认目标：
-- workspace 名称：full-library-rag。
-- 默认集合：30_PROJECT + 40_TOPIC；wrapper 默认参数已经设置为 `-WorkspaceName full-library-rag -Collections "30_PROJECT,40_TOPIC"`，不自动包含对应子集合。
-- 条目范围：本地 Zotero SQLite 中 `30_PROJECT` 与 `40_TOPIC` 两个根集合的直接条目并集，再筛选“至少有一个本地存在 PDF 附件”的父条目。
-- 索引方式：phase-by-phase。先维护 .workspace\full-library-rag\workspace.toml；再调用 uv run zot workspace index full-library-rag --extractor mineru --progress-lines --item-progress --no-embed，让所有待处理条目先完成 PDF 抽取、chunk、BM25；最后统一调用 uv run zot workspace embed full-library-rag --progress-lines 回填 chunks.embedding IS NULL。
-- 增量规则：workspace 只新增缺失 key；RAG index 只索引尚未进入 rag.idx.sqlite 的 item key；embedding 只回填 chunks.embedding IS NULL 的 chunk；PDF 文本抽取复用 .zot\state\pdf_cache.sqlite。
-- index 阶段按 Zotero 父条目逐个处理、逐个 commit，但只写 BM25，不生成 embedding；中断后重跑会跳过已进入 rag.idx.sqlite 的 item key，继续剩余条目。embed 阶段默认按 10 个 chunk 一个提交批次回填，并在 provider 请求开始、等待、内部进度和 batch 完成时输出进度行；中断、provider 断连或手动停止后重跑会跳过已有 embedding 的 chunk。
-- API embedding provider 使用 `-EmbeddingDevice api` 或省略 `-EmbeddingDevice`；日志应显示 `embedding runtime: api`，不应显示 CPU/GPU device。`-EmbeddingDevice none` 只作为“不传本地 device”的兼容别名。
-- 本地 sentence-transformers 默认使用 CPU：安装 `uv sync --dev --extra mcp --extra local-embeddings-cpu`，并在 `.zot/config.toml` 的 `[embedding]` 里设置 `device = "cpu"`。GPU 运行使用 `uv sync --dev --extra mcp --extra local-embeddings-gpu`，并设置 `device = "cuda"`，也可以在 wrapper 中用 `-EmbeddingDevice cuda` 或 `-EmbeddingDevice gpu` 临时覆盖。同一个 `.venv` 不能同时安装 CPU 和 CUDA 两份 torch wheel；CUDA wheel 仍可通过 `device = "cpu"` 或 `-EmbeddingDevice cpu` 走 CPU fallback，不要为此创建 `.venv-gpu`。
-- 本机 GPU 路径已验证为：NVIDIA GeForce GTX 960M + NVIDIA driver 522.25 + torch 2.7.1+cu118 + CUDA runtime 11.8。GTX 960M 只有 4GB 显存，`BAAI/bge-m3` 全量本地 GPU 回填风险高；wrapper 会在 CUDA embedding 前运行 `nvidia-smi` 和 PyTorch CUDA 预检，并默认阻止低于 6144 MiB 的 GPU 进入全量回填。需要低显存 GPU smoke test 时必须显式加 `-AllowLowVramGpu -EmbedBatchSize 1 -EmbedLimit N`；本地完整回填优先用 `-EmbeddingDevice cpu`。
+安全边界：
+- 只通过 tools\run-rag-full-library.ps1 更新 workspace/index/embedding。
+- 不直接写 rag.idx.sqlite，不直接写 zotero.sqlite，不写 Zotero Web API。
+- .workspace\501-mno2-zn 是持久 RAG workspace，保留。
+- .zot\state\pdf_cache.sqlite 是 MinerU/PDF 抽取共享缓存，保留；删除它只会导致以后重抽 PDF。
+- log\rag-full-library-* 和 log\rag-evidence-search-* 是运行日志；确认不需要复盘后可以删除。
 
-集合参数：
-- wrapper 支持 `-Collections`，值为逗号分隔的 collection 名称或 key；inventory 阶段会对这些集合取并集并去重，再筛选“至少有一个本地存在 PDF 附件”的父条目。
-- 当前默认集合限定命令会维护 .workspace\full-library-rag\workspace.toml，并索引到 .workspace\full-library-rag\rag.idx.sqlite。
+先 dry-run 看是否有新增或缺口：
+$collections = 'KRI7W5QZ,8FAPWVJM,8J9NPUPR,PD6IDJ2R,PUR627E3,R7VCZW46,S67ZHINI,WR5PK9MT,XIWCAHQT,ZF6UGG6U'
+pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 `
+  -WorkspaceName 501-mno2-zn `
+  -Collections $collections `
+  -DryRun `
+  -KeepLog `
+  -RunInCurrentWindow
 
-本指令独立包含运行文件规则，并区分持久状态和本次运行文件：.workspace\full-library-rag 和 .zot\state\pdf_cache.sqlite 是持久 workspace/index/cache，不是清理对象；inventory、临时脚本、运行日志和临时诊断文件放在 log\rag-full-library-YYYYMMDD-HHMMSS。不要把本次运行文件放在仓库根目录散文件、tmp\ 或额外临时 .workspace\... 目录中。完整成功并复核无误后可清理本次 log 目录；失败、中断或需要审查时保留。单独后台回填 embedding 时可使用 log\rag-embedding-backfill，但 wrapper 的标准日志位置仍是本次运行目录下的 logs\embed.log。
+正式增量更新。默认新窗口运行，进度看新窗口和 log\rag-full-library-*\logs\index.log / embed.log：
+$collections = 'KRI7W5QZ,8FAPWVJM,8J9NPUPR,PD6IDJ2R,PUR627E3,R7VCZW46,S67ZHINI,WR5PK9MT,XIWCAHQT,ZF6UGG6U'
+pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 `
+  -WorkspaceName 501-mno2-zn `
+  -Collections $collections `
+  -EmbeddingDevice api `
+  -KeepLog
 
-默认 dry-run。运行文件默认放到 log\rag-full-library-YYYYMMDD-HHMMSS，dry-run 成功后会自动清理；如果要审查 inventory，加 -KeepLog：
-pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -DryRun -ScanLimit 100 -KeepLog
-默认会打开新 PowerShell 7/pwsh 窗口；调试时才追加 `-RunInCurrentWindow`。
+只补 embedding，不重新 PDF 抽取或 item index：
+pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 `
+  -WorkspaceName 501-mno2-zn `
+  -EmbedOnly `
+  -EmbeddingDevice api `
+  -KeepLog
 
-正式增量运行。成功后自动删除本次 log\rag-full-library-YYYYMMDD-HHMMSS 运行目录；持久 workspace/index 仍保留在 .workspace\full-library-rag：
-pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -EmbeddingDevice api
-正式运行顺序是 inventory -> 全部待处理条目 item index/BM25 -> 全部缺失 chunks embedding 回填。不要手动单独启动后台 backfill，除非 wrapper 无法满足排查需求。
+完成后复核 SQLite 计数：
+@'
+import sqlite3
+from pathlib import Path
+p = Path(".workspace/501-mno2-zn/rag.idx.sqlite")
+con = sqlite3.connect(p)
+cur = con.cursor()
+print("items", cur.execute("select count(distinct item_key) from chunks").fetchone()[0])
+print("chunks", cur.execute("select count(*) from chunks").fetchone()[0])
+print("with_embedding", cur.execute("select count(*) from chunks where embedding is not null").fetchone()[0])
+print("missing_embedding", cur.execute("select count(*) from chunks where embedding is null").fetchone()[0])
+con.close()
+'@ | uv run python -
 
-只回填旧索引 embedding，不重跑 PDF 提取或 index。适用于 rag.idx.sqlite 已有 chunks 但 chunks.embedding 为空或部分为空的情况；API provider 用 api，本地 4GB GPU 上优先走 CPU：
-pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -EmbedOnly -EmbeddingDevice api -KeepLog
+当前完成状态（2026-06-12）：
+- items: 407
+- chunks: 76566
+- with_embedding: 76566
+- missing_embedding: 0
 
-只小批量测试 GPU embedding，不重跑 PDF 提取或 index：
-uv run python -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else None)"
-pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -EmbedOnly -EmbedLimit 1 -EmbedBatchSize 1 -EmbeddingDevice cuda -AllowLowVramGpu -KeepLog
+查证据。BM25 和 embedding 已完成时默认用 auto，也就是 hybrid；rerank 是查询时在线精排，不是离线构建步骤：
+pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-evidence-search.ps1 `
+  -WorkspaceName 501-mno2-zn `
+  -Question "MnO2 zinc battery failure degradation mechanism Mn dissolution structural collapse capacity fading electrolyte evidence" `
+  -Mode auto `
+  -TopK 8 `
+  -RerankTopN 50 `
+  -KeepLog `
+  -RunInCurrentWindow
 
-30_PROJECT + 40_TOPIC 默认正式运行。长任务建议加 -KeepLog，方便完成后复核 index.log：
-pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -EmbeddingDevice api -KeepLog
+如果 rerank provider 异常，先加 -NoRerank 退回 hybrid 原始排序；如果只看正文或补充信息，加 -PdfKind main 或 -PdfKind supplementary。
 
-边界：
-- 默认不排除 book/bookSection，因为 RAG 的目标是“集合内含 PDF 条目”，不是 AI note 论文分析。
-- 无本地 PDF 文件的条目不进入 workspace；有 Zotero PDF 记录但本地文件缺失的条目会统计为 pdf_but_missing_local_file。
-- 现有 workspace index 的索引增量粒度是 item key。已索引条目的 PDF 或 metadata 后续变化不会自动重建；如果确认大量 PDF/metadata 已变更，用 -ForceRebuild 全量重建。-ForceRebuild 会先重建 BM25-only index，再统一回填新 chunks 的 embedding。
-- embedding 增量粒度是 chunk。若 index 已 up-to-date 但 chunks.embedding 缺失，优先用 wrapper 的 -EmbedOnly 或自动 embed 阶段回填，不要为此用 -ForceRebuild。
-- 不直接写 rag.idx.sqlite；RAG index 只通过 zot workspace index 生成，embedding 只通过 zot workspace embed 回填，避免破坏索引结构。
-- 不删除 .workspace\full-library-rag，也不删除 .zot\state\pdf_cache.sqlite；它们是持久 workspace/index/cache，不是运行中间文件。
-
-实时进度：
-- 所有子命令（inventory、index、embed）的 stdout/stderr 会逐行输出到主窗口，并追加写入对应日志文件，不再打开额外 watcher 窗口。进度以主窗口实时输出为主，`run.log`/`progress.jsonl` 和子命令日志为辅。
-- inventory 阶段会显示 scanned/local_pdf_items/pdf_but_missing。
-- inventory 阶段还会显示 indexed_chunk_count、chunks_with_embeddings、chunks_missing_embeddings；如果 chunks_missing_embeddings > 0 且没有 -NoEmbed/-ForceRebuild，wrapper 只记录缺口，等 item index 完成后统一运行 logs\embed.log 中的 embedding backfill。
-- index 阶段默认使用 `--progress-lines --item-progress --no-embed`，按条目输出 `[item:start]`、`[item:N:extract:cache]`、`[item:N:extract:upload]`、`[item:N:extract:process]`、`[item:N:extract:download]`、`[item:pdf-error]`、`[item:done]` 等逐行进度。
-- embed 阶段默认使用 `--progress-lines`，按批输出 `[embed:start]`、等待 provider 时按 `-EmbedHeartbeatSeconds` 输出 `[embed:wait]`、provider 内部分批完成时输出 `[embed:provider]`、batch 完成时输出 `[embed:done]`，commit 后输出 `[embed] attempted=... stored=... skipped=... last_id=... rate=... eta=...`；provider 断连时会按参数重试并继续可恢复提交。wrapper 默认 `-EmbedBatchSize 10`，这是“每次 provider 调用和提交的 chunk 数”；wrapper 会用该值临时覆盖 provider 内部 `ZOT_EMBEDDING_BATCH_SIZE`，因此给了就覆盖，没给就默认 10。
-- `[item:done]` 表示该 item 已写入并 commit 到 rag.idx.sqlite；中断重跑时这类 key 会被跳过。
-- 所有运行日志写入 log\rag-full-library-YYYYMMDD-HHMMSS\logs\inventory.log、log\rag-full-library-YYYYMMDD-HHMMSS\logs\index.log 和 log\rag-full-library-YYYYMMDD-HHMMSS\logs\embed.log。
-- 可用 rag.idx.sqlite 中的 distinct item_key 数、chunks 数、embedding IS NOT NULL/IS NULL 数复核实际进展；不要直接修改该 SQLite。
-
-查证据：
-- 默认使用 wrapper，输出和日志在 log\rag-evidence-search-YYYYMMDD-HHMMSS；需要保留结果时加 -KeepLog。
-- BM25 已完成但 embedding 未完成时，用 BM25 + rerank：
-pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-evidence-search.ps1 -Question "zinc manganese battery electrolyte evidence" -Mode bm25 -TopK 8 -RerankTopN 50 -KeepLog
-- BM25 和 BAAI/bge-m3 embedding 都完成后，用 auto 或 hybrid + rerank：
-pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-evidence-search.ps1 -Question "zinc manganese battery electrolyte evidence" -Mode auto -TopK 8 -RerankTopN 50 -KeepLog
-- 只看正文 PDF 或补充信息 PDF 时，加 -PdfKind main 或 -PdfKind supplementary。
-- 给代理消费结构化结果时，加 -Json；人工查看时默认是 human-readable。若 reranker 配置不可用，加 -NoRerank 先退回 BM25/hybrid 原始排序。
-
-中间文件清理：
-- 默认会删除临时 inventory_full_pdf_workspace.py。
-- 完整成功后脚本会删除本次 log\rag-full-library-YYYYMMDD-HHMMSS；如果 log\ 已空，也删除 log\。
-- 如果需要保留 inventory.json 或运行日志用于审查，加 -KeepLog。
-- 如果需要保留临时 inventory 脚本用于排查，加 -KeepInventory；这会保留本次 log 目录。
-- 如果只想更新 workspace 不跑索引和 embedding，用 -NoIndex；成功后仍按默认清理本次 log 目录，除非加 -KeepLog。
-- 如果只想回填 embedding，不跑 PDF 提取或 item 索引，用 -EmbedOnly；可配合 -EmbedBatchSize、-EmbedLimit、-EmbeddingDevice、-EmbedMaxRetries、-EmbedRetrySleep、-EmbedHeartbeatSeconds 控制批量、设备、重试和 provider 等待心跳。CUDA 设备会先做 GPU 预检；低于默认 `-GpuMinMemoryMiB 6144` 时会停止，除非显式加 `-AllowLowVramGpu`。只有确认预检本身有误时才用 `-SkipGpuPreflight`。
-- NVIDIA 驱动安装完成并验证后，可以删除安装中间文件：`C:\Users\chengliu\Downloads\NVIDIA`、`C:\NVIDIA\DisplayDriver\522.25` 和 `%TEMP%\NvidiaLogging`；不要删除已安装的 `C:\Program Files\NVIDIA Corporation`。
-
-常用命令：
-pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -DryRun -ScanLimit 500 -KeepLog
-pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -EmbeddingDevice api
-pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -DryRun -KeepLog
-pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -EmbeddingDevice api -KeepLog
-pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -EmbedOnly -KeepLog
-pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -EmbedOnly -EmbedLimit 1 -EmbedBatchSize 1 -EmbeddingDevice cuda -AllowLowVramGpu -KeepLog
-pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -NoIndex
-pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 -ForceRebuild
-pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-evidence-search.ps1 -Question "zinc manganese battery" -Mode auto -TopK 8 -RerankTopN 50 -KeepLog
-pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-evidence-search.ps1 -Question "zinc manganese battery" -Mode bm25 -PdfKind main -TopK 8 -KeepLog
+清理中间文件：
+- 可以删除 log\rag-full-library-* 和 log\rag-evidence-search-*。
+- 不删除 .workspace\501-mno2-zn。
+- 不删除 .zot\state\pdf_cache.sqlite。
+- 不删除 .workspace\_models，除非明确不再使用本地模型缓存。
 ```
