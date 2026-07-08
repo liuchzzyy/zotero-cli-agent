@@ -379,6 +379,9 @@ class ZoteroReader:
         limit: int = 50,
     ) -> list[DuplicateGroup]:
         """Find potential duplicate items by DOI and/or title similarity."""
+        if limit <= 0:
+            return []
+
         conn = self._connect()
         excl_sql, excl_params = self._excluded_filter()
         lib_sql, lib_params = self._library_filter()
@@ -397,6 +400,9 @@ class ZoteroReader:
         groups: list[DuplicateGroup] = []
         seen_group_keys: set[frozenset[str]] = set()
 
+        def _reached_limit() -> bool:
+            return len(groups) >= limit
+
         # --- DOI strategy ---
         if strategy in ("doi", "both"):
             ph = ",".join("?" * len(item_ids))
@@ -412,7 +418,7 @@ class ZoteroReader:
             for r in doi_rows:
                 doi_map.setdefault(r["value"].strip().lower(), []).append(r["itemID"])
 
-            for doi_val, ids in doi_map.items():
+            for ids in doi_map.values():
                 if len(ids) < 2:
                     continue
                 group_key = frozenset(item_keys[i] for i in ids)
@@ -422,6 +428,8 @@ class ZoteroReader:
                 items = self._get_items_batch(conn, ids)
                 if len(items) >= 2:
                     groups.append(DuplicateGroup(items=items, match_type="doi", score=1.0))
+                    if _reached_limit():
+                        return groups
 
         # --- Title strategy ---
         if strategy in ("title", "both"):
@@ -438,16 +446,24 @@ class ZoteroReader:
                 t = re.sub(r"[^\w\s]", "", title.lower()).strip()
                 return re.sub(r"\s+", " ", t)
 
-            title_items: list[tuple[int, str, str]] = []  # (itemID, original, normalized)
+            def _can_reach_threshold(norm_a: str, norm_b: str) -> bool:
+                total_len = len(norm_a) + len(norm_b)
+                if total_len == 0:
+                    return True
+                max_ratio = 2 * min(len(norm_a), len(norm_b)) / total_len
+                return max_ratio >= threshold
+
+            title_items: list[tuple[int, str]] = []
             for r in title_rows:
-                title_items.append((r["itemID"], r["value"], _normalize(r["value"])))
+                title_items.append((r["itemID"], _normalize(r["value"])))
+            norm_by_id = dict(title_items)
 
             # Group exact normalized matches (O(n))
             norm_groups: dict[str, list[int]] = {}
-            for item_id, orig, norm in title_items:
+            for item_id, norm in title_items:
                 norm_groups.setdefault(norm, []).append(item_id)
 
-            for norm, ids in norm_groups.items():
+            for ids in norm_groups.values():
                 if len(ids) >= 2:
                     group_key = frozenset(item_keys[i] for i in ids)
                     if group_key not in seen_group_keys:
@@ -455,9 +471,11 @@ class ZoteroReader:
                         items = self._get_items_batch(conn, ids)
                         if len(items) >= 2:
                             groups.append(DuplicateGroup(items=items, match_type="title", score=1.0))
+                            if _reached_limit():
+                                return groups
 
             # Fuzzy match singletons only (O(n^2) on singletons)
-            singletons = [(item_id, norm) for item_id, _, norm in title_items if len(norm_groups[norm]) == 1]
+            singletons = [(item_id, norm) for item_id, norm in title_items if len(norm_groups[norm]) == 1]
             matched: set[int] = set()
             for idx, (id_a, norm_a) in enumerate(singletons):
                 if id_a in matched:
@@ -466,6 +484,8 @@ class ZoteroReader:
                 for j in range(idx + 1, len(singletons)):
                     id_b, norm_b = singletons[j]
                     if id_b in matched:
+                        continue
+                    if not _can_reach_threshold(norm_a, norm_b):
                         continue
                     ratio = SequenceMatcher(None, norm_a, norm_b).ratio()
                     if ratio >= threshold:
@@ -478,14 +498,13 @@ class ZoteroReader:
                         seen_group_keys.add(group_key)
                         items = self._get_items_batch(conn, cluster)
                         best_score = (
-                            max(
-                                SequenceMatcher(None, _normalize(items[0].title), _normalize(it.title)).ratio()
-                                for it in items[1:]
-                            )
+                            max(SequenceMatcher(None, norm_a, norm_by_id[cid]).ratio() for cid in cluster[1:])
                             if len(items) >= 2
                             else 0.0
                         )
                         groups.append(DuplicateGroup(items=items, match_type="title", score=round(best_score, 3)))
+                        if _reached_limit():
+                            return groups
 
         return groups[:limit]
 
