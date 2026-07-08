@@ -1,9 +1,11 @@
 name: Daily RSS Zotero Import
 
 on:
-  schedule:
-    # GitHub Actions cron uses UTC. 19:10 UTC is 03:10 Asia/Shanghai.
-    - cron: "10 19 * * *"
+  # Daily scheduled runs are currently disabled.
+  # To resume, uncomment the schedule block below.
+  # schedule:
+  #   # GitHub Actions cron uses UTC. 19:10 UTC is 03:10 Asia/Shanghai.
+  #   - cron: "10 19 * * *"
   workflow_dispatch:
     inputs:
       date:
