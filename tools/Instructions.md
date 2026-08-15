@@ -1,4 +1,4 @@
-﻿## 通用执行规则
+## 通用执行规则
 
 本文件中的 Zotero workflow 默认通过对应 `tools\*.ps1` wrapper 重新打开一个新的 PowerShell 窗口运行。wrapper 会在新窗口中输出阶段进度，写入运行目录中的 `run.log` 和 `progress.jsonl`；不要再依赖额外的 watch 命令作为主进度来源。
 
@@ -23,7 +23,7 @@
 - 所有 stdout/stderr、中间文件和诊断日志都必须放在各自 `log\...` 运行目录；不要散落到仓库根目录、`tools\`、`src\zotero_cli_workflows\`、`tmp\` 或临时 `.workspace\...` 中。
 
 使用 skill zotero-cli-agent。
-在 E:\Desktop\CodingDaily\zotero-cli-agent 下执行 metadata cleanup。先建立本次运行目录：log\metadata-cleanup-YYYYMMDD-HHMM。
+在 F:\ChengL1u\10_资源库\代码\zotero-cli-agent 下执行 metadata cleanup。先建立本次运行目录：log\metadata-cleanup-YYYYMMDD-HHMM。
 本指令独立包含运行文件规则：metadata-export、cleaned jsonl、dry-run/apply 输出、batch 文件、续跑文件和诊断记录都只放在本次 log\metadata-cleanup-YYYYMMDD-HHMM 目录；不要放在仓库根目录散文件、tmp\ 或临时 .workspace\... 运行目录中。失败、中断、等待确认或需要排查时保留该目录；复核无误后删除本次目录，如果 log\ 已空也删除 log\。
 
 如果在本仓库内单独执行 metadata cleanup，先读取 Zotero 条目 metadata。默认导出命令必须同时跳过已清理 tag 和 20_ARCHIVE 全部 holding collections：
@@ -81,7 +81,7 @@ uv run zot --json update --from-jsonl log\metadata-cleanup-YYYYMMDD-HHMM\cleaned
 - 汇报进度必须基于 wrapper 输出、`run.log`、`progress.jsonl` 或实际产物变化，不要只说“已开始”。
 - 所有 stdout/stderr、中间文件和诊断日志都必须放在各自 `log\...` 运行目录；不要散落到仓库根目录、`tools\`、`src\zotero_cli_workflows\`、`tmp\` 或临时 `.workspace\...` 中。
 
-在 E:\Desktop\CodingDaily\zotero-cli-agent 下执行 Daily RSS Item Import。
+在 F:\ChengL1u\10_资源库\代码\zotero-cli-agent 下执行 Daily RSS Item Import。
 
 默认目标集合按条目类型二选一：普通条目放入 `00_INBOX/000_Inbox`；带 `tracked_author:*` 的作者提醒条目只放入 `00_INBOX/001_Author/<作者名>`，不要同时放入根 `00_INBOX` 或 `00_INBOX/000_Inbox`。不要自动放入 `002_Stage`、`003_Cleaned` 或其他子集合。
 
@@ -93,20 +93,20 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-daily-rss-doi-impo
 推荐直接在 PowerShell 中运行 wrapper，保留新窗口输出；进度以新窗口输出、`run.log`、`progress.jsonl` 和 import_summary.json 为准。只有调试/CI 才追加 `-RunInCurrentWindow`。
 
 默认读取：
-E:\Desktop\CodingDaily\rss-cli-agent\storage\exports\YYYY-MM-DD.selected.json
+F:\ChengL1u\10_资源库\代码\rss2tg\storage\exports\YYYY-MM-DD.selected.json
 
 当前 RSS selected JSON 是扁平数组，字段为 `entry_uid/title/doi/time/url/state`；导入器必须使用顶层 `url` 处理无 DOI 条目，并用顶层 `time` 写入 Zotero date。不要再假设存在旧版 `source.link` 或 `source.published_at` 嵌套字段。
 
 GitHub Actions 定时运行：
 - workflow: `.github/workflows/daily-rss-zotero-import.yml`
 - 定时：北京时间每天 03:10；GitHub cron 使用 UTC，所以配置为 `10 19 * * *`。
-- JSON 来源：`https://raw.githubusercontent.com/liuchzzyy/rss-cli-agent/main/storage/exports/YYYY-MM-DD.selected.json`
+- JSON 来源：`https://raw.githubusercontent.com/liuchzzyy/Rss2Telegram/main/storage/exports/YYYY-MM-DD.selected.json`
 - 必需 Actions secrets：`ZOT_LIBRARY_ID`、`ZOT_API_KEY`。
-- 可选 Actions secrets：`ZOT_CROSSREF_MAILTO`；`RSS_REPO_TOKEN` 仅在 rss-cli-agent 变为私有仓库时需要。
+- 可选 Actions secrets：`ZOT_CROSSREF_MAILTO`；`RSS_REPO_TOKEN` 仅在 rss2tg 变为私有仓库时需要。
 - GitHub runner 没有本地 Zotero SQLite；workflow 必须使用 `-SkipLibraryExport -SkipLocalDb`，让导入阶段只依赖 Zotero Web API。
 
 如果 RSS selected JSON 在非默认位置，必须显式传入完整路径：
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-daily-rss-doi-import.ps1 -Date YYYY-MM-DD -SelectedJson "E:\Desktop\CodingDaily\rss-cli-agent\storage\exports\YYYY-MM-DD.selected.json" -ProgressIntervalSeconds 5
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-daily-rss-doi-import.ps1 -Date YYYY-MM-DD -SelectedJson "F:\ChengL1u\10_资源库\代码\rss2tg\storage\exports\YYYY-MM-DD.selected.json" -ProgressIntervalSeconds 5
 
 如果需要保留成功运行记录用于审查，加 `-KeepLog`；否则不要保留成功运行的 log 目录。
 
@@ -132,7 +132,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-daily-rss-doi-impo
 ### 推荐给代理的直接提示词
 ```text
 使用 skill zotero-cli-agent。
-在 E:\Desktop\CodingDaily\zotero-cli-agent 下处理 Zotero 的 `00_INBOX/002_Stage` 日常审阅与归档分流。这个流程先只读审阅，再给出分类候选；我确认后，才把确认的条目从 `002_Stage` 移动到 `20_ARCHIVE` 下的专题 inbox。
+在 F:\ChengL1u\10_资源库\代码\zotero-cli-agent 下处理 Zotero 的 `00_INBOX/002_Stage` 日常审阅与归档分流。这个流程先只读审阅，再给出分类候选；我确认后，才把确认的条目从 `002_Stage` 移动到 `20_ARCHIVE` 下的专题 inbox。
 
 总体安全边界：
 - 审阅和分类候选阶段只读，不写 Zotero，不改 zotero.sqlite，不生成 cleaned-metadata/update/delete 文件。默认直接在回复中返回结果；除非我明确要求保存快照，不要把结果散落到仓库根目录、tools\、tmp\ 或临时 .workspace\... 中。
@@ -195,7 +195,7 @@ $j.data | Select-Object -Skip $offset -First $limit | ForEach-Object {
 ### 推荐给代理的直接提示词
 ```text
 使用 skill zotero-cli-agent。
-在 E:\Desktop\CodingDaily\zotero-cli-agent 下执行 Zotero 全库集合成员关系审计与修复。
+在 F:\ChengL1u\10_资源库\代码\zotero-cli-agent 下执行 Zotero 全库集合成员关系审计与修复。
 
 目标：理清全库父条目的集合归属，只修复普通集合成员关系，不删除条目，不改 metadata、tags、notes、attachments，不直接写 zotero.sqlite。
 
@@ -252,7 +252,7 @@ $j.data | Select-Object -Skip $offset -First $limit | ForEach-Object {
 - 所有 stdout/stderr、中间文件和诊断日志都必须放在各自 `log\...` 运行目录；不要散落到仓库根目录、`tools\`、`src\zotero_cli_workflows\`、`tmp\` 或临时 `.workspace\...` 中。
 
 不要用 title 模糊匹配做去重。
-直接在 E:\Desktop\CodingDaily\zotero-cli-agent 下调用 tools\remove-newer-doi-duplicates.ps1。
+直接在 F:\ChengL1u\10_资源库\代码\zotero-cli-agent 下调用 tools\remove-newer-doi-duplicates.ps1。
 
 本指令独立包含运行文件规则：dry-run 输出、apply 输出、计划记录和诊断日志都放在本次 log\remove-newer-doi-duplicates-YYYYMMDD-HHMM 目录；不要放在仓库根目录散文件、tmp\ 或临时 .workspace\... 运行目录中。复核删除结果无误后清理本次目录；失败或等待确认时保留。
 
@@ -275,7 +275,7 @@ $j.data | Select-Object -Skip $offset -First $limit | ForEach-Object {
 - 汇报进度必须基于 wrapper 输出、`run.log`、`progress.jsonl` 或实际产物变化，不要只说“已开始”。
 - 所有 stdout/stderr、中间文件和诊断日志都必须放在各自 `log\...` 运行目录；不要散落到仓库根目录、`tools\`、`src\zotero_cli_workflows\`、`tmp\` 或临时 `.workspace\...` 中。
 
-使用 E:\Desktop\CodingDaily\zotero-cli-agent\tools\run-ai-note-generation.ps1 批量生成 Zotero AI note，不要手动拼长命令逐条跑。
+使用 F:\ChengL1u\10_资源库\代码\zotero-cli-agent\tools\run-ai-note-generation.ps1 批量生成 Zotero AI note，不要手动拼长命令逐条跑。
 
 目标：
 对尚未带有 `workflow/ai_note` 或旧 `update/AInote` 的非书籍条目，读取所有本地 PDF 附件，使用 MinerU 抽取 Markdown 和图片，经 CLIProxyAPI 的 gpt-5.5（reasoning effort=`xhigh`）生成“AI条目分析 - <title>”note，写回 Zotero Web API，并给父条目打 tag `workflow/ai_note`。
@@ -354,7 +354,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-ai-note-generation
 - 汇报进度必须基于 wrapper 输出、`run.log`、`progress.jsonl` 或实际产物变化，不要只说“已开始”。
 - 所有 stdout/stderr、中间文件和诊断日志都必须放在各自 `log\...` 运行目录；不要散落到仓库根目录、`tools\`、`src\zotero_cli_workflows\`、`tmp\` 或临时 `.workspace\...` 中。
 
-使用 E:\Desktop\CodingDaily\zotero-cli-agent\tools\run-citation-key-update-from-ai-notes.ps1 更新已经带有 workflow/ai_note 的父条目 citationKey，不要手动逐条改 Zotero，不要直接写 zotero.sqlite。
+使用 F:\ChengL1u\10_资源库\代码\zotero-cli-agent\tools\run-citation-key-update-from-ai-notes.ps1 更新已经带有 workflow/ai_note 的父条目 citationKey，不要手动逐条改 Zotero，不要直接写 zotero.sqlite。
 
 目标：
 读取本地 Zotero SQLite 中带 workflow/ai_note 的父条目及其 AI note，对比现有 citationKey，生成统一的引用关键词，并通过 Zotero Web API 写回父条目 citationKey；写入成功后给父条目添加 tag workflow/keyword。
@@ -421,7 +421,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-citation-key-updat
 
 ### 推荐给代理的直接提示词
 ```text
-当前日常目标是 F:\ChengL1u\10_Coding\zotero-cli-agent\.workspace\501-mno2-zn，
+当前日常目标是 F:\ChengL1u\10_资源库\代码\zotero-cli-agent\.workspace\501-mno2-zn，
 对应 Zotero 集合 501-MnO2-Zn 及其子集合。full-library-rag 已删除，不要再把它当默认目标。
 
 集合 key：

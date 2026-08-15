@@ -121,7 +121,7 @@ Zotero data dir auto-detects when not configured, but this checkout now treats r
 
 Current local config is expected at:
 
-- `E:\Desktop\CodingDaily\zotero-cli-agent\.zot\config.toml`
+- `F:\ChengL1u\10_资源库\代码\zotero-cli-agent\.zot\config.toml`
 - active default profile `zotero-cil`
 - real local database at `C:\Users\chengliu\Zotero\zotero.sqlite`
 - working Web API credentials for writes

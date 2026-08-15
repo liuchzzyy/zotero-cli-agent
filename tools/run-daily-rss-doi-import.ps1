@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$Date = (Get-Date).ToString("yyyy-MM-dd"),
-    [string]$RssRepoRoot = "E:\Desktop\CodingDaily\rss-cli-agent",
+    [string]$RssRepoRoot = "F:\ChengL1u\10_资源库\代码\rss2tg",
     [string]$SelectedJson = "",
     [string]$ZoteroRepoRoot = "",
     [string]$Library = "user",

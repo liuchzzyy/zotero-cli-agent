@@ -15,7 +15,7 @@ For exhaustive flags / types / safety tier of any command, run `zot schema <cmd>
 
 For repository workflows, prefer the maintained PowerShell wrappers and the canonical runbook in `tools/Instructions.md` instead of hand-splicing long commands.
 
-- Run wrappers from `E:\Desktop\CodingDaily\zotero-cli-agent`.
+- Run wrappers from `F:\ChengL1u\10_资源库\代码\zotero-cli-agent`.
 - `tools\*.ps1` wrappers default to opening a new PowerShell window; keep that window visible.
 - Primary progress evidence is the wrapper output plus `run.log`, `progress.jsonl`, and workflow summary files in the run directory.
 - Use `-RunInCurrentWindow` only for debugging, CI, or when a parent wrapper already opened the visible window.
