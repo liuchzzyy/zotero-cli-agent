@@ -9,7 +9,7 @@
 2. 保留新窗口，进度以新窗口中的 wrapper 输出和 `run.log` / `progress.jsonl` 为主。
 3. 必要时再检查 `log\...`、`summary.json`、`import_summary.json`、batch 日志或 Web API postcheck 文件。
 4. 汇报进度必须基于 wrapper 输出、`run.log`、`progress.jsonl` 或实际产物变化；不要只说“已开始”。
-5. 所有 stdout/stderr 和中间日志都放在对应 `log\...` 运行目录；不要散落在仓库根目录、`tools\`、`src\zotero_cli_workflows\`、`tmp\` 或临时 `.workspace\...` 中。
+5. 所有 stdout/stderr 和中间日志都放在对应 `log\...` 运行目录；不要散落在仓库根目录、`tools\`、`tmp\` 或临时 `.workspace\...` 中。
 6. 仅限调试/CI 时使用 `-RunInCurrentWindow` 在当前 PowerShell 中运行实际流程。
 
 ## Clean-up all metadata
@@ -20,7 +20,7 @@
 - 默认通过对应 wrapper 重新打开新的 PowerShell 7/pwsh 窗口运行；除非调试或 CI，不要追加 `-RunInCurrentWindow`。
 - 保留新窗口，进度以新窗口输出和运行目录中的 `run.log`、`progress.jsonl` 为主；不要把额外 watch 命令当作主进度来源。
 - 汇报进度必须基于 wrapper 输出、`run.log`、`progress.jsonl` 或实际产物变化，不要只说“已开始”。
-- 所有 stdout/stderr、中间文件和诊断日志都必须放在各自 `log\...` 运行目录；不要散落到仓库根目录、`tools\`、`src\zotero_cli_workflows\`、`tmp\` 或临时 `.workspace\...` 中。
+- 所有 stdout/stderr、中间文件和诊断日志都必须放在各自 `log\...` 运行目录；不要散落到仓库根目录、`tools\`、`tmp\` 或临时 `.workspace\...` 中。
 
 使用 skill zotero-cli-agent。
 在 F:\ChengL1u\10_资源库\代码\zotero-cli-agent 下执行 metadata cleanup。先建立本次运行目录：log\metadata-cleanup-YYYYMMDD-HHMM。
@@ -69,62 +69,6 @@ uv run zot --json update --from-jsonl log\metadata-cleanup-YYYYMMDD-HHMM\cleaned
 - 单独流程：人工汇总每个 batch 的 succeeded/failed，确认 cleaned-metadata.jsonl 中所有 key 都成功。
 
 复核无误后删除本次 log\metadata-cleanup-YYYYMMDD-HHMM 目录；如果 log\ 已空，也删除 log\。
-```
-
-## Daily RSS DOI Import
-
-### 推荐给代理的直接提示词
-```text
-执行与日志规则：
-- 默认通过对应 wrapper 重新打开新的 PowerShell 窗口运行；除非调试或 CI，不要追加 `-RunInCurrentWindow`。
-- 保留新窗口，进度以新窗口输出和运行目录中的 `run.log`、`progress.jsonl` 为主；不要把额外 watch 命令当作主进度来源。
-- 汇报进度必须基于 wrapper 输出、`run.log`、`progress.jsonl` 或实际产物变化，不要只说“已开始”。
-- 所有 stdout/stderr、中间文件和诊断日志都必须放在各自 `log\...` 运行目录；不要散落到仓库根目录、`tools\`、`src\zotero_cli_workflows\`、`tmp\` 或临时 `.workspace\...` 中。
-
-在 F:\ChengL1u\10_资源库\代码\zotero-cli-agent 下执行 Daily RSS Item Import。
-
-默认目标集合按条目类型二选一：普通条目放入 `00_INBOX/000_Inbox`；带 `tracked_author:*` 的作者提醒条目只放入 `00_INBOX/001_Author/<作者名>`，不要同时放入根 `00_INBOX` 或 `00_INBOX/000_Inbox`。不要自动放入 `002_Stage`、`003_Cleaned` 或其他子集合。
-
-本指令独立包含运行文件规则：import_list、checkpoint、summary、failed_results、progress 和恢复审计文件都放在 log\rss-daily-item-import_YYYY-MM-DD；不要放在仓库根目录散文件、tmp\ 或临时 .workspace\... 运行目录中。成功且 failed=0 时默认清理本次 log 目录；失败、中断或需要恢复时保留该目录。
-
-日常运行不要手动拆开清洗/导入步骤，直接调用 wrapper。默认调用会重新打开一个新的 PowerShell 窗口，实际 import 在新窗口中运行；wrapper 把本次 import_list、checkpoint、summary、failed_results、`run.log`、`progress.jsonl` 等运行文件放到 log\rss-daily-item-import_YYYY-MM-DD，并在 failed=0 成功完成后自动删除本次 log 目录：
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-daily-rss-doi-import.ps1 -Date YYYY-MM-DD -ProgressIntervalSeconds 5
-
-推荐直接在 PowerShell 中运行 wrapper，保留新窗口输出；进度以新窗口输出、`run.log`、`progress.jsonl` 和 import_summary.json 为准。只有调试/CI 才追加 `-RunInCurrentWindow`。
-
-默认读取：
-F:\ChengL1u\10_资源库\代码\rss2tg\storage\exports\YYYY-MM-DD.selected.json
-
-当前 RSS selected JSON 是扁平数组，字段为 `entry_uid/title/doi/time/url/state`；导入器必须使用顶层 `url` 处理无 DOI 条目，并用顶层 `time` 写入 Zotero date。不要再假设存在旧版 `source.link` 或 `source.published_at` 嵌套字段。
-
-GitHub Actions 定时运行：
-- workflow: `.github/workflows/daily-rss-zotero-import.yml`
-- 定时：北京时间每天 03:10；GitHub cron 使用 UTC，所以配置为 `10 19 * * *`。
-- JSON 来源：`https://raw.githubusercontent.com/liuchzzyy/Rss2Telegram/main/storage/exports/YYYY-MM-DD.selected.json`
-- 必需 Actions secrets：`ZOT_LIBRARY_ID`、`ZOT_API_KEY`。
-- 可选 Actions secrets：`ZOT_CROSSREF_MAILTO`；`RSS_REPO_TOKEN` 仅在 rss2tg 变为私有仓库时需要。
-- GitHub runner 没有本地 Zotero SQLite；workflow 必须使用 `-SkipLibraryExport -SkipLocalDb`，让导入阶段只依赖 Zotero Web API。
-
-如果 RSS selected JSON 在非默认位置，必须显式传入完整路径：
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-daily-rss-doi-import.ps1 -Date YYYY-MM-DD -SelectedJson "F:\ChengL1u\10_资源库\代码\rss2tg\storage\exports\YYYY-MM-DD.selected.json" -ProgressIntervalSeconds 5
-
-如果需要保留成功运行记录用于审查，加 `-KeepLog`；否则不要保留成功运行的 log 目录。
-
-运行时必须显示实时进度。关注 processed/total、created_new、reused_existing、already_routed、failed。长时间停在 preflight/import starting 时，检查 log\rss-daily-item-import_YYYY-MM-DD\rss_item_import\import_summary.json 和是否仍有 import_rss_build_zotero_items.py 进程，不要凭表面输出判断卡死。
-如果 import list summary 显示 new_items=0，wrapper 应直接写出 created_new=0、reused_existing=0、already_routed=0、failed=0 的 summary，并跳过 import-list 子命令；不要为 0 个 RSS item 启动空导入进程。
-
-如果 wrapper 已经完成且 failed=0：
-- 本次 log\rss-daily-item-import_YYYY-MM-DD 应该已被自动删除；如果使用过 -KeepLog，复核无误后手动删除。
-- 删除旧版本残留的根目录 rss_failed_dois_YYYY-MM-DD.txt（如果存在）。
-- 提醒用户 Zotero Web API 写入后需要 Zotero 同步，本地 SQLite 才会完全反映。
-
-如果中途失败或被中断且 log\rss-daily-item-import_YYYY-MM-DD 还在：
-- 不要立刻重跑 wrapper；wrapper 会重建本次输出目录，可能丢掉 checkpoint。
-- 先确认没有残留 import_rss_build_zotero_items.py 进程。
-- 用同一个 import_list 和 output_dir 恢复：
-.\.venv\Scripts\python.exe src\zotero_cli_workflows\import_rss_build_zotero_items.py import-list --import-list log\rss-daily-item-import_YYYY-MM-DD\rss_item_import_list\import_list.json --output-dir log\rss-daily-item-import_YYYY-MM-DD\rss_item_import --library user --apply
-- 恢复完成后检查 failed_results.json；若为空且 checkpoint 覆盖全部 import_list entries，再删除旧版本残留的根目录 rss_failed_dois_YYYY-MM-DD.txt，并清理本次 log\rss-daily-item-import_YYYY-MM-DD。
-- 如果失败来自 metadata/Crossref 解析异常，先修复代码并补测试，再基于原 checkpoint 恢复；不要清空本次 log 目录。
 ```
 
 ## Daily 002_Stage Review
@@ -249,7 +193,7 @@ $j.data | Select-Object -Skip $offset -First $limit | ForEach-Object {
 - 默认通过对应 wrapper 重新打开新的 PowerShell 窗口运行；除非调试或 CI，不要追加 `-RunInCurrentWindow`。
 - 保留新窗口，进度以新窗口输出和运行目录中的 `run.log`、`progress.jsonl` 为主；不要把额外 watch 命令当作主进度来源。
 - 汇报进度必须基于 wrapper 输出、`run.log`、`progress.jsonl` 或实际产物变化，不要只说“已开始”。
-- 所有 stdout/stderr、中间文件和诊断日志都必须放在各自 `log\...` 运行目录；不要散落到仓库根目录、`tools\`、`src\zotero_cli_workflows\`、`tmp\` 或临时 `.workspace\...` 中。
+- 所有 stdout/stderr、中间文件和诊断日志都必须放在各自 `log\...` 运行目录；不要散落到仓库根目录、`tools\`、`tmp\` 或临时 `.workspace\...` 中。
 
 不要用 title 模糊匹配做去重。
 直接在 F:\ChengL1u\10_资源库\代码\zotero-cli-agent 下调用 tools\remove-newer-doi-duplicates.ps1。
@@ -263,158 +207,6 @@ $j.data | Select-Object -Skip $offset -First $limit | ForEach-Object {
 
 先执行默认 dry-run 看 keep/delete 计划；我确认后，再加 -Apply 正式删除。dry-run 和 apply 默认会各自生成一个时间戳运行目录；正式结果以 apply 运行目录为准。
 复核删除结果无误后，删除本次 log\remove-newer-doi-duplicates-YYYYMMDD-HHMM 目录；如果失败或等待我确认，保留该目录。
-```
-
-## Batch AI Note Analysis
-
-### 推荐给代理的直接提示词
-```text
-执行与日志规则：
-- 默认通过对应 wrapper 重新打开新的 PowerShell 窗口运行；除非调试或 CI，不要追加 `-RunInCurrentWindow`。
-- 保留新窗口，进度以新窗口输出和运行目录中的 `run.log`、`progress.jsonl` 为主；不要把额外 watch 命令当作主进度来源。
-- 汇报进度必须基于 wrapper 输出、`run.log`、`progress.jsonl` 或实际产物变化，不要只说“已开始”。
-- 所有 stdout/stderr、中间文件和诊断日志都必须放在各自 `log\...` 运行目录；不要散落到仓库根目录、`tools\`、`src\zotero_cli_workflows\`、`tmp\` 或临时 `.workspace\...` 中。
-
-使用 F:\ChengL1u\10_资源库\代码\zotero-cli-agent\tools\run-ai-note-generation.ps1 批量生成 Zotero AI note，不要手动拼长命令逐条跑。
-
-目标：
-对尚未带有 `workflow/ai_note` 或旧 `update/AInote` 的非书籍条目，读取所有本地 PDF 附件，使用 MinerU 抽取 Markdown 和图片，经 CLIProxyAPI 的 gpt-5.5（reasoning effort=`xhigh`）生成“AI条目分析 - <title>”note，写回 Zotero Web API，并给父条目打 tag `workflow/ai_note`。
-
-本指令独立包含运行文件规则：checkpoint、preview、results、failures、notes、MinerU 临时资产和 batch logs 都放在 log\ai-note-analysis-batch-YYYYMMDD-HHMMSS；不要放在仓库根目录散文件、tmp\ 或临时 .workspace\... 运行目录中。完整成功并复核无误后清理本次目录；失败、中断、等待审查或需要保留 MinerU 原始材料时保留。
-
-默认命令。wrapper 默认扫描 `00_INBOX/003_Cleaned` 集合，默认把 checkpoint、preview、results、failures、notes、MinerU 临时资产和 batch logs 放到 log\ai-note-analysis-batch-YYYYMMDD-HHMMSS，并在完整成功后自动清理本次 log 目录：
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-ai-note-generation.ps1 -BatchSize 3
-默认会打开新 PowerShell 窗口；调试时才追加 `-RunInCurrentWindow`。
-
-先验证候选条目时用 dry-run；dry-run 成功结束后也会清理本次 log 目录，等待审查时可加 -KeepLog：
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-ai-note-generation.ps1 -DryRun -BatchSize 3 -ScanLimit 100 -KeepLog
-
-只处理指定条目时用：
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-ai-note-generation.ps1 -Keys VH4PXB5G -BatchSize 1
-
-边界和跳过规则：
-- 已有 `workflow/ai_note` 或旧 `update/AInote` 的父条目默认完全跳过，不重复生成 note。
-- 同一个 output/checkpoint 中已经 tagged 的条目也跳过；这是为了避免 Zotero Web API 写入后，本地 SQLite 尚未同步导致重复处理。
-- book 和 bookSection 跳过；当前不做书籍 AI 分析。
-- 无 PDF、PDF 路径缺失、PDF 超过 max PDF 大小、MinerU 抽取失败、AI 分类 uncertain、AI 调用失败、Zotero 写入失败，都不打 `workflow/ai_note`，便于下次继续。
-- Zotero 读操作来自本地 SQLite；写 note/tag 通过 Zotero Web API。写入成功后需要 Zotero 同步，本地数据库才会看到新 note 和 tag。
-
-模型和图片边界：
-- 默认使用 CLIProxyAPI: http://127.0.0.1:8317/v1，模型 gpt-5.5，reasoning effort=`xhigh`，模式 mineru-markdown-images。
-- CLIProxyAPI 的 gpt-5.5 已验证可以读取 image_url/base64 图片。
-- DeepSeek deepseek-v4-pro 不支持 image_url 图片；如果切到 DeepSeek，只能用 mineru-text，不能使用 mineru-markdown-images。
-- 不要把 MinerU Markdown 里的本地图片路径直接当作可读图片；脚本会把 MinerU 输出图片转成 base64 data URL 后发送给支持视觉的模型。
-- 默认每个条目最多发送 24 张 MinerU 图片，避免请求过大。必要时可调整 -MaxImages，但不要无上限发送全部图片。
-
-实时进度要求：
-- 运行时必须保留终端输出，不要静默后台运行。
-- 进度中应能看到扫描、跳过原因、MinerU upload/process/download、classify、analyze、note、tag、done、summary。
-- 每批都会写 log\ai-note-analysis-batch-YYYYMMDD-HHMMSS\logs\batch-XXX.log；如果长时间停在 MinerU process 或 AI analyze，先看当前 batch log，不要盲目重启全量。
-
-中间文件和清理：
-- 默认输出目录为 log\ai-note-analysis-batch-YYYYMMDD-HHMMSS，不再使用 .workspace\ai-note-analysis-batch-* 作为运行目录。
-- 成功批次后脚本会自动删除 mineru-assets 中间目录，避免图片和 MinerU ZIP 解包文件长期占用空间。
-- 完整成功后脚本会删除本次 log\ai-note-analysis-batch-YYYYMMDD-HHMMSS；如果 log\ 已空，也删除 log\。
-- 如果某批失败，log\ai-note-analysis-batch-YYYYMMDD-HHMMSS 会保留用于诊断，里面包括 notes、results.json、failures.json、summary.json、preview.json、checkpoint.json、logs\batch-*.log。
-- 如果需要审查 MinerU 原始 Markdown/图片，加 -NoCleanIntermediate 保留中间文件；这也会保留本次 log 目录。
-- 不要删除 checkpoint.json；批量处理中断后继续使用同一个 -OutputDir 才能避免重复处理已写入但本地尚未同步的条目。
-
-失败恢复：
-- 如果失败在 MinerU 上传/下载，优先用原 log\ai-note-analysis-batch-YYYYMMDD-HHMMSS 目录重跑；已缓存的 MinerU 资产会被复用，除非加 -RefreshMineruCache。
-- 如果失败在 AI 调用，检查 CLIProxyAPI 是否运行、/v1/models 是否可用、模型是否支持图片。
-- 如果失败在 Zotero 写入，检查 ZOT_API_KEY / ZOT_LIBRARY_ID 和 Web API 权限，不要写本地 zotero.sqlite。
-- 如果某批有 failures，默认停止并保留本次 log 目录；不要立即用 -Force 全量重跑。
-```
-
-### 常用参数
-```powershell
-# 小批量正式运行，推荐默认；成功后自动清理本次 log 目录
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-ai-note-generation.ps1 -BatchSize 3
-
-# 保留 MinerU 中间 Markdown 和图片，便于检查
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-ai-note-generation.ps1 -BatchSize 1 -NoCleanIntermediate
-
-# 复用同一个 log 输出目录继续跑，避免本地 Zotero 未同步时重复
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-ai-note-generation.ps1 -BatchSize 3 -OutputDir log\ai-note-generation-YYYYMMDD-HHMMSS
-
-# 成功后也保留运行目录用于审查
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-ai-note-generation.ps1 -BatchSize 3 -KeepLog
-
-# 切到 DeepSeek 时只能用文本模式，不要使用 mineru-markdown-images
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-ai-note-generation.ps1 -BatchSize 3 -Model deepseek-v4-pro -BaseUrl https://api.deepseek.com -PdfInputMode mineru-text
-```
-
-## Update AI Note Citation Keywords
-
-### 推荐给代理的直接提示词
-```text
-执行与日志规则：
-- 默认通过对应 wrapper 重新打开新的 PowerShell 窗口运行；除非调试或 CI，不要追加 `-RunInCurrentWindow`。
-- 保留新窗口，进度以新窗口输出和运行目录中的 `run.log`、`progress.jsonl` 为主；不要把额外 watch 命令当作主进度来源。
-- 汇报进度必须基于 wrapper 输出、`run.log`、`progress.jsonl` 或实际产物变化，不要只说“已开始”。
-- 所有 stdout/stderr、中间文件和诊断日志都必须放在各自 `log\...` 运行目录；不要散落到仓库根目录、`tools\`、`src\zotero_cli_workflows\`、`tmp\` 或临时 `.workspace\...` 中。
-
-使用 F:\ChengL1u\10_资源库\代码\zotero-cli-agent\tools\run-citation-key-update-from-ai-notes.ps1 更新已经带有 workflow/ai_note 的父条目 citationKey，不要手动逐条改 Zotero，不要直接写 zotero.sqlite。
-
-目标：
-读取本地 Zotero SQLite 中带 workflow/ai_note 的父条目及其 AI note，对比现有 citationKey，生成统一的引用关键词，并通过 Zotero Web API 写回父条目 citationKey；写入成功后给父条目添加 tag workflow/keyword。
-
-本指令独立包含运行文件规则：items、generated、updates、applied、failed_generation、failed_apply、summary、remaining 和 logs 都放在 log\ai-note-keyword-update 或指定的 log\ai-note-keyword-update-YYYYMMDD-HHMM 目录；不要放在仓库根目录散文件、tmp\ 或临时 .workspace\... 运行目录中。失败、中断、等待复核或等待充值时保留本次 log 目录；确认全量完成并复核后才清理。
-
-关键词格式：
-领域/体系 | 机制/关键问题 | 性能优势/价值 | 可选先进表征方法 | 可选制备方法 | 可选理论 | 疑问：最大破绽
-
-格式规则：
-- 最终 citationKey 是纯文本，不要 Markdown 反引号，不要方括号。
-- 前三槽和最后的“疑问：”槽必填；可选先进表征方法、制备方法、理论/模型只有 AI note 中确实有时才追加，没有就不写，不要补空槽。
-- 可选槽按“先进表征方法 | 制备方法 | 理论/模型”的语义顺序追加，每类最多一个短槽，可以用逗号合并同类术语。
-- 引用关键词必须指出这篇文章最大的破绽、最弱证据、最值得追问的假设或外推风险，不要泛写“无明显破绽”。
-- 统一通用术语；例如“液态Na-K合金负极”“Na-K液态合金负极”“液态Na-K合金”“Na-K液态合金”都简写为 Na-K。
-- 具体 prompt 不再写死在 Python 中，保存在 tools\templates\citation-key-from-ai-notes-prompt.json；修改格式要求或术语统一时优先改这个 JSON。
-
-推荐 wrapper。默认不写 Zotero，只刷新 status；完整运行需要显式 -FullRun：
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-citation-key-update-from-ai-notes.ps1 -Status
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-citation-key-update-from-ai-notes.ps1 -FullRun
-默认会打开新 PowerShell 窗口；调试时才追加 `-RunInCurrentWindow`。
-
-分步运行时用：
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-citation-key-update-from-ai-notes.ps1 -Generate
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-citation-key-update-from-ai-notes.ps1 -RetryFailed
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-citation-key-update-from-ai-notes.ps1 -DryRunApply
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-citation-key-update-from-ai-notes.ps1 -Apply
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-citation-key-update-from-ai-notes.ps1 -Status
-
-当前推荐模型是 deepseek-v4-flash；不要再用 deepseek-v4-pro 做这个关键词流程，pro 在本流程里明显更慢。wrapper 默认 Model=deepseek-v4-flash。如果临时用 Python 子命令，显式指定 flash：
-uv run python src\zotero_cli_workflows\update_citation_keys_from_ai_notes.py generate --skip-done-tag --model deepseek-v4-flash
-
-Python 子命令仍可用于调试。默认工作目录是 log\ai-note-keyword-update，不再使用 .workspace\ai-note-keyword-update：
-uv run python src\zotero_cli_workflows\update_citation_keys_from_ai_notes.py generate --skip-done-tag --model deepseek-v4-flash
-uv run python src\zotero_cli_workflows\update_citation_keys_from_ai_notes.py generate --retry-failed --batch-size 1 --model deepseek-v4-flash
-uv run python src\zotero_cli_workflows\update_citation_keys_from_ai_notes.py apply --dry-run
-uv run python src\zotero_cli_workflows\update_citation_keys_from_ai_notes.py apply --zotero-timeout 90
-uv run python src\zotero_cli_workflows\update_citation_keys_from_ai_notes.py status
-
-如果要临时测试另一版 prompt：
-uv run python src\zotero_cli_workflows\update_citation_keys_from_ai_notes.py --prompt-path tools\templates\citation-key-from-ai-notes-prompt.json generate --skip-done-tag --model deepseek-v4-flash
-或用 wrapper：
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run-citation-key-update-from-ai-notes.ps1 -Generate -PromptPath tools\templates\citation-key-from-ai-notes-prompt.json
-
-中间文件和续跑：
-- 默认中间文件保存在 log\ai-note-keyword-update，包括 items.jsonl、generated.jsonl、updates.jsonl、applied.jsonl、failed_generation.jsonl、failed_apply.jsonl、summary.json、remaining.jsonl，以及 logs\*.log。
-- 运行时终端和 logs\*.log 会实时输出 progress/progress_label，例如 generate 353/444、apply 81/444；如果长时间不变，再检查当前 log 和模型/API 状态。
-- 如果要另开一次独立运行，用 --workspace log\ai-note-keyword-update-YYYYMMDD-HHMM；不要放到 .workspace。
-- 续跑时复用同一个 log 目录；脚本会跳过 generated.jsonl、failed_generation.jsonl、applied.jsonl、failed_apply.jsonl 中已经记录且未解决的 key。
-- 如果只想补跑生成失败的少数条目，用 wrapper 的 -RetryFailed，或 Python 的 --retry-failed --batch-size 1；不要用 --force 全量重跑。
-- 每次 generate/apply/status 都会自动刷新 summary.json 和 remaining.jsonl；先看 summary.json 的 remaining、not_applied、generation_failed_unresolved、apply_failed_unresolved，再决定下一步。generation_failed_history_total 只是历史失败记录数，不代表当前仍失败。
-- 如果 remaining.jsonl 只剩少数反复非 JSON 条目，可以读取对应 AI note 后人工整理 citationKey，追加到 generated.jsonl，再运行 apply；不要继续无意义消耗模型调用。
-- 如果 DeepSeek 返回 402 Insufficient Balance，脚本会停止且不把待处理条目标记为失败；保留 log\ai-note-keyword-update，充值或切换模型后继续同一个目录。
-- 如果本地 Zotero SQLite 尚未同步，优先用 --skip-done-tag 跳过已经打 workflow/keyword 的父条目；不要依赖直接改 zotero.sqlite。
-
-安全边界：
-- 读操作来自本地 SQLite；写 citationKey/tag 只通过 Zotero Web API。
-- 不直接写 zotero.sqlite，不删除 Zotero 本地库文件。
-- 失败、中断、等待复核或等待充值时不要清理 log\ai-note-keyword-update；只有确认全量完成并复核后才清理。
-- Web API 写入后需要 Zotero 同步，本地 SQLite 才能看到新 citationKey/tag；抽样验证优先读 Web API。
 ```
 
 ## Full Library RAG Incremental Index
