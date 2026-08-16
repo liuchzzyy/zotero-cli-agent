@@ -4,7 +4,7 @@ This file provides guidance to coding agents working with code in this repositor
 
 ## Project
 
-`zotero-cli-agent` (binary: `zot`) is a Zotero CLI built for Claude Code / agent use. It combines **direct local SQLite reads** with **Zotero Web API writes**. The `zot` CLI is the single entry point.
+`zotero-cli-agent` (binary: `zot`) is a Zotero CLI built for AI agent use. It combines **direct local SQLite reads** with **Zotero Web API writes**. The `zot` CLI is the single entry point.
 
 The CLI follows an agent-native contract enforced by the Click tree, `zot schema`,
 `formatter.py`, `exit_codes.py`, and the agent-interface tests:
@@ -86,7 +86,7 @@ When adding a command, register it in `cli.py` and place it in the correct safet
 
 - `zot schema` is the authoritative machine-readable CLI surface.
 - `tests/test_agent_interface.py`, `tests/test_agent_p1.py`, and `tests/test_agent_p2.py` are the regression guardrails for envelope shape, exit codes, dry-run behavior, streaming, and safety tiers.
-- `skill/zotero-cli-agent/` is the bundled Claude skill and should stay aligned with real CLI behavior.
+- `skill/zotero-cli-agent/` is the bundled agent skill and should stay aligned with real CLI behavior.
 - No `docs/` tree or MkDocs config is currently checked in. Do not treat missing docs paths as source of truth unless docs are reintroduced in a future change.
 
 If the CLI surface changes, update schema-visible behavior, tests, and the bundled skill together. If docs are later restored, keep them in sync too.

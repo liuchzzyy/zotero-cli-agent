@@ -1,4 +1,4 @@
-"""zotero-cli-agent: Zotero CLI for Claude Code."""
+"""zotero-cli-agent: Zotero CLI for AI agents."""
 
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version

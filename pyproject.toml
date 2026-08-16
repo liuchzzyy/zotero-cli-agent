@@ -1,7 +1,7 @@
 [project]
 name = "zotero-cli-agent"
 version = "0.4.4"
-description = "Zotero CLI for Claude Code — SQLite reads + Web API writes"
+description = "Zotero CLI for AI agents — SQLite reads + Web API writes"
 license = "CC-BY-NC-4.0"
 requires-python = ">=3.10"
 classifiers = [

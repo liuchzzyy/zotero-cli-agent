@@ -13,7 +13,7 @@ from zotero_cli_agent.exit_codes import emit_error
 @click.argument("key")
 @click.pass_context
 def summarize_cmd(ctx: click.Context, key: str) -> None:
-    """Output a structured summary for Claude Code consumption.
+    """Output a structured summary for AI agent consumption.
 
     \b
     Examples:

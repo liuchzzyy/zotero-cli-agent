@@ -323,9 +323,9 @@ zot workspace add protein-folding KEY1 KEY2 KEY3 KEY4
 # Step 3: Build RAG index
 zot workspace index protein-folding
 
-# Step 4: Query and feed results to Claude Code
+# Step 4: Query and feed results to your AI agent
 zot --json workspace query "AlphaFold architecture" --workspace protein-folding --top-k 5
-# Paste JSON output into Claude Code conversation as context
+# Paste JSON output into the agent conversation as context
 ```
 
 ## Important Notes
