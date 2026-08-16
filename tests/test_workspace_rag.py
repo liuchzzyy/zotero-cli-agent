@@ -1,4 +1,4 @@
-"""Tests for workspace RAG CLI commands."""
+"""Tests for workspace RAG CLI commands (index / embed / query)."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from unittest.mock import patch
 from click.testing import CliRunner
 
 from zotero_cli_agent.cli import main
+from zotero_cli_agent.config import VectorStoreConfig
 from zotero_cli_agent.core.rag_index import RagIndex
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
@@ -21,82 +22,87 @@ def _invoke(args: list[str], json_output: bool = False, env: dict[str, str] | No
     base_env = {
         "ZOT_DATA_DIR": str(FIXTURES_DIR),
         "ZOT_FORMAT": "table",
-        "ZOT_EMBEDDING_PROVIDER": "jina",
         "ZOT_EMBEDDING_URL": "",
         "ZOT_EMBEDDING_KEY": "",
         "ZOT_EMBEDDING_MODEL": "",
-        "ZOT_EMBEDDING_HF_TOKEN": "",
-        "ZOT_EMBEDDING_DEVICE": "cpu",
-        "ZOT_EMBEDDING_BATCH_SIZE": "8",
     }
     if env:
         base_env.update(env)
     return runner.invoke(main, base + args, env=base_env)
 
 
-def _patch_ws_dir(tmp_path):
-    """Patch workspaces_dir in both the core module and the commands module."""
+def _patch_workspace(tmp_path):
+    """Patch workspace dirs + vector store so tests are fully isolated."""
     stack = ExitStack()
     stack.enter_context(patch("zotero_cli_agent.core.workspace.workspaces_dir", return_value=tmp_path))
     stack.enter_context(patch("zotero_cli_agent.commands.workspace.workspaces_dir", return_value=tmp_path))
+    stack.enter_context(
+        patch(
+            "zotero_cli_agent.commands.workspace.load_vector_store_config",
+            return_value=VectorStoreConfig(path=str(tmp_path / "_qdrant")),
+        )
+    )
     return stack
 
 
 class TestWorkspaceIndex:
     def test_index_workspace(self, tmp_path):
-        with _patch_ws_dir(tmp_path):
+        with _patch_workspace(tmp_path):
             _invoke(["workspace", "new", "test-idx"])
             _invoke(["workspace", "add", "test-idx", "ATTN001"])
-            result = _invoke(["workspace", "index", "test-idx"])
+            result = _invoke(["workspace", "index", "test-idx", "--extractor", "pymupdf"])
         assert result.exit_code == 0
         assert "Indexed" in result.output
         idx_path = tmp_path / "test-idx" / "rag.idx.sqlite"
         assert idx_path.exists()
 
     def test_index_nonexistent_workspace(self, tmp_path):
-        with _patch_ws_dir(tmp_path):
+        with _patch_workspace(tmp_path):
             result = _invoke(["workspace", "index", "nope"])
         assert "not found" in result.output
 
     def test_index_empty_workspace(self, tmp_path):
-        with _patch_ws_dir(tmp_path):
+        with _patch_workspace(tmp_path):
             _invoke(["workspace", "new", "empty-ws"])
             result = _invoke(["workspace", "index", "empty-ws"])
         assert "empty" in result.output.lower() or "Add items" in result.output
 
     def test_index_force_rebuild(self, tmp_path):
-        with _patch_ws_dir(tmp_path):
+        with _patch_workspace(tmp_path):
             _invoke(["workspace", "new", "test-idx"])
             _invoke(["workspace", "add", "test-idx", "ATTN001"])
-            _invoke(["workspace", "index", "test-idx"])
-            result = _invoke(["workspace", "index", "test-idx", "--force"])
+            _invoke(["workspace", "index", "test-idx", "--extractor", "pymupdf"])
+            result = _invoke(["workspace", "index", "test-idx", "--force", "--extractor", "pymupdf"])
         assert result.exit_code == 0
         assert "Indexed" in result.output
 
     def test_index_incremental(self, tmp_path):
-        with _patch_ws_dir(tmp_path):
+        with _patch_workspace(tmp_path):
             _invoke(["workspace", "new", "test-idx"])
             _invoke(["workspace", "add", "test-idx", "ATTN001"])
-            _invoke(["workspace", "index", "test-idx"])
-            # Second index without force should say up to date
-            result = _invoke(["workspace", "index", "test-idx"])
+            _invoke(["workspace", "index", "test-idx", "--extractor", "pymupdf"])
+            result = _invoke(["workspace", "index", "test-idx", "--extractor", "pymupdf"])
         assert "up to date" in result.output
 
-    def test_index_no_embed_skips_configured_embedding(self, tmp_path):
-        with _patch_ws_dir(tmp_path), patch(
+    def test_reindex_forces_rebuild(self, tmp_path):
+        with _patch_workspace(tmp_path):
+            _invoke(["workspace", "new", "test-idx"])
+            _invoke(["workspace", "add", "test-idx", "ATTN001"])
+            _invoke(["workspace", "index", "test-idx", "--extractor", "pymupdf"])
+            result = _invoke(["workspace", "reindex", "test-idx", "--extractor", "pymupdf"])
+        assert result.exit_code == 0
+        assert "Indexed" in result.output
+
+    def test_index_no_embed_skips_embedding(self, tmp_path):
+        with _patch_workspace(tmp_path), patch(
             "zotero_cli_agent.commands.workspace.embed_texts",
             side_effect=AssertionError("should not embed"),
         ) as embed_mock:
             _invoke(["workspace", "new", "test-idx"])
             _invoke(["workspace", "add", "test-idx", "ATTN001"])
             result = _invoke(
-                ["workspace", "index", "test-idx", "--no-embed"],
-                env={
-                    "ZOT_EMBEDDING_PROVIDER": "jina",
-                    "ZOT_EMBEDDING_URL": "https://example.invalid/v1/embeddings",
-                    "ZOT_EMBEDDING_KEY": "fake-key",
-                    "ZOT_EMBEDDING_MODEL": "fake-model",
-                },
+                ["workspace", "index", "test-idx", "--no-embed", "--extractor", "pymupdf"],
+                env={"ZOT_EMBEDDING_URL": "https://ai.gitee.com/v1", "ZOT_EMBEDDING_KEY": "k", "ZOT_EMBEDDING_MODEL": "bge-m3"},
             )
 
         assert result.exit_code == 0
@@ -105,55 +111,58 @@ class TestWorkspaceIndex:
 
         idx = RagIndex(tmp_path / "test-idx" / "rag.idx.sqlite")
         try:
-            assert idx.count_missing_embeddings() > 0
-            assert idx.get_all_embeddings() == []
+            assert len(idx.get_all_chunks()) > 0
         finally:
             idx.close()
 
 
 class TestWorkspaceQuery:
     def test_query_workspace(self, tmp_path):
-        with _patch_ws_dir(tmp_path):
+        with _patch_workspace(tmp_path):
             _invoke(["workspace", "new", "test-q"])
             _invoke(["workspace", "add", "test-q", "ATTN001"])
-            _invoke(["workspace", "index", "test-q"])
+            _invoke(["workspace", "index", "test-q", "--extractor", "pymupdf"])
             result = _invoke(["workspace", "query", "attention", "--workspace", "test-q"])
         assert result.exit_code == 0
         assert "ATTN001" in result.output
 
     def test_query_json_output(self, tmp_path):
-        with _patch_ws_dir(tmp_path):
+        with _patch_workspace(tmp_path):
             _invoke(["workspace", "new", "test-q"])
             _invoke(["workspace", "add", "test-q", "ATTN001"])
-            _invoke(["workspace", "index", "test-q"])
+            _invoke(["workspace", "index", "test-q", "--extractor", "pymupdf"])
             result = _invoke(
                 ["workspace", "query", "attention", "--workspace", "test-q"],
                 json_output=True,
             )
-        # `workspace query --json` is routed through the envelope: data has
-        # `mode` and `results`, where `results` is the per-chunk list.
         data = json.loads(result.output)["data"]
         results = data["results"]
         assert isinstance(results, list)
         assert len(results) > 0
         assert "item_key" in results[0]
+        assert data["mode"] == "bm25"
 
     def test_query_rerank_json_output(self, tmp_path):
         def fake_rerank(question, candidates, config, *, top_n=50, progress_callback=None):
             assert question == "attention"
-            assert config.provider == "bge_reranker"
+            assert config.provider == "gitee"
             assert top_n == 2
             selected = candidates[:top_n]
             return [(cid, 10.0 - idx, chunk) for idx, (cid, _score, chunk) in enumerate(selected)] + candidates[top_n:]
 
-        with _patch_ws_dir(tmp_path), patch("zotero_cli_agent.commands.workspace.rerank_chunks", fake_rerank):
+        with _patch_workspace(tmp_path), patch("zotero_cli_agent.commands.workspace.rerank_chunks", fake_rerank):
             _invoke(["workspace", "new", "test-q"])
             _invoke(["workspace", "add", "test-q", "ATTN001"])
-            _invoke(["workspace", "index", "test-q"])
+            _invoke(["workspace", "index", "test-q", "--extractor", "pymupdf"])
             result = _invoke(
                 ["workspace", "query", "attention", "--workspace", "test-q", "--rerank", "--rerank-top-n", "2"],
                 json_output=True,
-                env={"ZOT_RERANK_PROVIDER": "bge_reranker", "ZOT_RERANK_MODEL": "fake-reranker"},
+                env={
+                    "ZOT_RERANK_PROVIDER": "gitee",
+                    "ZOT_RERANK_URL": "https://ai.gitee.com/v1/rerank",
+                    "ZOT_RERANK_KEY": "fake",
+                    "ZOT_RERANK_MODEL": "fake-reranker",
+                },
             )
 
         data = json.loads(result.output)["data"]
@@ -161,29 +170,28 @@ class TestWorkspaceQuery:
         assert data["results"][0]["score"] == 10.0
 
     def test_query_irrelevant(self, tmp_path):
-        with _patch_ws_dir(tmp_path):
+        with _patch_workspace(tmp_path):
             _invoke(["workspace", "new", "test-q"])
             _invoke(["workspace", "add", "test-q", "ATTN001"])
-            _invoke(["workspace", "index", "test-q"])
+            _invoke(["workspace", "index", "test-q", "--extractor", "pymupdf"])
             result = _invoke(["workspace", "query", "zzzzqqqxxx999", "--workspace", "test-q"])
-        # Should either return no results or very low-scoring results
         assert result.exit_code == 0
 
     def test_query_no_index(self, tmp_path):
-        with _patch_ws_dir(tmp_path):
+        with _patch_workspace(tmp_path):
             _invoke(["workspace", "new", "test-q"])
             result = _invoke(["workspace", "query", "test", "--workspace", "test-q"])
         assert "index" in result.output.lower()
 
     def test_query_nonexistent_workspace(self, tmp_path):
-        with _patch_ws_dir(tmp_path):
+        with _patch_workspace(tmp_path):
             result = _invoke(["workspace", "query", "test", "--workspace", "nope"])
         assert "not found" in result.output
 
 
 class TestWorkspaceExport:
     def test_export_markdown(self, tmp_path):
-        with _patch_ws_dir(tmp_path):
+        with _patch_workspace(tmp_path):
             _invoke(["workspace", "new", "test-exp"])
             _invoke(["workspace", "add", "test-exp", "ATTN001"])
             result = _invoke(["workspace", "export", "test-exp"])
@@ -193,7 +201,7 @@ class TestWorkspaceExport:
         assert "# Workspace: test-exp" in result.output
 
     def test_export_json(self, tmp_path):
-        with _patch_ws_dir(tmp_path):
+        with _patch_workspace(tmp_path):
             _invoke(["workspace", "new", "test-exp"])
             _invoke(["workspace", "add", "test-exp", "ATTN001"])
             result = _invoke(["workspace", "export", "test-exp", "--format", "json"])
@@ -201,7 +209,7 @@ class TestWorkspaceExport:
         assert len(data) >= 1
 
     def test_export_bibtex(self, tmp_path):
-        with _patch_ws_dir(tmp_path):
+        with _patch_workspace(tmp_path):
             _invoke(["workspace", "new", "test-exp"])
             _invoke(["workspace", "add", "test-exp", "ATTN001"])
             result = _invoke(["workspace", "export", "test-exp", "--format", "bibtex"])
@@ -210,12 +218,12 @@ class TestWorkspaceExport:
         assert "Attention" in result.output
 
     def test_export_nonexistent(self, tmp_path):
-        with _patch_ws_dir(tmp_path):
+        with _patch_workspace(tmp_path):
             result = _invoke(["workspace", "export", "nope"])
         assert "not found" in result.output
 
     def test_export_empty_workspace(self, tmp_path):
-        with _patch_ws_dir(tmp_path):
+        with _patch_workspace(tmp_path):
             _invoke(["workspace", "new", "test-exp"])
             result = _invoke(["workspace", "export", "test-exp"])
         assert "empty" in result.output.lower()
@@ -223,34 +231,34 @@ class TestWorkspaceExport:
 
 class TestWorkspaceImport:
     def test_import_from_search(self, tmp_path):
-        with _patch_ws_dir(tmp_path):
+        with _patch_workspace(tmp_path):
             _invoke(["workspace", "new", "test-imp"])
             result = _invoke(["workspace", "import", "test-imp", "--search", "attention"])
         assert result.exit_code == 0
         assert "Imported" in result.output
 
     def test_import_from_collection(self, tmp_path):
-        with _patch_ws_dir(tmp_path):
+        with _patch_workspace(tmp_path):
             _invoke(["workspace", "new", "test-imp"])
             result = _invoke(["workspace", "import", "test-imp", "--collection", "Machine Learning"])
         assert result.exit_code == 0
         assert "Imported" in result.output
 
     def test_import_from_tag(self, tmp_path):
-        with _patch_ws_dir(tmp_path):
+        with _patch_workspace(tmp_path):
             _invoke(["workspace", "new", "test-imp"])
             result = _invoke(["workspace", "import", "test-imp", "--tag", "transformer"])
         assert result.exit_code == 0
         assert "Imported" in result.output
 
     def test_import_no_source(self, tmp_path):
-        with _patch_ws_dir(tmp_path):
+        with _patch_workspace(tmp_path):
             _invoke(["workspace", "new", "test-imp"])
             result = _invoke(["workspace", "import", "test-imp"])
         assert "specify" in result.output.lower() or "at least" in result.output.lower()
 
     def test_import_dedup(self, tmp_path):
-        with _patch_ws_dir(tmp_path):
+        with _patch_workspace(tmp_path):
             _invoke(["workspace", "new", "test-imp"])
             _invoke(["workspace", "add", "test-imp", "ATTN001"])
             result = _invoke(["workspace", "import", "test-imp", "--search", "attention"])
@@ -258,14 +266,14 @@ class TestWorkspaceImport:
         assert "skipped" in result.output.lower()
 
     def test_import_nonexistent_workspace(self, tmp_path):
-        with _patch_ws_dir(tmp_path):
+        with _patch_workspace(tmp_path):
             result = _invoke(["workspace", "import", "nope", "--search", "test"])
         assert "not found" in result.output
 
 
 class TestWorkspaceSearch:
     def test_search_in_workspace(self, tmp_path):
-        with _patch_ws_dir(tmp_path):
+        with _patch_workspace(tmp_path):
             _invoke(["workspace", "new", "test-src"])
             _invoke(["workspace", "add", "test-src", "ATTN001"])
             result = _invoke(["workspace", "search", "attention", "--workspace", "test-src"])
@@ -273,14 +281,14 @@ class TestWorkspaceSearch:
         assert "ATTN001" in result.output
 
     def test_search_no_results(self, tmp_path):
-        with _patch_ws_dir(tmp_path):
+        with _patch_workspace(tmp_path):
             _invoke(["workspace", "new", "test-src"])
             _invoke(["workspace", "add", "test-src", "ATTN001"])
             result = _invoke(["workspace", "search", "xyznonexistent", "--workspace", "test-src"])
         assert "No matching" in result.output or result.output.strip() == ""
 
     def test_search_by_author(self, tmp_path):
-        with _patch_ws_dir(tmp_path):
+        with _patch_workspace(tmp_path):
             _invoke(["workspace", "new", "test-src"])
             _invoke(["workspace", "add", "test-src", "ATTN001"])
             result = _invoke(["workspace", "search", "Vaswani", "--workspace", "test-src"])
@@ -288,6 +296,6 @@ class TestWorkspaceSearch:
         assert "ATTN001" in result.output
 
     def test_search_nonexistent_workspace(self, tmp_path):
-        with _patch_ws_dir(tmp_path):
+        with _patch_workspace(tmp_path):
             result = _invoke(["workspace", "search", "test", "--workspace", "nope"])
         assert "not found" in result.output

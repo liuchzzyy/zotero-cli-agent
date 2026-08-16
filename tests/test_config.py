@@ -3,12 +3,18 @@ from pathlib import Path
 
 from zotero_cli_agent.config import (
     AppConfig,
+    EmbeddingConfig,
+    RerankConfig,
     config_file_path,
     detect_zotero_data_dir,
     get_default_profile,
     list_profiles,
     load_ai_note_config,
     load_config,
+    load_embedding_config,
+    load_rerank_config,
+    load_semantic_search_config,
+    load_vector_store_config,
     project_root,
     save_config,
     state_dir,
@@ -181,29 +187,26 @@ def test_save_and_load_config_with_backslashes(tmp_path):
     assert loaded.api_key == "abc"
 
 
+# --- Embedding config (Gitee API only) ---
+
+
 def test_load_embedding_config_from_toml(tmp_path):
     config_file = tmp_path / "config.toml"
     config_file.write_text("""
-[zotero]
-data_dir = '/tmp/zotero'
-
 [embedding]
-url = "https://api.jina.ai/v1/embeddings"
+provider = "gitee"
+url = "https://ai.gitee.com/v1"
 api_key = "test-key"
-model = "jina-embeddings-v3"
-hf_token = "hf-test"
-device = "cuda"
-batch_size = 2
+model = "bge-m3"
+batch_size = 50
 """)
-    from zotero_cli_agent.config import load_embedding_config
-
     cfg = load_embedding_config(path=config_file)
-    assert cfg.url == "https://api.jina.ai/v1/embeddings"
+    assert cfg.provider == "gitee"
+    assert cfg.url == "https://ai.gitee.com/v1"
     assert cfg.api_key == "test-key"
-    assert cfg.model == "jina-embeddings-v3"
-    assert cfg.hf_token == "hf-test"
-    assert cfg.device == "cuda"
-    assert cfg.batch_size == 2
+    assert cfg.model == "bge-m3"
+    assert cfg.batch_size == 50
+    assert cfg.is_configured is True
 
 
 def test_load_embedding_config_from_active_profile(tmp_path):
@@ -212,13 +215,6 @@ def test_load_embedding_config_from_active_profile(tmp_path):
 [embedding]
 active = "api.gitee"
 
-[embedding.local.cpu]
-provider = "sentence_transformers"
-url = ""
-model = "BAAI/bge-m3"
-device = "cpu"
-batch_size = 4
-
 [embedding.api.gitee]
 provider = "gitee"
 url = "https://ai.gitee.com/v1"
@@ -226,8 +222,6 @@ api_key = "gitee-key"
 model = "bge-m3"
 batch_size = 10
 """)
-    from zotero_cli_agent.config import load_embedding_config
-
     cfg = load_embedding_config(path=config_file)
     assert cfg.active == "api.gitee"
     assert cfg.provider == "gitee"
@@ -237,105 +231,59 @@ batch_size = 10
     assert cfg.batch_size == 10
 
 
-def test_load_embedding_config_active_env_selects_local_gpu(tmp_path, monkeypatch):
-    config_file = tmp_path / "config.toml"
-    config_file.write_text("""
-[embedding]
-active = "api.gitee"
-
-[embedding.api.gitee]
-provider = "gitee"
-url = "https://ai.gitee.com/v1"
-api_key = "gitee-key"
-model = "bge-m3"
-
-[embedding.local.gpu]
-provider = "sentence_transformers"
-url = ""
-model = "BAAI/bge-m3"
-device = "cuda"
-batch_size = 1
-""")
-    monkeypatch.setenv("ZOT_EMBEDDING_ACTIVE", "local.gpu")
-    from zotero_cli_agent.config import load_embedding_config
-
-    cfg = load_embedding_config(path=config_file, apply_env_overrides=True)
-    assert cfg.active == "local.gpu"
-    assert cfg.provider == "sentence_transformers"
-    assert cfg.url == ""
-    assert cfg.model == "BAAI/bge-m3"
-    assert cfg.device == "cuda"
-    assert cfg.batch_size == 1
-
-
 def test_load_embedding_config_defaults(tmp_path):
     config_file = tmp_path / "config.toml"
     config_file.write_text("[zotero]\ndata_dir = '/tmp'\n")
-    from zotero_cli_agent.config import load_embedding_config
-
     cfg = load_embedding_config(path=config_file)
-    assert cfg.url == "https://api.jina.ai/v1/embeddings"
+    assert cfg.provider == "gitee"
+    assert cfg.url == "https://ai.gitee.com/v1"
     assert cfg.api_key == ""
-    assert cfg.model == "jina-embeddings-v3"
-    assert cfg.device == "cpu"
-    assert cfg.batch_size == 8
+    assert cfg.model == "bge-m3"
+    assert cfg.batch_size == 50
+    assert cfg.is_configured is False
 
 
 def test_load_embedding_config_env_override(tmp_path, monkeypatch):
     config_file = tmp_path / "config.toml"
     config_file.write_text("[zotero]\ndata_dir = '/tmp'\n")
-    monkeypatch.setenv("ZOT_EMBEDDING_URL", "http://localhost:11434/v1/embeddings")
-    monkeypatch.setenv("ZOT_EMBEDDING_KEY", "local-key")
+    monkeypatch.setenv("ZOT_EMBEDDING_PROVIDER", "gitee")
+    monkeypatch.setenv("ZOT_EMBEDDING_URL", "https://ai.gitee.com/v1")
+    monkeypatch.setenv("ZOT_EMBEDDING_KEY", "env-key")
     monkeypatch.setenv("ZOT_EMBEDDING_MODEL", "custom-model")
-    monkeypatch.setenv("ZOT_EMBEDDING_PROVIDER", "sentence_transformers")
-    monkeypatch.setenv("ZOT_EMBEDDING_HF_TOKEN", "hf-env")
-    monkeypatch.setenv("ZOT_EMBEDDING_DEVICE", "cuda:0")
-    monkeypatch.setenv("ZOT_EMBEDDING_BATCH_SIZE", "1")
-    from zotero_cli_agent.config import load_embedding_config
-
+    monkeypatch.setenv("ZOT_EMBEDDING_BATCH_SIZE", "3")
     cfg = load_embedding_config(path=config_file, apply_env_overrides=True)
-    assert cfg.url == "http://localhost:11434/v1/embeddings"
-    assert cfg.api_key == "local-key"
+    assert cfg.provider == "gitee"
+    assert cfg.url == "https://ai.gitee.com/v1"
+    assert cfg.api_key == "env-key"
     assert cfg.model == "custom-model"
-    assert cfg.provider == "sentence_transformers"
-    assert cfg.hf_token == "hf-env"
-    assert cfg.device == "cuda:0"
-    assert cfg.batch_size == 1
+    assert cfg.batch_size == 3
 
 
 def test_embedding_config_is_configured():
-    from zotero_cli_agent.config import EmbeddingConfig
-
     assert EmbeddingConfig(url="http://x", api_key="k", model="m").is_configured is True
     assert EmbeddingConfig(url="http://x", api_key="", model="m").is_configured is False
-    assert EmbeddingConfig(url="", api_key="", model="Qwen/Qwen3-Embedding-0.6B", provider="sentence_transformers").is_configured is True
-    assert EmbeddingConfig(url="", api_key="", model="", provider="sentence_transformers").is_configured is False
+    assert EmbeddingConfig(url="", api_key="k", model="m").is_configured is False
+
+
+# --- Rerank config (Gitee API only) ---
 
 
 def test_load_rerank_config_from_toml(tmp_path):
     config_file = tmp_path / "config.toml"
     config_file.write_text("""
-[embedding]
-hf_token = "hf-from-embedding"
-
 [rerank]
-provider = "bge_reranker"
-url = "https://example.invalid/rerank"
+provider = "gitee"
+url = "https://ai.gitee.com/v1/rerank"
 api_key = "rerank-key"
-model = "BAAI/bge-reranker-v2-m3"
-batch_size = 2
-max_length = 384
+model = "bge-reranker-v2-m3"
+batch_size = 16
 """)
-    from zotero_cli_agent.config import load_rerank_config
-
     cfg = load_rerank_config(path=config_file)
-    assert cfg.provider == "bge_reranker"
-    assert cfg.url == "https://example.invalid/rerank"
+    assert cfg.provider == "gitee"
+    assert cfg.url == "https://ai.gitee.com/v1/rerank"
     assert cfg.api_key == "rerank-key"
-    assert cfg.model == "BAAI/bge-reranker-v2-m3"
-    assert cfg.hf_token == "hf-from-embedding"
-    assert cfg.batch_size == 2
-    assert cfg.max_length == 384
+    assert cfg.model == "bge-reranker-v2-m3"
+    assert cfg.batch_size == 16
     assert cfg.is_configured is True
 
 
@@ -345,12 +293,6 @@ def test_load_rerank_config_from_active_profile(tmp_path):
 [rerank]
 active = "api.gitee"
 
-[rerank.local.bge]
-provider = "bge_reranker"
-model = "BAAI/bge-reranker-v2-m3"
-batch_size = 4
-max_length = 512
-
 [rerank.api.gitee]
 provider = "gitee"
 url = "https://ai.gitee.com/v1/rerank"
@@ -358,8 +300,6 @@ api_key = "gitee-key"
 model = "bge-reranker-v2-m3"
 batch_size = 16
 """)
-    from zotero_cli_agent.config import load_rerank_config
-
     cfg = load_rerank_config(path=config_file)
     assert cfg.active == "api.gitee"
     assert cfg.provider == "gitee"
@@ -370,53 +310,80 @@ batch_size = 16
     assert cfg.is_configured is True
 
 
-def test_load_rerank_config_active_env_selects_local(tmp_path, monkeypatch):
-    config_file = tmp_path / "config.toml"
-    config_file.write_text("""
-[rerank]
-active = "api.gitee"
-
-[rerank.api.gitee]
-provider = "gitee"
-url = "https://ai.gitee.com/v1/rerank"
-api_key = "gitee-key"
-model = "bge-reranker-v2-m3"
-
-[rerank.local.bge]
-provider = "bge_reranker"
-model = "BAAI/bge-reranker-v2-m3"
-batch_size = 4
-""")
-    monkeypatch.setenv("ZOT_RERANK_ACTIVE", "local.bge")
-    from zotero_cli_agent.config import load_rerank_config
-
-    cfg = load_rerank_config(path=config_file, apply_env_overrides=True)
-    assert cfg.active == "local.bge"
-    assert cfg.provider == "bge_reranker"
-    assert cfg.model == "BAAI/bge-reranker-v2-m3"
-    assert cfg.batch_size == 4
-
-
 def test_load_rerank_config_env_override(tmp_path, monkeypatch):
     config_file = tmp_path / "config.toml"
     config_file.write_text("[rerank]\nprovider = ''\n")
-    monkeypatch.setenv("ZOT_RERANK_PROVIDER", "bge_reranker")
-    monkeypatch.setenv("ZOT_RERANK_URL", "https://example.invalid/rerank")
+    monkeypatch.setenv("ZOT_RERANK_PROVIDER", "gitee")
+    monkeypatch.setenv("ZOT_RERANK_URL", "https://ai.gitee.com/v1/rerank")
     monkeypatch.setenv("ZOT_RERANK_KEY", "rerank-key")
     monkeypatch.setenv("ZOT_RERANK_MODEL", "custom-reranker")
-    monkeypatch.setenv("ZOT_RERANK_HF_TOKEN", "hf-rerank")
     monkeypatch.setenv("ZOT_RERANK_BATCH_SIZE", "3")
-    monkeypatch.setenv("ZOT_RERANK_MAX_LENGTH", "256")
-    from zotero_cli_agent.config import load_rerank_config
-
     cfg = load_rerank_config(path=config_file, apply_env_overrides=True)
-    assert cfg.provider == "bge_reranker"
-    assert cfg.url == "https://example.invalid/rerank"
+    assert cfg.provider == "gitee"
+    assert cfg.url == "https://ai.gitee.com/v1/rerank"
     assert cfg.api_key == "rerank-key"
     assert cfg.model == "custom-reranker"
-    assert cfg.hf_token == "hf-rerank"
     assert cfg.batch_size == 3
-    assert cfg.max_length == 256
+
+
+def test_rerank_config_defaults():
+    cfg = RerankConfig()
+    assert cfg.provider == "gitee"
+    assert cfg.url == "https://ai.gitee.com/v1/rerank"
+    assert cfg.model == "bge-reranker-v2-m3"
+    assert cfg.batch_size == 16
+
+
+# --- Vector store + semantic search config ---
+
+
+def test_load_vector_store_config(tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text("""
+[vector_store]
+provider = "qdrant_local"
+path = ".workspace/_qdrant"
+""")
+    cfg = load_vector_store_config(config_file)
+    assert cfg.provider == "qdrant_local"
+    assert cfg.path == ".workspace/_qdrant"
+
+
+def test_load_vector_store_config_defaults(tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text("[zotero]\ndata_dir = '/tmp'\n")
+    cfg = load_vector_store_config(config_file)
+    assert cfg.provider == "qdrant_local"
+    assert cfg.path == ".workspace/_qdrant"
+
+
+def test_load_semantic_search_config(tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text("""
+[semantic_search]
+candidate_k = 200
+top_k = 10
+rrf_k = 30
+semantic_weight = 0.7
+bm25_weight = 0.3
+""")
+    cfg = load_semantic_search_config(config_file)
+    assert cfg.candidate_k == 200
+    assert cfg.top_k == 10
+    assert cfg.rrf_k == 30
+    assert cfg.semantic_weight == 0.7
+    assert cfg.bm25_weight == 0.3
+
+
+def test_load_semantic_search_config_defaults(tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text("[zotero]\ndata_dir = '/tmp'\n")
+    cfg = load_semantic_search_config(config_file)
+    assert cfg.candidate_k == 150
+    assert cfg.top_k == 20
+    assert cfg.rrf_k == 60
+    assert cfg.semantic_weight == 0.8
+    assert cfg.bm25_weight == 0.2
 
 
 def test_repo_local_config_path():

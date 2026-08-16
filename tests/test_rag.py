@@ -1,30 +1,22 @@
-"""Tests for RAG engine and index."""
+"""Tests for RAG engine, FTS5 term index, and Gitee embedding."""
 
 from __future__ import annotations
 
-import json
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from zotero_cli_agent.config import EmbeddingConfig
-from zotero_cli_agent.core.providers.jina import JinaProvider
-from zotero_cli_agent.core.providers.openai_compatible import OpenAICompatibleEmbeddingProvider
-from zotero_cli_agent.core.providers.sentence_transformers import SentenceTransformersProvider
 from zotero_cli_agent.core.rag import (
-    bm25_score_chunks,
     build_metadata_chunk,
     chunk_text,
-    compute_term_frequencies,
-    cosine_similarity,
     embed_texts,
     filter_ranked_results_by_pdf_kind,
     get_pdf_kind_from_source,
     infer_pdf_kind,
     reciprocal_rank_fusion,
     tokenize,
+    weighted_reciprocal_rank_fusion,
 )
-from zotero_cli_agent.core.rag_index import RagIndex
+from zotero_cli_agent.core.rag_index import RagIndex, _fts_query
 
 
 class TestRagIndex:
@@ -47,13 +39,25 @@ class TestRagIndex:
         finally:
             idx.close()
 
-    def test_insert_bm25_terms(self, tmp_path):
+    def test_search_bm25_returns_matching_chunk(self, tmp_path):
         idx = RagIndex(tmp_path / "test.idx.sqlite")
         try:
-            chunk_id = idx.insert_chunk("ABC123", "metadata", "attention mechanism")
-            idx.insert_bm25_terms(chunk_id, {"attention": 1.0, "mechanism": 1.0})
-            terms = idx.get_bm25_terms_for_chunk(chunk_id)
-            assert "attention" in terms
+            c1 = idx.insert_chunk("A", "pdf", "attention mechanism in transformers")
+            c2 = idx.insert_chunk("B", "pdf", "convolutional neural network for images")
+            results = idx.search_bm25("attention mechanism")
+            ids = [cid for cid, _score, _chunk in results]
+            assert c1 in ids
+            assert c2 not in ids
+            assert results[0][0] == c1
+            assert results[0][1] > 0
+        finally:
+            idx.close()
+
+    def test_search_bm25_no_match(self, tmp_path):
+        idx = RagIndex(tmp_path / "test.idx.sqlite")
+        try:
+            idx.insert_chunk("A", "pdf", "attention mechanism")
+            assert idx.search_bm25("zzzzqqqxxx999") == []
         finally:
             idx.close()
 
@@ -68,24 +72,13 @@ class TestRagIndex:
         finally:
             idx.close()
 
-    def test_insert_embedding(self, tmp_path):
-        idx = RagIndex(tmp_path / "test.idx.sqlite")
-        try:
-            chunk_id = idx.insert_chunk("ABC123", "pdf", "some text")
-            embedding = [0.1, 0.2, 0.3]
-            idx.set_embedding(chunk_id, embedding)
-            loaded = idx.get_embedding(chunk_id)
-            assert len(loaded) == 3
-            assert abs(loaded[0] - 0.1) < 1e-6
-        finally:
-            idx.close()
-
     def test_clear_index(self, tmp_path):
         idx = RagIndex(tmp_path / "test.idx.sqlite")
         try:
             idx.insert_chunk("ABC123", "metadata", "test")
             idx.clear()
             assert len(idx.get_all_chunks()) == 0
+            assert idx.search_bm25("test") == []
         finally:
             idx.close()
 
@@ -95,10 +88,32 @@ class TestRagIndex:
             idx.insert_chunk("ABC123", "metadata", "text a")
             idx.insert_chunk("DEF456", "metadata", "text b")
             idx.insert_chunk("ABC123", "pdf", "text c")
-            keys = idx.get_indexed_keys()
-            assert keys == {"ABC123", "DEF456"}
+            assert idx.get_indexed_keys() == {"ABC123", "DEF456"}
         finally:
             idx.close()
+
+    def test_delete_chunks_for_item(self, tmp_path):
+        idx = RagIndex(tmp_path / "test.idx.sqlite")
+        try:
+            c1 = idx.insert_chunk("ABC123", "metadata", "keep me")
+            idx.insert_chunk("ABC123", "pdf", "drop me")
+            idx.insert_chunk("DEF456", "metadata", "other item")
+            deleted = idx.delete_chunks_for_item("ABC123")
+            assert c1 in deleted
+            assert idx.get_indexed_keys() == {"DEF456"}
+        finally:
+            idx.close()
+
+
+class TestFtsQuery:
+    def test_multi_term_or_query(self):
+        assert _fts_query("attention mechanism") == '"attention" OR "mechanism"'
+
+    def test_empty_query(self):
+        assert _fts_query("!!!") == ""
+
+    def test_quotes_are_escaped(self):
+        assert _fts_query('say "hi"') == '"say" OR "hi"'
 
 
 class TestTokenizer:
@@ -189,226 +204,44 @@ class TestChunking:
         assert "> Figure S2]" in joined
 
 
-class TestBM25:
-    def test_term_frequencies(self):
-        tfs = compute_term_frequencies(["the", "cat", "sat", "the"])
-        assert tfs["the"] == pytest.approx(2 / 4)
-        assert tfs["cat"] == pytest.approx(1 / 4)
-
-    def test_bm25_scoring(self, tmp_path):
-        idx = RagIndex(tmp_path / "test.idx.sqlite")
-        try:
-            c1 = idx.insert_chunk("A", "pdf", "attention mechanism in transformers")
-            c2 = idx.insert_chunk("B", "pdf", "convolutional neural network for images")
-            tfs1 = compute_term_frequencies(tokenize("attention mechanism in transformers"))
-            tfs2 = compute_term_frequencies(tokenize("convolutional neural network for images"))
-            idx.insert_bm25_terms(c1, tfs1)
-            idx.insert_bm25_terms(c2, tfs2)
-            idx.set_meta("total_docs", "2")
-            idx.set_meta("avg_doc_len", "4")
-
-            results = bm25_score_chunks(idx, "attention mechanism")
-            assert len(results) > 0
-            assert results[0][0] == c1
-            assert results[0][1] > 0
-        finally:
-            idx.close()
-
-    def test_bm25_scoring_does_not_bulk_fetch_by_all_chunk_ids(self, tmp_path):
-        idx = RagIndex(tmp_path / "test.idx.sqlite")
-        try:
-            c1 = idx.insert_chunk("A", "pdf", "attention mechanism in transformers")
-            c2 = idx.insert_chunk("B", "pdf", "battery electrolyte")
-            idx.insert_bm25_terms(c1, compute_term_frequencies(tokenize("attention mechanism in transformers")))
-            idx.insert_bm25_terms(c2, compute_term_frequencies(tokenize("battery electrolyte")))
-            idx.set_meta("total_docs", "2")
-            idx.set_meta("avg_doc_len", "3")
-
-            with patch.object(idx, "get_bm25_terms_bulk", side_effect=AssertionError("should not be called")):
-                results = bm25_score_chunks(idx, "attention mechanism")
-
-            assert results[0][0] == c1
-        finally:
-            idx.close()
-
-
 class TestEmbedding:
-    def test_cosine_similarity_identical(self):
-        assert cosine_similarity([1, 0, 0], [1, 0, 0]) == pytest.approx(1.0)
-
-    def test_cosine_similarity_orthogonal(self):
-        assert cosine_similarity([1, 0], [0, 1]) == pytest.approx(0.0)
-
-    def test_cosine_similarity_opposite(self):
-        assert cosine_similarity([1, 0], [-1, 0]) == pytest.approx(-1.0)
+    def _gitee_response(self, embeddings):
+        resp = MagicMock()
+        resp.ok = True
+        resp.json.return_value = {"data": [{"embedding": e} for e in embeddings]}
+        return resp
 
     def test_embed_texts_not_configured(self):
         cfg = EmbeddingConfig(url="", api_key="", model="")
         result = embed_texts(["hello"], cfg)
         assert result is None
 
-    def test_embed_texts_api_call(self):
-        cfg = EmbeddingConfig(url="http://test/v1/embeddings", api_key="key", model="model", provider="aliyun")
-        mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps({"data": [{"embedding": [0.1, 0.2, 0.3]}]}).encode()
-        mock_response.__enter__ = lambda s: s
-        mock_response.__exit__ = MagicMock(return_value=False)
-
-        with patch("urllib.request.urlopen", return_value=mock_response) as mock_urlopen:
-            result = embed_texts(["hello world"], cfg)
-            assert result is not None
-            assert len(result) == 1
-            assert result[0] == [0.1, 0.2, 0.3]
-            call_args = mock_urlopen.call_args[0][0]
-            body = json.loads(call_args.data)
-            assert call_args.full_url == "http://test/v1/embeddings"
-            assert body["model"] == "model"
-            assert body["input"] == ["hello world"]
-
     def test_embed_texts_gitee_api_call(self):
-        cfg = EmbeddingConfig(url="https://ai.gitee.com/v1", api_key="key", model="bge-m3", provider="gitee")
-        mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps({"data": [{"embedding": [0.1, 0.2, 0.3]}]}).encode()
-        mock_response.__enter__ = lambda s: s
-        mock_response.__exit__ = MagicMock(return_value=False)
-
-        with patch("urllib.request.urlopen", return_value=mock_response) as mock_urlopen:
+        cfg = EmbeddingConfig(url="https://ai.gitee.com/v1", api_key="key", model="bge-m3")
+        resp = self._gitee_response([[0.1, 0.2, 0.3]])
+        with patch("zotero_cli_agent.core.providers.gitee.requests.post", return_value=resp) as mock_post:
             result = embed_texts(["hello world"], cfg)
 
         assert result == [[0.1, 0.2, 0.3]]
-        call_args = mock_urlopen.call_args[0][0]
-        body = json.loads(call_args.data)
-        assert call_args.full_url == "https://ai.gitee.com/v1/embeddings"
-        assert body["model"] == "bge-m3"
-        assert body["input"] == ["hello world"]
-
-    def test_sentence_transformers_provider_uses_query_prompt(self):
-        class FakeEmbeddings:
-            def tolist(self):
-                return [[0.1, 0.2, 0.3]]
-
-        class FakeModel:
-            prompts = {"query": "Instruct: retrieve relevant passages\nQuery: "}
-
-            def __init__(self, model_name, **kwargs):
-                self.model_name = model_name
-                self.kwargs = kwargs
-                self.encode_calls = []
-
-            def encode(self, texts, **kwargs):
-                self.encode_calls.append((texts, kwargs))
-                return FakeEmbeddings()
-
-        with patch(
-            "zotero_cli_agent.core.providers.sentence_transformers._import_sentence_transformer",
-            return_value=FakeModel,
-        ):
-            provider = SentenceTransformersProvider(model="local-model", hf_token="hf-test")
-            result = provider.embed(["hello world"], input_type="query")
-
-        assert result == [[0.1, 0.2, 0.3]]
-        model = provider._model
-        assert model is not None
-        assert model.kwargs["token"] == "hf-test"
-        assert model.encode_calls[0][1]["prompt_name"] == "query"
-
-    def test_sentence_transformers_provider_uses_device_and_batch_size(self):
-        class FakeModel:
-            def __init__(self, model_name, **kwargs):
-                self.kwargs = kwargs
-                self.encode_calls = []
-
-            def encode(self, texts, **kwargs):
-                self.encode_calls.append((texts, kwargs))
-                return [[0.1, 0.2, 0.3]]
-
-        with patch(
-            "zotero_cli_agent.core.providers.sentence_transformers._import_sentence_transformer",
-            return_value=FakeModel,
-        ):
-            provider = SentenceTransformersProvider(model="local-model", batch_size=3, device="cuda")
-            result = provider.embed(["hello world"], input_type="document")
-
-        assert result == [[0.1, 0.2, 0.3]]
-        model = provider._model
-        assert model is not None
-        assert model.kwargs["device"] == "cuda"
-        assert model.encode_calls[0][1]["batch_size"] == 3
-
-    def test_sentence_transformers_provider_documents_do_not_use_query_prompt(self):
-        class FakeModel:
-            prompts = {"query": "query prompt"}
-
-            def __init__(self, model_name, **kwargs):
-                self.encode_calls = []
-
-            def encode(self, texts, **kwargs):
-                self.encode_calls.append((texts, kwargs))
-                return [[0.1, 0.2, 0.3]]
-
-        with patch(
-            "zotero_cli_agent.core.providers.sentence_transformers._import_sentence_transformer",
-            return_value=FakeModel,
-        ):
-            provider = SentenceTransformersProvider(model="local-model")
-            result = provider.embed(["hello world"], input_type="document")
-
-        assert result == [[0.1, 0.2, 0.3]]
-        model = provider._model
-        assert model is not None
-        assert "prompt_name" not in model.encode_calls[0][1]
-
-    def test_jina_provider_requests_truncation(self):
-        provider = JinaProvider(api_key="key", model="jina-embeddings-v3", url="http://test/v1/embeddings")
-        mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps({"data": [{"embedding": [0.1, 0.2, 0.3]}]}).encode()
-        mock_response.__enter__ = lambda s: s
-        mock_response.__exit__ = MagicMock(return_value=False)
-
-        with patch("urllib.request.urlopen", return_value=mock_response) as mock_urlopen:
-            result = provider.embed(["hello world"])
-
-        assert result == [[0.1, 0.2, 0.3]]
-        call_args = mock_urlopen.call_args[0][0]
-        assert mock_urlopen.call_args.kwargs["timeout"] == 60.0
-        body = json.loads(call_args.data)
-        assert body["model"] == "jina-embeddings-v3"
-        assert body["input"] == ["hello world"]
-        assert body["truncate"] is True
-
-    def test_openai_compatible_provider_uses_timeout(self):
-        provider = OpenAICompatibleEmbeddingProvider(
-            api_key="key",
-            model="bge-m3",
-            base_url="http://test/v1",
-            name="gitee",
-        )
-        mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps({"data": [{"embedding": [0.1, 0.2, 0.3]}]}).encode()
-        mock_response.__enter__ = lambda s: s
-        mock_response.__exit__ = MagicMock(return_value=False)
-
-        with patch("urllib.request.urlopen", return_value=mock_response) as mock_urlopen:
-            result = provider.embed(["hello world"])
-
-        assert result == [[0.1, 0.2, 0.3]]
-        call_args = mock_urlopen.call_args[0][0]
-        assert mock_urlopen.call_args.kwargs["timeout"] == 60.0
-        body = json.loads(call_args.data)
-        assert body["model"] == "bge-m3"
-        assert body["input"] == ["hello world"]
+        args, kwargs = mock_post.call_args
+        assert args[0] == "https://ai.gitee.com/v1/embeddings"
+        assert kwargs["json"]["model"] == "bge-m3"
+        assert kwargs["json"]["input"] == ["hello world"]
+        headers = kwargs["headers"]
+        assert headers["Authorization"] == "Bearer key"
+        assert headers["X-Failover-Enabled"] == "true"
 
     def test_embed_texts_surfaces_provider_error(self, capsys):
-        cfg = EmbeddingConfig(url="http://test/v1/embeddings", api_key="key", model="model", provider="aliyun")
+        cfg = EmbeddingConfig(url="https://ai.gitee.com/v1", api_key="key", model="bge-m3")
         with patch(
-            "zotero_cli_agent.core.embedding_router.EmbeddingRouter.embed",
+            "zotero_cli_agent.core.providers.gitee.requests.post",
             side_effect=RuntimeError("boom"),
         ):
             result = embed_texts(["hello"], cfg)
         assert result is None
         captured = capsys.readouterr()
         assert "WARN" in captured.err
-        assert "aliyun" in captured.err
+        assert "gitee" in captured.err
         assert "boom" in captured.err
 
     def test_embed_texts_silent_when_not_configured(self, capsys):
@@ -424,8 +257,14 @@ class TestRRF:
         ranking1 = [(1, 0.9, {"id": 1}), (2, 0.8, {"id": 2}), (3, 0.7, {"id": 3})]
         ranking2 = [(3, 0.95, {"id": 3}), (1, 0.85, {"id": 1}), (2, 0.5, {"id": 2})]
         fused = reciprocal_rank_fusion(ranking1, ranking2)
-        # All 3 items should be present
         ids = [cid for cid, _, _ in fused]
         assert set(ids) == {1, 2, 3}
-        # Item 1 and 3 should be top (both appear high in both rankings)
         assert ids[0] in (1, 3)
+
+    def test_weighted_reciprocal_rank_fusion_semantic_dominant(self):
+        bm25 = [(1, 9.0, {"id": 1}), (2, 8.0, {"id": 2})]
+        semantic = [(2, 0.9, {"id": 2}), (1, 0.8, {"id": 1})]
+        fused = weighted_reciprocal_rank_fusion([bm25, semantic], weights=[0.2, 0.8], k=60)
+        ids = [cid for cid, _, _ in fused]
+        assert set(ids) == {1, 2}
+        assert ids[0] == 2

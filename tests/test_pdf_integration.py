@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 from click.testing import CliRunner
 
 from zotero_cli_agent.cli import main
+from zotero_cli_agent.config import VectorStoreConfig
 from zotero_cli_agent.core.pdf_cache import UnifiedPdfCache
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
@@ -137,37 +138,43 @@ class TestWorkspaceIndexWithExtractor:
         with ExitStack() as stack:
             stack.enter_context(patch("zotero_cli_agent.core.workspace.workspaces_dir", return_value=tmp_path))
             stack.enter_context(patch("zotero_cli_agent.commands.workspace.workspaces_dir", return_value=tmp_path))
+            stack.enter_context(
+                patch(
+                    "zotero_cli_agent.commands.workspace.load_vector_store_config",
+                    return_value=VectorStoreConfig(path=str(tmp_path / "_qdrant")),
+                )
+            )
             _invoke(["workspace", "new", "test-ext"])
             _invoke(["workspace", "add", "test-ext", "ATTN001"])
 
-            with patch("zotero_cli_agent.commands.workspace.convert_pdf_to_text") as mock_convert:
-                mock_convert.return_value = ""
+            with patch("zotero_cli_agent.commands.workspace.convert_pdfs_to_text") as mock_convert:
+                mock_convert.return_value = {}
                 result = _invoke(["workspace", "index", "test-ext", "--extractor", "pymupdf"])
 
         assert result.exit_code == 0
         mock_convert.assert_called()
-        call_args = mock_convert.call_args
-        assert call_args.kwargs.get("extractor_name") == "pymupdf" or (
-            len(call_args.args) >= 2 and call_args.args[1] == "pymupdf"
-        )
+        assert mock_convert.call_args.args[1] == "pymupdf"
 
     def test_workspace_index_with_mineru_extractor(self, tmp_path):
         with ExitStack() as stack:
             stack.enter_context(patch("zotero_cli_agent.core.workspace.workspaces_dir", return_value=tmp_path))
             stack.enter_context(patch("zotero_cli_agent.commands.workspace.workspaces_dir", return_value=tmp_path))
+            stack.enter_context(
+                patch(
+                    "zotero_cli_agent.commands.workspace.load_vector_store_config",
+                    return_value=VectorStoreConfig(path=str(tmp_path / "_qdrant")),
+                )
+            )
             _invoke(["workspace", "new", "test-ext-m"])
             _invoke(["workspace", "add", "test-ext-m", "ATTN001"])
 
-            with patch("zotero_cli_agent.commands.workspace.convert_pdf_to_text") as mock_convert:
-                mock_convert.return_value = ""
+            with patch("zotero_cli_agent.commands.workspace.convert_pdfs_to_text") as mock_convert:
+                mock_convert.return_value = {}
                 result = _invoke(["workspace", "index", "test-ext-m", "--extractor", "mineru"])
 
         assert result.exit_code == 0
         mock_convert.assert_called()
-        call_args = mock_convert.call_args
-        assert call_args.kwargs.get("extractor_name") == "mineru" or (
-            len(call_args.args) >= 2 and call_args.args[1] == "mineru"
-        )
+        assert mock_convert.call_args.args[1] == "mineru"
 
 
 class TestPdfCacheIsolationIntegration:
