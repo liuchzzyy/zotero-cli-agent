@@ -1,0 +1,212 @@
+from __future__ import annotations
+
+import json
+from collections.abc import Callable
+
+from zotero_cli_agent.core.ai_client import AiClient
+from zotero_cli_agent.core.note_renderer import render_note
+from zotero_cli_agent.core.note_templates import format_template, load_template
+from zotero_cli_agent.core.rag import clean_html, convert_pdfs_to_text, infer_pdf_kind
+from zotero_cli_agent.core.reader import ZoteroReader
+from zotero_cli_agent.core.writer import ZoteroWriter
+from zotero_cli_agent.models import Item
+
+ANALYZED_TAG = "ai_analyzed"
+NOT_ANALYZED_TAG = "ai_not_analyzed"
+NOTE_TITLE_PREFIX = "AI条目分析 - "
+
+_CLASSIFY_CHARS = 4000
+_BOOK_ITEM_TYPES = {"book", "bookSection"}
+_TEMPLATE_BY_TYPE = {
+    "research_article": "research-article",
+    "review_article": "review-article",
+    "book": "book",
+}
+
+_FENCE = chr(96) * 3  # markdown code fence (three backticks)
+
+
+class NoteAnalysisError(Exception):
+    def __init__(self, message: str, *, code: str = "runtime_error", retryable: bool = False) -> None:
+        super().__init__(message)
+        self.code = code
+        self.retryable = retryable
+
+
+def _item_authors(item: Item) -> str:
+    return ", ".join(c.full_name for c in item.creators)
+
+
+def _item_journal(item: Item) -> str:
+    return str(item.extra.get("publicationTitle") or item.extra.get("journalAbbreviation") or "")
+
+
+def extract_json_object(text: str) -> dict:
+    s = text.strip()
+    lines = s.split("\n")
+    if lines and lines[0].lstrip().startswith(_FENCE):
+        lines = lines[1:]
+    if lines and lines[-1].strip() == _FENCE:
+        lines = lines[:-1]
+    s = "\n".join(lines).strip()
+
+    candidates = [s]
+    start = s.find("{")
+    end = s.rfind("}")
+    if start != -1 and end > start:
+        candidates.insert(0, s[start : end + 1])
+
+    for candidate in candidates:
+        try:
+            parsed = json.loads(candidate)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            continue
+    raise NoteAnalysisError("无法从 AI 输出中解析出 JSON")
+
+
+def _chat(ai_client: AiClient, prompt: str) -> str:
+    try:
+        return ai_client.chat(prompt)
+    except NoteAnalysisError:
+        raise
+    except Exception as e:
+        raise NoteAnalysisError(
+            f"AI 调用失败：{type(e).__name__}: {e}", code="network_error", retryable=True
+        ) from e
+
+
+def _classify(
+    item: Item,
+    sample_text: str,
+    ai_client: AiClient,
+    progress: Callable[[str, str], None] | None,
+) -> str:
+    if item.item_type in _BOOK_ITEM_TYPES:
+        return "book"
+    if progress:
+        progress("classify", f"item_type={item.item_type}")
+    template = load_template("classify-item")
+    prompt = (
+        template
+        + "\n\n## 待判定的条目\n\n"
+        + f"标题：{item.title}\n"
+        + f"摘要：{item.abstract or ''}\n"
+        + f"正文开头：\n{sample_text}\n"
+    )
+    answer = _chat(ai_client, prompt)
+    data = extract_json_object(answer)
+    return str(data.get("paper_type", "")).strip() or "uncertain"
+
+
+def analyze_item(
+    reader: ZoteroReader,
+    writer: ZoteroWriter,
+    ai_client: AiClient,
+    key: str,
+    *,
+    force: bool = False,
+    no_tag: bool = False,
+    extractor: str = "mineru",
+    dry_run: bool = False,
+    progress: Callable[[str, str], None] | None = None,
+) -> dict:
+    item = reader.get_item(key)
+    if item is None:
+        raise NoteAnalysisError(f"条目 '{key}' 不存在", code="not_found")
+
+    if ANALYZED_TAG in item.tags and not force:
+        return {"status": "already_analyzed", "item_key": key, "item_type": item.item_type}
+
+    attachments = reader.get_pdf_attachments(key)
+    if not attachments:
+        raise NoteAnalysisError(f"条目 '{key}' 没有本地 PDF 附件", code="validation_error")
+
+    pdf_paths = [a.path for a in attachments if a.path is not None and a.path.exists()]
+    if not pdf_paths:
+        raise NoteAnalysisError(f"条目 '{key}' 的 PDF 附件文件不存在", code="validation_error")
+
+    if progress:
+        progress("extract", f"{len(pdf_paths)} PDF(s)")
+    pdf_texts = convert_pdfs_to_text(pdf_paths, extractor)
+
+    main_parts: list[str] = []
+    supp_parts: list[str] = []
+    for att in attachments:
+        if att.path is None or att.path not in pdf_texts:
+            continue
+        text = pdf_texts[att.path]
+        if isinstance(text, Exception) or not text or not text.strip():
+            continue
+        kind = infer_pdf_kind(text, att.filename or att.key)
+        if kind == "supplementary":
+            supp_parts.append(text)
+        else:
+            main_parts.append(text)
+
+    main_text = "\n\n".join(main_parts)
+    if not main_text.strip():
+        raise NoteAnalysisError(f"条目 '{key}' 的 PDF 抽取结果为空", code="runtime_error")
+
+    full_text = main_text
+    if supp_parts:
+        full_text += "\n\n## 支撑信息\n\n" + "\n\n".join(supp_parts)
+
+    paper_type = _classify(item, main_text[:_CLASSIFY_CHARS], ai_client, progress)
+    if paper_type == "uncertain":
+        if not no_tag:
+            writer.add_tags(key, [NOT_ANALYZED_TAG])
+        return {"status": "uncertain", "item_key": key, "paper_type": paper_type}
+    if paper_type not in _TEMPLATE_BY_TYPE:
+        paper_type = "research_article"
+
+    cleaned = clean_html(full_text)
+    max_chars = ai_client.config.max_extracted_chars
+    if max_chars > 0 and len(cleaned) > max_chars:
+        cleaned = cleaned[:max_chars]
+
+    template_name = _TEMPLATE_BY_TYPE[paper_type]
+    template = load_template(template_name)
+    prompt = format_template(
+        template,
+        title=item.title,
+        authors=_item_authors(item),
+        journal=_item_journal(item),
+        date=item.date or "",
+        doi=item.doi or "",
+        fulltext=cleaned,
+    )
+
+    if dry_run:
+        return {
+            "status": "dry_run",
+            "item_key": key,
+            "item_type": item.item_type,
+            "paper_type": paper_type,
+            "template": template_name,
+            "pdf_count": len(pdf_paths),
+            "chars": len(cleaned),
+            "prompt_preview": prompt[:1200],
+        }
+
+    if progress:
+        progress("analyze", f"paper_type={paper_type}")
+    answer = _chat(ai_client, prompt)
+    sections = extract_json_object(answer).get("sections", [])
+    if not isinstance(sections, list):
+        sections = []
+
+    note_title = NOTE_TITLE_PREFIX + item.title
+    html_note = render_note(sections, title=note_title)
+    note_key = writer.add_note(key, html_note)
+    if not no_tag:
+        writer.add_tags(key, [ANALYZED_TAG])
+
+    return {
+        "status": "ok",
+        "item_key": key,
+        "note_key": note_key,
+        "paper_type": paper_type,
+        "sections": len(sections),
+    }

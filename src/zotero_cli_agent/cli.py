@@ -8,6 +8,7 @@ import click
 
 from zotero_cli_agent import __version__
 from zotero_cli_agent.commands.add import add_cmd
+from zotero_cli_agent.commands.ai_analyze import ai_analyze_cmd
 from zotero_cli_agent.commands.attach import attach_cmd
 from zotero_cli_agent.commands.cite import cite_cmd
 from zotero_cli_agent.commands.collection import collection_group
@@ -59,7 +60,7 @@ _READ_COMMANDS = {
     "schema",
     "trash",
 }
-_WRITE_COMMANDS = {"add", "update", "note", "attach", "tag"}
+_WRITE_COMMANDS = {"add", "update", "note", "attach", "tag", "ai_analyze"}
 _DESTRUCTIVE_COMMANDS = {"delete", "update-status"}
 
 
@@ -270,6 +271,7 @@ main.add_command(update_cmd, "update")
 main.add_command(trash_group, "trash")
 main.add_command(duplicates_cmd, "duplicates")
 main.add_command(attach_cmd, "attach")
+main.add_command(ai_analyze_cmd, "ai_analyze")
 main.add_command(update_status_cmd, "update-status")
 main.add_command(workspace_group, "workspace")
 main.add_command(schema_cmd, "schema")

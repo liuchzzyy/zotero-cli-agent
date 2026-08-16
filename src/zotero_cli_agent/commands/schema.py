@@ -70,6 +70,7 @@ _SAFETY_TIER: dict[tuple[str, ...], str] = {
     ("note",): "write",
     ("attach",): "write",
     ("tag",): "write",
+    ("ai_analyze",): "write",
     # top-level destructive
     ("delete",): "destructive",
     ("update-status",): "destructive",
