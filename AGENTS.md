@@ -43,7 +43,7 @@ uv run zot schema
 uv build
 ```
 
-The package supports Python 3.10–3.13. The checked-in GitHub workflow currently covers the daily RSS Zotero import, not a general lint/test/release matrix.
+The package supports Python 3.10–3.13. Lint/type-check/tests run locally via `uv`; no CI workflow is checked in.
 
 ## Architecture
 
@@ -71,12 +71,13 @@ When adding a command, register it in `cli.py` and place it in the correct safet
 ### Core subsystems
 
 - `src/zotero_cli_agent/core/reader.py`: SQLite read layer.
-- `src/zotero_cli_agent/core/writer.py`: Web API write layer.
-- `src/zotero_cli_agent/core/pdf_extractor.py` and `pdf_cache.py`: PDF extraction (MinerU API / PyMuPDF) and caching.
-- `src/zotero_cli_agent/core/workspace.py`: repo-local workspaces under `.workspace/`.
-- `src/zotero_cli_agent/core/rag.py` and `rag_index.py`: chunking, SQLite FTS5 term retrieval, and Gitee embedding helpers.
+- `src/zotero_cli_agent/core/writer.py`: Web API write layer (notes, tags, item fields, Extra short-note merge).
+- `src/zotero_cli_agent/core/pdf_extractor.py`, `pdf_cache.py`, `pdf_errors.py`: PDF extraction (MinerU API / PyMuPDF) and caching.
+- `src/zotero_cli_agent/core/ai_client.py`, `note_analysis.py`, `note_renderer.py`, `note_templates.py`: the `ai_analyze` pipeline — OpenAI-compatible chat, item classification / note generation / short-note keywords, inline-styled HTML rendering, prompt templates under `tools/templates/`.
+- `src/zotero_cli_agent/core/rag.py`, `rag_index.py`, `rerank.py`: PDF→text conversion, chunking, SQLite FTS5 (BM25), reciprocal rank fusion, Gitee embedding/rerank helpers.
 - `src/zotero_cli_agent/core/semantic_search/vector_store.py`: local Qdrant vector store.
 - `src/zotero_cli_agent/core/providers/gitee.py`: Gitee AI embedding / rerank provider.
+- `src/zotero_cli_agent/core/workspace.py`: repo-local workspaces under `.workspace/`.
 - `src/zotero_cli_agent/core/idempotency.py`: retry-safe mutation support.
 - `src/zotero_cli_agent/core/semantic_scholar.py`: preprint-to-published lookups for `update-status`.
 - `src/zotero_cli_agent/core/version_check.py`: version notice logic.
