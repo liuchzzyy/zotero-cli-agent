@@ -46,6 +46,12 @@ class TestNoteTemplates:
         for name in ("research", "review", "book"):
             assert "↓" not in load_template(name)
 
+    def test_book_template_enforces_json_output(self):
+        template = load_template("book")
+        assert "JSON 输出示例" in template
+        assert "严禁输出散文式读书笔记" in template
+        assert "禁止输出 JSON 代码块以外的任何内容" in template
+
     def test_research_template_has_per_section_requirements(self):
         template = load_template("research")
         assert "各章节具体要求" in template
