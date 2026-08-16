@@ -1,5 +1,5 @@
 param(
-    [string]$WorkspaceName = "full-library-rag",
+    [string]$WorkspaceName = "rag-workspace",
     [string]$Collections = "30_PROJECT,40_TOPIC",
     [string]$Extractor = "mineru",
     [int]$ScanLimit = 100000,
@@ -29,7 +29,7 @@ $commonScript = Join-Path $PSScriptRoot "zotero-workflow-common.ps1"
 
 if (-not $RunInCurrentWindow) {
     $windowRoot = Get-ZoteroRepoRootPath -ScriptPath $PSCommandPath
-    Start-WorkflowInNewWindow -ScriptPath $PSCommandPath -WorkingDirectory $windowRoot -BoundParameters $PSBoundParameters -DisplayName "Full Library RAG Index"
+    Start-WorkflowInNewWindow -ScriptPath $PSCommandPath -WorkingDirectory $windowRoot -BoundParameters $PSBoundParameters -DisplayName "Workspace RAG Index"
     return
 }
 
@@ -131,7 +131,7 @@ function New-RunOutputDir([string]$RepoRoot, [string]$RequestedOutputDir) {
         return Join-Path $RepoRoot $RequestedOutputDir
     }
     $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-    return Join-Path $RepoRoot "log\rag-full-library-$stamp"
+    return Join-Path $RepoRoot "log\rag-workspace-$stamp"
 }
 
 function Remove-EmptyLogRoot([string]$RunOutputDir) {
@@ -172,7 +172,7 @@ function Write-ProgressWatchCommands([string]$RunOutputDir) {
     Write-Host "  Primary progress is this window plus run.log/progress.jsonl."
     Write-Host "  Use these checks only when diagnosing a stalled run."
     Write-Host "  Processes:"
-    Write-Host '    Get-CimInstance Win32_Process | ? CommandLine -match "run-rag-full-library|workspace index|workspace embed|mineru|inventory_full_pdf_workspace" | select ProcessId,Name,CommandLine'
+    Write-Host '    Get-CimInstance Win32_Process | ? CommandLine -match "run-rag-workspace|workspace index|workspace embed|mineru|inventory_full_pdf_workspace" | select ProcessId,Name,CommandLine'
     Write-Host "  Latest child logs:"
     Write-Host ("    Get-ChildItem -LiteralPath '{0}' -File | sort LastWriteTime -desc | select -first 5 FullName,Length,LastWriteTime" -f $logsDir)
     Write-Host "  Embedding tail:"
@@ -543,9 +543,9 @@ if ($Collections) {
 
 New-Item -ItemType Directory -Force -Path $runOutputDir | Out-Null
 Write-InventoryScript -ScriptPath $inventoryScript
-Start-WorkflowRunLog -RunDirectory $runOutputDir -WorkflowName "rag-full-library" -RepoRoot $repoRoot
+Start-WorkflowRunLog -RunDirectory $runOutputDir -WorkflowName "rag-workspace" -RepoRoot $repoRoot
 
-Write-RunSection "Full Library RAG Incremental Index"
+Write-RunSection "Workspace RAG Incremental Index"
 Write-RunSetting "repo" $repoRoot
 Write-RunSetting "workspace" $WorkspaceName
 if ($collectionNames.Count -gt 0) {

@@ -185,65 +185,41 @@ $j.data | Select-Object -Skip $offset -First $limit | ForEach-Object {
 - 没有普通集合的 My Publications 条目可以保持无普通 collection；不要为了规则强行塞进 `30/40/50/60`。
 ```
 
-## Remove Newer DOI Duplicates
-
-### 推荐给代理的直接提示词
-```text
-执行与日志规则：
-- 默认通过对应 wrapper 重新打开新的 PowerShell 窗口运行；除非调试或 CI，不要追加 `-RunInCurrentWindow`。
-- 保留新窗口，进度以新窗口输出和运行目录中的 `run.log`、`progress.jsonl` 为主；不要把额外 watch 命令当作主进度来源。
-- 汇报进度必须基于 wrapper 输出、`run.log`、`progress.jsonl` 或实际产物变化，不要只说“已开始”。
-- 所有 stdout/stderr、中间文件和诊断日志都必须放在各自 `log\...` 运行目录；不要散落到仓库根目录、`tools\`、`tmp\` 或临时 `.workspace\...` 中。
-
-不要用 title 模糊匹配做去重。
-直接在 F:\ChengL1u\10_资源库\代码\zotero-cli-agent 下调用 tools\remove-newer-doi-duplicates.ps1。
-
-本指令独立包含运行文件规则：dry-run 输出、apply 输出、计划记录和诊断日志都放在本次 log\remove-newer-doi-duplicates-YYYYMMDD-HHMM 目录；不要放在仓库根目录散文件、tmp\ 或临时 .workspace\... 运行目录中。复核删除结果无误后清理本次目录；失败或等待确认时保留。
-
-规则固定为：只按 DOI 精确判断；同 DOI 时保留 date_added 更早的旧条目，删除 date_added 更晚的新条目。
-执行时必须给出实时进度：查询 DOI 重复项、构建 keep/delete 计划、每个重复组的 keep/delete 判断；正式删除时还要报告批次编号、已删除数、失败数、总体百分比。
-
-默认调用会重新打开一个新的 PowerShell 窗口，实际去重在新窗口中运行；wrapper 会在 `log\remove-newer-doi-duplicates-YYYYMMDD-HHMMSS` 写入 `run.log` 和 `progress.jsonl`。只有调试/CI 才追加 `-RunInCurrentWindow`。
-
-先执行默认 dry-run 看 keep/delete 计划；我确认后，再加 -Apply 正式删除。dry-run 和 apply 默认会各自生成一个时间戳运行目录；正式结果以 apply 运行目录为准。
-复核删除结果无误后，删除本次 log\remove-newer-doi-duplicates-YYYYMMDD-HHMM 目录；如果失败或等待我确认，保留该目录。
-```
-
-## Full Library RAG Incremental Index
+## Workspace RAG Incremental Index
 
 ### 推荐给代理的直接提示词
 ```text
 当前日常目标是 F:\ChengL1u\10_资源库\代码\zotero-cli-agent\.workspace\501-mno2-zn，
-对应 Zotero 集合 501-MnO2-Zn 及其子集合。full-library-rag 已删除，不要再把它当默认目标。
+对应 Zotero 集合 501-MnO2-Zn 及其子集合。full-library-rag 已删除，脚本默认 workspace 名已改为 rag-workspace。
 
 集合 key：
 KRI7W5QZ,8FAPWVJM,8J9NPUPR,PD6IDJ2R,PUR627E3,R7VCZW46,S67ZHINI,WR5PK9MT,XIWCAHQT,ZF6UGG6U
 
 安全边界：
-- 只通过 tools\run-rag-full-library.ps1 更新 workspace/index/embedding。
+- 只通过 tools\run-rag-workspace.ps1 更新 workspace/index/embedding。
 - 不直接写 rag.idx.sqlite，不直接写 zotero.sqlite，不写 Zotero Web API。
 - .workspace\501-mno2-zn 是持久 RAG workspace，保留。
 - .zot\state\pdf_cache.sqlite 是 MinerU/PDF 抽取共享缓存，保留；删除它只会导致以后重抽 PDF。
-- log\rag-full-library-* 和 log\rag-evidence-search-* 是运行日志；确认不需要复盘后可以删除。
+- log\rag-workspace-* 和 log\rag-evidence-search-* 是运行日志；确认不需要复盘后可以删除。
 
 先 dry-run 看是否有新增或缺口：
 $collections = 'KRI7W5QZ,8FAPWVJM,8J9NPUPR,PD6IDJ2R,PUR627E3,R7VCZW46,S67ZHINI,WR5PK9MT,XIWCAHQT,ZF6UGG6U'
-pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 `
+pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-workspace.ps1 `
   -WorkspaceName 501-mno2-zn `
   -Collections $collections `
   -DryRun `
   -KeepLog `
   -RunInCurrentWindow
 
-正式增量更新。默认新窗口运行，进度看新窗口和 log\rag-full-library-*\logs\index.log / embed.log：
+正式增量更新。默认新窗口运行，进度看新窗口和 log\rag-workspace-*\logs\index.log / embed.log：
 $collections = 'KRI7W5QZ,8FAPWVJM,8J9NPUPR,PD6IDJ2R,PUR627E3,R7VCZW46,S67ZHINI,WR5PK9MT,XIWCAHQT,ZF6UGG6U'
-pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 `
+pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-workspace.ps1 `
   -WorkspaceName 501-mno2-zn `
   -Collections $collections `
   -KeepLog
 
 只补 embedding，不重新 PDF 抽取或 item index：
-pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 `
+pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-workspace.ps1 `
   -WorkspaceName 501-mno2-zn `
   -EmbedOnly `
   -KeepLog
@@ -288,7 +264,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-evidence-search.ps1 
 如果 rerank provider 异常，先加 -NoRerank 退回 hybrid 原始排序；如果只看正文或补充信息，加 -PdfKind main 或 -PdfKind supplementary。
 
 清理中间文件：
-- 可以删除 log\rag-full-library-* 和 log\rag-evidence-search-*。
+- 可以删除 log\rag-workspace-* 和 log\rag-evidence-search-*。
 - 不删除 .workspace\501-mno2-zn。
 - 不删除 .zot\state\pdf_cache.sqlite。
 - 不删除 .workspace\_qdrant（本地 Qdrant 向量库）。

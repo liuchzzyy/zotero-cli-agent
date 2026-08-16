@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$Question,
-    [string]$WorkspaceName = "full-library-rag",
+    [string]$WorkspaceName = "rag-workspace",
     [ValidateSet("auto", "bm25", "semantic", "hybrid")]
     [string]$Mode = "auto",
     [ValidateSet("any", "main", "supplementary")]
