@@ -1,9 +1,10 @@
 # zotero-cli-agent
 
-面向 AI Agent 的 Zotero 命令行工具（命令入口：`zot`）。
+面向 AI Agent 的 Zotero 命令行工具（命令入口：zot）。
 
-读操作直连本地 Zotero 的 SQLite 数据库，快且不依赖网络；写操作统一走 Zotero Web API，
-绝不直接改写本地数据库，避免破坏 Zotero 的同步状态。
+读操作直连本地 Zotero 的 SQLite 数据库，快且不依赖网络；写操作统一走 Zotero Web API， 绝不直接改写本地数据库，避免破坏 Zotero 的同步状态。
+
+> 本库在 [Agents365-ai/zotero-cli-cc](https://github.com/Agents365-ai/zotero-cli-cc) 的基础上魔改而来。
 
 ## 核心特性
 
