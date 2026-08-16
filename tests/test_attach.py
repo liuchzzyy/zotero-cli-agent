@@ -77,15 +77,3 @@ class TestAttachWriter:
         writer = ZoteroWriter(library_id="123", api_key="abc")
         with pytest.raises(ZoteroWriteError, match="Unexpected"):
             writer.upload_attachment("PARENT1", pdf)
-
-
-class TestAttachMCP:
-    def test_handle_attach(self):
-        from zotero_cli_agent.mcp_server import _handle_attach
-
-        with patch("zotero_cli_agent.mcp_server._get_writer") as mock_get:
-            mock_writer = MagicMock()
-            mock_get.return_value = mock_writer
-            mock_writer.upload_attachment.return_value = "ATT001"
-            result = _handle_attach("PARENT1", "/tmp/test.pdf")
-            assert result["key"] == "ATT001"

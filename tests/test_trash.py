@@ -98,39 +98,3 @@ class TestTrashCLI:
         result = _invoke(["trash", "list"])
         assert result.exit_code == 0
         assert "TRSH007" in result.output
-
-
-class TestTrashMCP:
-    def test_handle_trash_list(self):
-        from zotero_cli_agent.mcp_server import _handle_trash_list
-
-        with patch("zotero_cli_agent.mcp_server._get_reader") as mock_get:
-            mock_reader = MagicMock()
-            mock_get.return_value = mock_reader
-            mock_item = MagicMock()
-            mock_item.key = "K1"
-            mock_item.item_type = "journalArticle"
-            mock_item.title = "Test"
-            mock_item.creators = []
-            mock_item.date = "2024"
-            mock_item.abstract = None
-            mock_item.url = None
-            mock_item.doi = None
-            mock_item.tags = []
-            mock_item.collections = []
-            mock_item.date_added = "2024-01-01"
-            mock_item.date_modified = "2024-01-01"
-            mock_item.extra = {}
-            mock_reader.get_trash_items.return_value = [mock_item]
-            result = _handle_trash_list(limit=50)
-            assert len(result["items"]) == 1
-
-    def test_handle_trash_restore(self):
-        from zotero_cli_agent.mcp_server import _handle_trash_restore
-
-        with patch("zotero_cli_agent.mcp_server._get_writer") as mock_get:
-            mock_writer = MagicMock()
-            mock_get.return_value = mock_writer
-            result = _handle_trash_restore("K1")
-            mock_writer.restore_from_trash.assert_called_once_with("K1")
-            assert result["restored"] is True

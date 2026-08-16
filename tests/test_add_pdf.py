@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from click.testing import CliRunner
+
+from zotero_cli_agent.cli import main
 from zotero_cli_agent.core.pdf_extractor import PyMuPdfExtractor
+
+FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
 class TestExtractDoi:
@@ -33,48 +40,49 @@ class TestExtractDoi:
             assert result == "10.1234/first"
 
 
-class TestAddPdfMCP:
-    def test_handle_add_from_pdf_with_doi_override(self):
-        from zotero_cli_agent.mcp_server import _handle_add_from_pdf
-
+class TestAddPdfCLI:
+    def test_add_pdf_with_doi_override(self, tmp_path):
+        pdf = tmp_path / "paper.pdf"
+        pdf.write_bytes(b"%PDF-1.4 test")
+        runner = CliRunner()
+        env = {
+            "ZOT_DATA_DIR": str(FIXTURES_DIR),
+            "ZOT_LIBRARY_ID": "123",
+            "ZOT_API_KEY": "abc",
+            "ZOT_FORMAT": "",
+        }
         with (
-            patch("zotero_cli_agent.mcp_server._get_writer") as mock_get,
-            patch("zotero_cli_agent.core.metadata_resolver.resolve_doi", return_value={"title": "T"}),
+            patch("zotero_cli_agent.commands.add.resolve_doi", return_value={"title": "T"}),
+            patch("zotero_cli_agent.commands.add.ZoteroWriter") as mock_writer_cls,
         ):
             mock_writer = MagicMock()
-            mock_get.return_value = mock_writer
+            mock_writer_cls.return_value = mock_writer
             mock_writer.add_item.return_value = "NEW001"
             mock_writer.upload_attachment.return_value = "ATT001"
-            result = _handle_add_from_pdf("/tmp/test.pdf", doi_override="10.1234/test")
-            mock_writer.add_item.assert_called_once_with(doi="10.1234/test", extra_fields={"title": "T"})
-            assert result["item_key"] == "NEW001"
-            assert result["attachment_key"] == "ATT001"
-            assert result["resolved"]["title"] == "T"
+            result = runner.invoke(main, ["add", "--pdf", str(pdf), "--doi", "10.1234/test"], env=env)
 
-    def test_handle_add_from_pdf_no_doi_found(self):
-        from zotero_cli_agent.mcp_server import _handle_add_from_pdf
+        assert result.exit_code == 0
+        mock_writer.add_item.assert_called_once_with(doi="10.1234/test", extra_fields={"title": "T"})
+        data = json.loads(result.output)["data"]
+        assert data["key"] == "NEW001"
+        assert data["attachment_key"] == "ATT001"
 
-        with (
-            patch("zotero_cli_agent.mcp_server._get_writer"),
-            patch("zotero_cli_agent.core.pdf_extractor.PyMuPdfExtractor.extract_doi", return_value=None),
-        ):
-            result = _handle_add_from_pdf("/tmp/test.pdf")
-            assert "error" in result
+    def test_add_pdf_no_doi_found(self, tmp_path):
+        pdf = tmp_path / "paper.pdf"
+        pdf.write_bytes(b"%PDF-1.4 test")
+        runner = CliRunner()
+        env = {
+            "ZOT_DATA_DIR": str(FIXTURES_DIR),
+            "ZOT_LIBRARY_ID": "123",
+            "ZOT_API_KEY": "abc",
+            "ZOT_FORMAT": "",
+        }
+        with patch("zotero_cli_agent.core.pdf_extractor.get_extractor") as mock_get:
+            mock_extractor = MagicMock()
+            mock_extractor.extract_doi.return_value = None
+            mock_get.return_value = mock_extractor
+            result = runner.invoke(main, ["add", "--pdf", str(pdf)], env=env)
 
-    def test_handle_add_from_pdf_upload_fails(self):
-        from zotero_cli_agent.core.writer import ZoteroWriteError
-        from zotero_cli_agent.mcp_server import _handle_add_from_pdf
-
-        with (
-            patch("zotero_cli_agent.mcp_server._get_writer") as mock_get,
-            patch("zotero_cli_agent.core.pdf_extractor.PyMuPdfExtractor.extract_doi", return_value="10.1234/test"),
-            patch("zotero_cli_agent.core.metadata_resolver.resolve_doi", return_value=None),
-        ):
-            mock_writer = MagicMock()
-            mock_get.return_value = mock_writer
-            mock_writer.add_item.return_value = "NEW001"
-            mock_writer.upload_attachment.side_effect = ZoteroWriteError("Upload failed")
-            result = _handle_add_from_pdf("/tmp/test.pdf")
-            assert result["item_key"] == "NEW001"
-            assert "error" in result
-            assert "Retry with" in result["error"]
+        assert result.exit_code == 3
+        env_data = json.loads(result.output)
+        assert env_data["error"]["code"] == "validation_error"

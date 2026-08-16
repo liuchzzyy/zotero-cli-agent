@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from click.testing import CliRunner
 
@@ -104,15 +104,3 @@ class TestDuplicatesCLI:
         # Default 0.85 threshold may not match; lower it for this fixture.
         result = _invoke(["duplicates", "--by", "title", "--threshold", "0.7"], json_output=True)
         assert result.exit_code != 0
-
-
-class TestDuplicatesMCP:
-    def test_handle_duplicates(self):
-        from zotero_cli_agent.mcp_server import _handle_duplicates
-
-        with patch("zotero_cli_agent.mcp_server._get_reader") as mock_get:
-            mock_reader = MagicMock()
-            mock_get.return_value = mock_reader
-            mock_reader.find_duplicates.return_value = []
-            result = _handle_duplicates(strategy="doi")
-            assert result["groups"] == []
