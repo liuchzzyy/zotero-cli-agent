@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -11,6 +12,7 @@ from click.testing import CliRunner
 
 from zotero_cli_agent.cli import main
 from zotero_cli_agent.config import AiNoteConfig
+from zotero_cli_agent.core.ai_client import AiClient
 from zotero_cli_agent.core.note_analysis import (
     ANALYZED_TAG,
     NOT_ANALYZED_TAG,
@@ -57,6 +59,13 @@ def _make_ai_config() -> AiNoteConfig:
     return AiNoteConfig(api_key="k", base_url="http://x", model="m", max_extracted_chars=10000)
 
 
+def _sections_json(n: int = 12) -> str:
+    return json.dumps(
+        {"sections": [{"type": "paragraph", "text": f"内容 {i}"} for i in range(n)]},
+        ensure_ascii=False,
+    )
+
+
 class TestExtractJsonObject:
     def test_fenced_json(self):
         fence = chr(96) * 3
@@ -90,7 +99,7 @@ class TestAnalyzeItem:
         ai_client.config = _make_ai_config()
         ai_client.chat.side_effect = [
             '{"paper_type":"research_article","confidence":0.9,"evidence":["e"],"reason":"r"}',
-            '{"sections":[{"type":"heading","level":3,"text":"📖 粗读筛选"}]}',
+            _sections_json(12),
         ]
 
         with patch(
@@ -118,7 +127,7 @@ class TestAnalyzeItem:
 
         ai_client = MagicMock()
         ai_client.config = _make_ai_config()
-        ai_client.chat.return_value = '{"sections":[]}'
+        ai_client.chat.return_value = _sections_json(12)
 
         with patch(
             "zotero_cli_agent.core.note_analysis.convert_pdfs_to_text",
@@ -174,7 +183,7 @@ class TestAnalyzeItem:
         ai_client.config = _make_ai_config()
         ai_client.chat.side_effect = [
             '{"paper_type":"research_article","confidence":0.9,"evidence":["e"],"reason":"r"}',
-            '{"sections":[]}',
+            _sections_json(12),
         ]
 
         with patch(
@@ -208,6 +217,88 @@ class TestAnalyzeItem:
         assert result["paper_type"] == "research_article"
         assert result["template"] == "research-article"
         writer.add_note.assert_not_called()
+
+    def test_analyze_sparse_output_retries(self, tmp_path):
+        item = _make_item()
+        att = _make_attachment(tmp_path)
+        reader = MagicMock()
+        reader.get_item.return_value = item
+        reader.get_pdf_attachments.return_value = [att]
+        writer = MagicMock()
+        writer.add_note.return_value = "NOTE1"
+        ai_client = MagicMock()
+        ai_client.config = _make_ai_config()
+        ai_client.chat.side_effect = [
+            '{"paper_type":"research_article","confidence":0.9,"evidence":["e"],"reason":"r"}',
+            _sections_json(3),
+            _sections_json(15),
+        ]
+
+        with patch(
+            "zotero_cli_agent.core.note_analysis.convert_pdfs_to_text",
+            return_value={att.path: "Introduction text."},
+        ):
+            result = analyze_item(reader, writer, ai_client, "ABC123")
+
+        assert result["status"] == "ok"
+        assert result["sections"] == 15
+        assert ai_client.chat.call_count == 3  # classify + analyze + retry
+        writer.add_note.assert_called_once()
+
+    def test_analyze_sparse_retry_keeps_better_of_two(self, tmp_path):
+        item = _make_item()
+        att = _make_attachment(tmp_path)
+        reader = MagicMock()
+        reader.get_item.return_value = item
+        reader.get_pdf_attachments.return_value = [att]
+        writer = MagicMock()
+        writer.add_note.return_value = "NOTE1"
+        ai_client = MagicMock()
+        ai_client.config = _make_ai_config()
+        ai_client.chat.side_effect = [
+            '{"paper_type":"research_article","confidence":0.9,"evidence":["e"],"reason":"r"}',
+            _sections_json(3),
+            _sections_json(2),
+        ]
+
+        with patch(
+            "zotero_cli_agent.core.note_analysis.convert_pdfs_to_text",
+            return_value={att.path: "Introduction text."},
+        ):
+            result = analyze_item(reader, writer, ai_client, "ABC123")
+
+        assert result["status"] == "ok"
+        assert result["sections"] == 3
+        assert ai_client.chat.call_count == 3
+
+
+class TestAiClient:
+    @staticmethod
+    def _respond(content: str = "{}"):
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
+
+    def test_chat_sends_system_prompt_and_temperature(self):
+        config = _make_ai_config()
+        client = AiClient(config)
+        client._client.chat.completions.create = MagicMock(return_value=self._respond())
+        out = client.chat("hello")
+        assert out == "{}"
+        kwargs = client._client.chat.completions.create.call_args.kwargs
+        assert kwargs["model"] == config.model
+        assert kwargs["messages"][0]["role"] == "system"
+        assert "科研文献分析" in kwargs["messages"][0]["content"]
+        assert kwargs["messages"][1] == {"role": "user", "content": "hello"}
+        assert kwargs["temperature"] == 0.7
+        assert "max_tokens" not in kwargs
+
+    def test_chat_passes_max_tokens_when_configured(self):
+        config = _make_ai_config()
+        config.max_tokens = 16384
+        client = AiClient(config)
+        client._client.chat.completions.create = MagicMock(return_value=self._respond())
+        client.chat("hello")
+        kwargs = client._client.chat.completions.create.call_args.kwargs
+        assert kwargs["max_tokens"] == 16384
 
 
 class TestAiAnalyzeCLI:

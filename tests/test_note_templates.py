@@ -46,6 +46,15 @@ class TestNoteTemplates:
         for name in ("research", "review", "book"):
             assert "↓" not in load_template(name)
 
+    def test_research_template_has_per_section_requirements(self):
+        template = load_template("research")
+        assert "各章节具体要求" in template
+        assert "粗读筛选" in template
+        assert "笔记原子化" in template
+        assert "重组分子化" in template
+        assert "输出要求" in template
+        assert "2-3 句" in template  # 重点章节密度约束
+
 
 class TestNoteRenderer:
     def test_render_heading_and_paragraph(self):

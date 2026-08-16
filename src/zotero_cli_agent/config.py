@@ -162,6 +162,8 @@ class AiNoteConfig:
     pdf_input_mode: str = ""
     api_mode: str = "auto"
     chat_token_param: str = "auto"
+    temperature: float = 0.7
+    max_tokens: int = 0
     max_extracted_chars: int = 180000
     max_images: int = 24
     max_image_mb: int = 8
@@ -338,6 +340,8 @@ def load_ai_note_config(path: Path | None = None) -> AiNoteConfig:
         pdf_input_mode=ai_notes.get("pdf_input_mode", defaults.pdf_input_mode),
         api_mode=ai_notes.get("api_mode", defaults.api_mode),
         chat_token_param=ai_notes.get("chat_token_param", defaults.chat_token_param),
+        temperature=float(ai_notes.get("temperature", defaults.temperature)),
+        max_tokens=int(ai_notes.get("max_tokens", defaults.max_tokens)),
         max_extracted_chars=int(ai_notes.get("max_extracted_chars", defaults.max_extracted_chars)),
         max_images=int(ai_notes.get("max_images", defaults.max_images)),
         max_image_mb=int(ai_notes.get("max_image_mb", defaults.max_image_mb)),

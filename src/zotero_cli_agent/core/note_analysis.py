@@ -25,6 +25,17 @@ _TEMPLATE_BY_TYPE = {
 
 _FENCE = chr(96) * 3  # markdown code fence (three backticks)
 
+_MIN_SECTIONS = 10
+
+_SPARSE_RETRY_SUFFIX = (
+    "\n\n【内容充实度要求（必须遵守）】"
+    "上一次输出过于简略。请重新生成完整分析：每个章节内容充实具体，"
+    "关键结论带证据锚点（页码/图号/表号/文献编号）与具体数值；"
+    "笔记原子化每类至少 3 条并带 citations；优缺点至少 3 条优点、2 条缺点；"
+    "研究启发至少 3 条；论证逻辑链路图用固定表格且至少 5 行。"
+    "仍只输出一个 json 代码块。"
+)
+
 
 class NoteAnalysisError(Exception):
     def __init__(self, message: str, *, code: str = "runtime_error", retryable: bool = False) -> None:
@@ -196,6 +207,16 @@ def analyze_item(
     sections = extract_json_object(answer).get("sections", [])
     if not isinstance(sections, list):
         sections = []
+    if len(sections) < _MIN_SECTIONS:
+        if progress:
+            progress("retry", f"输出过简略（{len(sections)} 个 block），追加内容充实度要求重试一次")
+        try:
+            retry_answer = _chat(ai_client, prompt + _SPARSE_RETRY_SUFFIX)
+            retried = extract_json_object(retry_answer).get("sections", [])
+            if isinstance(retried, list) and len(retried) > len(sections):
+                sections = retried
+        except NoteAnalysisError:
+            pass
 
     note_title = NOTE_TITLE_PREFIX + item.title
     html_note = render_note(sections, title=note_title)

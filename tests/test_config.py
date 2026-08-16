@@ -407,6 +407,8 @@ reasoning_effort = "max"
 pdf_input_mode = "mineru-text"
 api_mode = "chat"
 chat_token_param = "max_tokens"
+temperature = 0.3
+max_tokens = 16384
 max_extracted_chars = 1234
 max_images = 6
 max_image_mb = 3
@@ -419,6 +421,8 @@ max_image_mb = 3
     assert cfg.pdf_input_mode == "mineru-text"
     assert cfg.api_mode == "chat"
     assert cfg.chat_token_param == "max_tokens"
+    assert cfg.temperature == 0.3
+    assert cfg.max_tokens == 16384
     assert cfg.max_extracted_chars == 1234
     assert cfg.max_images == 6
     assert cfg.max_image_mb == 3
