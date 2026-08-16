@@ -4,7 +4,7 @@ import html as _html
 
 _PRIMARY = "#EF7060"
 _BACKGROUND = "#fff9f9"
-_MUTED = "#7a7a7a"
+_CITE = "#2b6cb0"
 _BORDER = "#eeeeee"
 
 
@@ -64,9 +64,9 @@ def _bullet_list(items: list[dict]) -> str:
         citations = item.get("citations") or []
         if citations:
             cite_html = "".join(
-                f"<div style='margin:2px 0 0 12px;padding:4px 8px;border-left:3px solid {_PRIMARY};"
-                f"background:{_BACKGROUND};color:{_MUTED};font-size:0.85em;'>"
-                f"📍 {_escape(c.get('location', ''))}：{_escape(c.get('content', ''))}</div>"
+                f"<div style='margin:2px 0 0 12px;padding:4px 8px;border-left:3px solid {_CITE};"
+                f"background:{_BACKGROUND};color:{_CITE};font-size:0.85em;'>"
+                f"「📍 {_escape(c.get('location', ''))}：{_escape(c.get('content', ''))}」</div>"
                 for c in citations
             )
             lis.append(f"<li style='margin:0.2em 0;'>{text}{cite_html}</li>")

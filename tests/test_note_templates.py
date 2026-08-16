@@ -42,6 +42,10 @@ class TestNoteTemplates:
         for name in ("research", "review", "book", "classify-item"):
             assert "🪸" not in load_template(name)
 
+    def test_templates_have_no_arrow_chain_lists(self):
+        for name in ("research", "review", "book"):
+            assert "↓" not in load_template(name)
+
 
 class TestNoteRenderer:
     def test_render_heading_and_paragraph(self):
@@ -73,7 +77,8 @@ class TestNoteRenderer:
         assert "<ul" in html
         assert "普通条目" in html
         assert "带引用" in html
-        assert "📍 第3页" in html
+        assert "「📍 第3页：原文内容」" in html
+        assert "#2b6cb0" in html
 
     def test_render_table(self):
         sections = [{"type": "table", "headers": ["A", "B"], "rows": [["1", "2"]]}]

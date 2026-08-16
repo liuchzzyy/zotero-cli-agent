@@ -50,6 +50,7 @@
 3. 字段名必须使用 text，不要使用 content。
 4. 💎 金句摘录 允许在 bullet item 中使用 citations：
    - {"text":"金句内容","citations":[{"location":"章节/页码","content":"上下文"}]}
+   - location 只写简短位置（章节/页码），content 写被引用的原文原句
 5. 除 💎 金句摘录 外，其他部分不要使用 citations 字段。
 6. 必须只输出一个 json 代码块，不要输出代码块外解释文字。
 7. 🤔 我的思考 必须包含 4 个四级子标题：同意什么、不同意什么、产生的疑问、对我的启发。
