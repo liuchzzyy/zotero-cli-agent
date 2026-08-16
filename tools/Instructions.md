@@ -17,7 +17,7 @@
 ### 推荐给代理的直接提示词
 ```text
 当前日常目标是 F:\ChengL1u\10_资源库\代码\zotero-cli-agent\.workspace\501-mno2-zn，
-对应 Zotero 集合 501-MnO2-Zn 及其子集合。full-library-rag 已删除，脚本默认 workspace 名已改为 rag-workspace。
+对应 Zotero 集合 501-MnO2-Zn 及其子集合。
 
 集合 key：
 KRI7W5QZ,8FAPWVJM,8J9NPUPR,PD6IDJ2R,PUR627E3,R7VCZW46,S67ZHINI,WR5PK9MT,XIWCAHQT,ZF6UGG6U
@@ -74,9 +74,6 @@ print("chunks", chunks)
 print("with_embedding", with_embedding)
 print("missing_embedding", max(chunks - with_embedding, 0))
 '@ | uv run python -
-
-> 语义搜索已切换为 SQLite FTS5 + Qdrant local：向量不再存于 rag.idx.sqlite 的 embedding 列。
-> 旧索引需要重建一次：`zot workspace index 501-mno2-zn --force`，再 `zot workspace embed 501-mno2-zn` 写入 Qdrant。
 
 查证据。BM25 和 embedding 已完成时默认用 auto，也就是 hybrid；rerank 是查询时在线精排，不是离线构建步骤：
 pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-evidence-search.ps1 `
