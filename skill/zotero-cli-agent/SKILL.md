@@ -33,7 +33,6 @@ For repository workflows, prefer the maintained PowerShell wrappers and the cano
 | Batch import DOIs/URLs | `zot add --from-file file.txt` | One per line |
 | Add/delete/tag/note | `zot ...` | All write ops |
 | Update item metadata | `zot update KEY --title/--field` | Web API write |
-| AI metadata cleanup loop | `zot --json --detail full summarize-all --exclude-tag workflow/metadata --exclude-tag update/metadata --exclude-collection-key RHBNIDLJ ...` + `zot update --from-jsonl updates.jsonl --add-tag workflow/metadata` | Export only unprocessed non-archive items, clean externally, batch write back and mark processed |
 | Upload attachment | `zot attach KEY --file paper.pdf` | Web API write |
 | Check preprint pub status | `zot update-status --limit 20` | Semantic Scholar API |
 | Find duplicates | `zot --json duplicates` | Local SQLite |
@@ -101,8 +100,6 @@ zot add --pdf paper.pdf                   # Add from local PDF (auto-extract DOI
 zot --no-interaction delete ITEMKEY
 zot update ITEMKEY --title "New Title"
 zot update ITEMKEY --field volume=42 --field pages=1-10
-zot --json --detail full summarize-all --exclude-tag workflow/metadata --exclude-tag update/metadata --exclude-collection-key RHBNIDLJ --exclude-collection-key 4W3JSHVT --exclude-collection-key JDL5AMLK --exclude-collection-key AC9IN8II --exclude-collection-key X8KH35G2 --exclude-collection-key 9J9BWP2K --exclude-collection-key LPVR4N2G --limit 100
-zot update --from-jsonl cleaned-metadata.jsonl --add-tag workflow/metadata
 zot attach ITEMKEY --file supplement.pdf
 ```
 
