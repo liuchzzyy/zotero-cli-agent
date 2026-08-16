@@ -27,6 +27,13 @@ _FENCE = chr(96) * 3  # markdown code fence (three backticks)
 
 _MIN_SECTIONS = 10
 
+_PARSE_RETRY_SUFFIX = (
+    "\n\n【输出格式要求（必须遵守）】"
+    "上一次输出无法解析为 JSON。请重新输出，且只输出一个 json 代码块："
+    "不要输出任何解释文字，顶层必须是 {\"sections\": [...]}，"
+    "确保 JSON 完整闭合（花括号、引号全部配对），字符串内换行用 \\n 转义。"
+)
+
 _SPARSE_RETRY_SUFFIX = (
     "\n\n【内容充实度要求（必须遵守）】"
     "上一次输出过于简略。请重新生成完整分析：每个章节内容充实具体，"
@@ -204,7 +211,20 @@ def analyze_item(
     if progress:
         progress("analyze", f"paper_type={paper_type}")
     answer = _chat(ai_client, prompt)
-    sections = extract_json_object(answer).get("sections", [])
+    try:
+        sections = extract_json_object(answer).get("sections", [])
+    except NoteAnalysisError:
+        if progress:
+            progress("retry", "AI 输出无法解析为 JSON，追加格式要求重试一次")
+        retry_answer = _chat(ai_client, prompt + _PARSE_RETRY_SUFFIX)
+        try:
+            sections = extract_json_object(retry_answer).get("sections", [])
+        except NoteAnalysisError as retry_error:
+            snippet = retry_answer[:300].replace("\n", " ")
+            raise NoteAnalysisError(
+                f"AI 输出两次都无法解析为 JSON（响应开头：{snippet}...）",
+                code="runtime_error",
+            ) from retry_error
     if not isinstance(sections, list):
         sections = []
     if len(sections) < _MIN_SECTIONS:

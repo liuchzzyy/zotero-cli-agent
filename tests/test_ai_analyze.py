@@ -271,6 +271,54 @@ class TestAnalyzeItem:
         assert result["sections"] == 3
         assert ai_client.chat.call_count == 3
 
+    def test_analyze_parse_failure_retries(self, tmp_path):
+        item = _make_item(item_type="book")
+        att = _make_attachment(tmp_path)
+        reader = MagicMock()
+        reader.get_item.return_value = item
+        reader.get_pdf_attachments.return_value = [att]
+        writer = MagicMock()
+        writer.add_note.return_value = "NOTE1"
+        ai_client = MagicMock()
+        ai_client.config = _make_ai_config()
+        ai_client.chat.side_effect = [
+            "这是一段没有 JSON 的输出",
+            _sections_json(12),
+        ]
+
+        with patch(
+            "zotero_cli_agent.core.note_analysis.convert_pdfs_to_text",
+            return_value={att.path: "Chapter 1. Introduction."},
+        ):
+            result = analyze_item(reader, writer, ai_client, "ABC123")
+
+        assert result["status"] == "ok"
+        assert result["sections"] == 12
+        assert ai_client.chat.call_count == 2  # book 无分类调用：analyze + retry
+        writer.add_note.assert_called_once()
+
+    def test_analyze_parse_failure_twice_raises(self, tmp_path):
+        item = _make_item(item_type="book")
+        att = _make_attachment(tmp_path)
+        reader = MagicMock()
+        reader.get_item.return_value = item
+        reader.get_pdf_attachments.return_value = [att]
+        writer = MagicMock()
+        ai_client = MagicMock()
+        ai_client.config = _make_ai_config()
+        ai_client.chat.side_effect = ["无 JSON 一", "无 JSON 二"]
+
+        with patch(
+            "zotero_cli_agent.core.note_analysis.convert_pdfs_to_text",
+            return_value={att.path: "Chapter 1. Introduction."},
+        ):
+            with pytest.raises(NoteAnalysisError) as exc:
+                analyze_item(reader, writer, ai_client, "ABC123")
+
+        assert exc.value.code == "runtime_error"
+        assert "两次都无法解析" in str(exc.value)
+        writer.add_note.assert_not_called()
+
 
 class TestAiClient:
     @staticmethod
