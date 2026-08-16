@@ -56,6 +56,23 @@ def _friendly_api_error(exc: PyZoteroError) -> ZoteroWriteError:
     return ZoteroWriteError(f"Zotero API error: {msg}")
 
 
+def merge_short_note_into_extra(extra: str, short_note: str) -> str:
+    """Merge a short-note line into Zotero Extra text, replacing any existing one.
+
+    Preserves all other Extra lines (funder, translated-title, ...) and appends
+    a single "short-note: ..." line at the end.
+    """
+    lines = [
+        line
+        for line in (extra or "").splitlines()
+        if not line.strip().lower().startswith("short-note:")
+    ]
+    while lines and not lines[-1].strip():
+        lines.pop()
+    lines.append(f"short-note: {short_note.strip()}")
+    return "\n".join(lines)
+
+
 class ZoteroWriter:
     def __init__(self, library_id: str, api_key: str, library_type: str = "user", timeout: float = API_TIMEOUT) -> None:
         self._zot = zotero.Zotero(library_id, library_type, api_key)
@@ -153,6 +170,20 @@ class ZoteroWriter:
                 template.update(extra_fields)
             resp = self._zot.create_items([template])
             return self._check_response(resp)
+        except HttpxHttpError as e:
+            raise ZoteroWriteError(f"Network error: {e}", code="network_error", retryable=True) from e
+        except PyZoteroError as e:
+            raise _friendly_api_error(e) from e
+
+    def update_short_note(self, key: str, short_note: str) -> None:
+        """Merge a short-note line into the item's Extra field via the Web API."""
+        try:
+            item = self._zot.item(key)
+            current = item["data"].get("extra") or ""
+            item["data"]["extra"] = merge_short_note_into_extra(current, short_note)
+            self._zot.update_item(item)
+        except ResourceNotFoundError:
+            raise ZoteroWriteError(f"Item '{key}' not found", code="not_found", retryable=False)
         except HttpxHttpError as e:
             raise ZoteroWriteError(f"Network error: {e}", code="network_error", retryable=True) from e
         except PyZoteroError as e:

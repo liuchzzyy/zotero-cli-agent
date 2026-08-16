@@ -11,8 +11,10 @@ from zotero_cli_agent.core.reader import ZoteroReader
 from zotero_cli_agent.core.writer import ZoteroWriter
 from zotero_cli_agent.models import Item
 
-ANALYZED_TAG = "ai_analyzed"
-NOT_ANALYZED_TAG = "ai_not_analyzed"
+ANALYZED_TAG = "ai/noted"
+NOT_ANALYZED_TAG = "ai/uncertain"
+KEYWORDS_TAG = "ai/keywords"
+NO_KEYWORDS_TAG = "ai/no_keywords"
 NOTE_TITLE_PREFIX = "AI条目分析 - "
 
 _CLASSIFY_CHARS = 4000
@@ -26,6 +28,8 @@ _TEMPLATE_BY_TYPE = {
 _FENCE = chr(96) * 3  # markdown code fence (three backticks)
 
 _MIN_SECTIONS = 10
+_SHORT_NOTE_MAX_CHARS = 500
+_SHORT_NOTE_MIN_SEGMENTS = 3
 
 _PARSE_RETRY_SUFFIX = (
     "\n\n【输出格式要求（必须遵守）】"
@@ -84,9 +88,75 @@ def extract_json_object(text: str) -> dict:
     raise NoteAnalysisError("无法从 AI 输出中解析出 JSON")
 
 
-def _chat(ai_client: AiClient, prompt: str) -> str:
+def validate_short_note(text: str) -> str | None:
+    """Return an error message when the short-note is invalid, else None."""
+    value = (text or "").strip()
+    if not value:
+        return "empty short_note"
+    if len(value) > _SHORT_NOTE_MAX_CHARS:
+        return f"too long ({len(value)} > {_SHORT_NOTE_MAX_CHARS})"
+    if "\n" in value or "\r" in value:
+        return "contains newline"
+    if any(ch in value for ch in "[]" + chr(96)):
+        return "contains forbidden bracket/backtick"
+    if value.startswith("|") or value.endswith("|"):
+        return "leading/trailing pipe"
+    parts = [part.strip() for part in value.split("|")]
+    if any(not part for part in parts):
+        return "empty pipe segment"
+    if len(parts) < _SHORT_NOTE_MIN_SEGMENTS:
+        return f"fewer than {_SHORT_NOTE_MIN_SEGMENTS} segments"
+    if not parts[-1].startswith("疑问："):
+        return "last segment must start with 疑问："
+    return None
+
+
+def _sections_to_text(sections: list[dict]) -> str:
+    """Flatten a sections-JSON payload into compact text for keyword extraction."""
+    lines: list[str] = []
+    for block in sections or []:
+        btype = block.get("type")
+        if btype == "heading":
+            lines.append("## " + str(block.get("text", "")))
+        elif btype == "paragraph":
+            lines.append(str(block.get("text", "")))
+        elif btype == "bullet_list":
+            for item in block.get("items") or []:
+                if isinstance(item, dict):
+                    lines.append("- " + str(item.get("text", "")))
+        elif btype == "table":
+            headers = block.get("headers") or []
+            if headers:
+                lines.append("| " + " | ".join(str(h) for h in headers) + " |")
+            for row in block.get("rows") or []:
+                lines.append("| " + " | ".join(str(c) for c in row) + " |")
+    return "\n".join(lines)
+
+
+def _generate_short_note(
+    ai_client: AiClient,
+    note_text: str,
+    progress: Callable[[str, str], None] | None,
+) -> str:
+    template = load_template("short-note")
+    prompt = format_template(template, fulltext=note_text)
+    if progress:
+        progress("keywords", "生成关键词（short-note）")
+    answer = _chat(ai_client, prompt, temperature=0.1)
     try:
-        return ai_client.chat(prompt)
+        data = extract_json_object(answer)
+    except NoteAnalysisError:
+        if progress:
+            progress("retry", "关键词输出无法解析为 JSON，重试一次")
+        data = extract_json_object(_chat(ai_client, prompt + _PARSE_RETRY_SUFFIX, temperature=0.1))
+    short_note = str(data.get("short_note") or "").strip()
+    error = validate_short_note(short_note)
+    if error:
+        raise NoteAnalysisError(f"关键词格式不合规：{error}", code="runtime_error")
+    return short_note
+def _chat(ai_client: AiClient, prompt: str, *, temperature: float | None = None) -> str:
+    try:
+        return ai_client.chat(prompt, temperature=temperature)
     except NoteAnalysisError:
         raise
     except Exception as e:
@@ -118,6 +188,47 @@ def _classify(
     return str(data.get("paper_type", "")).strip() or "uncertain"
 
 
+def _analyze_short_note_only(
+    reader: ZoteroReader,
+    writer: ZoteroWriter,
+    ai_client: AiClient,
+    item: Item,
+    key: str,
+    progress: Callable[[str, str], None] | None,
+) -> dict:
+    """Backfill mode: generate keywords from the existing AI note and write Extra short-note."""
+    notes = reader.get_notes(key)
+    if not notes:
+        raise NoteAnalysisError(f"条目 '{key}' 没有可用的 AI 笔记", code="validation_error")
+    # reader.get_notes 按创建顺序返回；含 "AI条目分析" 的笔记中选最新一条（我们的工作流总是后创建），
+    # 避免旧版工作流的同名笔记（可能更长）抢走选择。
+    ai_notes = [n for n in notes if "AI条目分析" in (n.content or "")]
+    if ai_notes:
+        chosen = ai_notes[-1]
+    else:
+        chosen = max(notes, key=lambda n: len(n.content or ""))
+    note_text = (chosen.content or "").strip()
+    if not note_text:
+        raise NoteAnalysisError(f"条目 '{key}' 的 AI 笔记内容为空", code="validation_error")
+
+    result: dict = {
+        "status": "short_note_only",
+        "item_key": key,
+        "item_type": item.item_type,
+        "note_key": chosen.key,
+    }
+    try:
+        short_note = _generate_short_note(ai_client, note_text, progress)
+        writer.update_short_note(key, short_note)
+        writer.add_tags(key, [KEYWORDS_TAG])
+        result["short_note"] = "ok"
+    except Exception as exc:
+        writer.add_tags(key, [NO_KEYWORDS_TAG])
+        result["short_note"] = "failed"
+        result["short_note_error"] = str(exc)[:160]
+    return result
+
+
 def analyze_item(
     reader: ZoteroReader,
     writer: ZoteroWriter,
@@ -128,11 +239,16 @@ def analyze_item(
     no_tag: bool = False,
     extractor: str = "mineru",
     dry_run: bool = False,
+    no_short_note: bool = False,
+    short_note_only: bool = False,
     progress: Callable[[str, str], None] | None = None,
 ) -> dict:
     item = reader.get_item(key)
     if item is None:
         raise NoteAnalysisError(f"条目 '{key}' 不存在", code="not_found")
+
+    if short_note_only:
+        return _analyze_short_note_only(reader, writer, ai_client, item, key, progress)
 
     if ANALYZED_TAG in item.tags and not force:
         return {"status": "already_analyzed", "item_key": key, "item_type": item.item_type}
@@ -244,10 +360,25 @@ def analyze_item(
     if not no_tag:
         writer.add_tags(key, [ANALYZED_TAG])
 
+    short_note_status = "skipped"
+    short_note_error = ""
+    if not no_short_note:
+        try:
+            short_note = _generate_short_note(ai_client, _sections_to_text(sections), progress)
+            writer.update_short_note(key, short_note)
+            writer.add_tags(key, [KEYWORDS_TAG])
+            short_note_status = "ok"
+        except Exception as exc:  # graceful degradation: the note is already written
+            writer.add_tags(key, [NO_KEYWORDS_TAG])
+            short_note_status = "failed"
+            short_note_error = str(exc)[:160]
+
     return {
         "status": "ok",
         "item_key": key,
         "note_key": note_key,
         "paper_type": paper_type,
         "sections": len(sections),
+        "short_note": short_note_status,
+        "short_note_error": short_note_error,
     }

@@ -16,14 +16,14 @@ class AiClient:
         self.config = config
         self._client = OpenAI(base_url=config.base_url, api_key=config.api_key)
 
-    def chat(self, prompt: str) -> str:
+    def chat(self, prompt: str, *, temperature: float | None = None) -> str:
         create_kwargs: dict[str, Any] = {
             "model": self.config.model,
             "messages": [
                 {"role": "system", "content": _SYSTEM_PROMPT},
                 {"role": "user", "content": prompt},
             ],
-            "temperature": self.config.temperature,
+            "temperature": self.config.temperature if temperature is None else temperature,
         }
         if self.config.max_tokens > 0:
             create_kwargs["max_tokens"] = self.config.max_tokens

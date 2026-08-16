@@ -15,12 +15,16 @@ from zotero_cli_agent.config import AiNoteConfig
 from zotero_cli_agent.core.ai_client import AiClient
 from zotero_cli_agent.core.note_analysis import (
     ANALYZED_TAG,
+    KEYWORDS_TAG,
+    NO_KEYWORDS_TAG,
     NOT_ANALYZED_TAG,
     NoteAnalysisError,
     analyze_item,
     extract_json_object,
+    validate_short_note,
 )
-from zotero_cli_agent.models import Attachment, Creator, Item
+from zotero_cli_agent.core.writer import merge_short_note_into_extra
+from zotero_cli_agent.models import Attachment, Creator, Item, Note
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -66,6 +70,10 @@ def _sections_json(n: int = 12) -> str:
     )
 
 
+def _short_note_json() -> str:
+    return '{"short_note": "体系A | 机制B | 性能C | 疑问：未解问题"}'
+
+
 class TestExtractJsonObject:
     def test_fenced_json(self):
         fence = chr(96) * 3
@@ -100,6 +108,7 @@ class TestAnalyzeItem:
         ai_client.chat.side_effect = [
             '{"paper_type":"research_article","confidence":0.9,"evidence":["e"],"reason":"r"}',
             _sections_json(12),
+            _short_note_json(),
         ]
 
         with patch(
@@ -111,9 +120,12 @@ class TestAnalyzeItem:
         assert result["status"] == "ok"
         assert result["paper_type"] == "research_article"
         assert result["note_key"] == "NOTE1"
-        assert ai_client.chat.call_count == 2  # classify + analyze
+        assert result["short_note"] == "ok"
+        assert ai_client.chat.call_count == 3  # classify + analyze + keywords
         writer.add_note.assert_called_once()
-        writer.add_tags.assert_called_once_with("ABC123", [ANALYZED_TAG])
+        writer.add_tags.assert_any_call("ABC123", [ANALYZED_TAG])
+        writer.add_tags.assert_any_call("ABC123", [KEYWORDS_TAG])
+        writer.update_short_note.assert_called_once_with("ABC123", "体系A | 机制B | 性能C | 疑问：未解问题")
 
     def test_analyze_book_prejudged_by_item_type(self, tmp_path):
         item = _make_item(item_type="book")
@@ -127,7 +139,7 @@ class TestAnalyzeItem:
 
         ai_client = MagicMock()
         ai_client.config = _make_ai_config()
-        ai_client.chat.return_value = _sections_json(12)
+        ai_client.chat.side_effect = [_sections_json(12), _short_note_json()]
 
         with patch(
             "zotero_cli_agent.core.note_analysis.convert_pdfs_to_text",
@@ -136,7 +148,7 @@ class TestAnalyzeItem:
             result = analyze_item(reader, writer, ai_client, "ABC123")
 
         assert result["paper_type"] == "book"
-        assert ai_client.chat.call_count == 1  # no classification call for book
+        assert ai_client.chat.call_count == 2  # analyze + keywords（book 无分类调用）
 
     def test_analyze_uncertain_skips_and_tags(self, tmp_path):
         item = _make_item()
@@ -184,6 +196,7 @@ class TestAnalyzeItem:
         ai_client.chat.side_effect = [
             '{"paper_type":"research_article","confidence":0.9,"evidence":["e"],"reason":"r"}',
             _sections_json(12),
+            _short_note_json(),
         ]
 
         with patch(
@@ -232,6 +245,7 @@ class TestAnalyzeItem:
             '{"paper_type":"research_article","confidence":0.9,"evidence":["e"],"reason":"r"}',
             _sections_json(3),
             _sections_json(15),
+            _short_note_json(),
         ]
 
         with patch(
@@ -242,7 +256,7 @@ class TestAnalyzeItem:
 
         assert result["status"] == "ok"
         assert result["sections"] == 15
-        assert ai_client.chat.call_count == 3  # classify + analyze + retry
+        assert ai_client.chat.call_count == 4  # classify + analyze + retry + keywords
         writer.add_note.assert_called_once()
 
     def test_analyze_sparse_retry_keeps_better_of_two(self, tmp_path):
@@ -259,6 +273,7 @@ class TestAnalyzeItem:
             '{"paper_type":"research_article","confidence":0.9,"evidence":["e"],"reason":"r"}',
             _sections_json(3),
             _sections_json(2),
+            _short_note_json(),
         ]
 
         with patch(
@@ -269,7 +284,7 @@ class TestAnalyzeItem:
 
         assert result["status"] == "ok"
         assert result["sections"] == 3
-        assert ai_client.chat.call_count == 3
+        assert ai_client.chat.call_count == 4  # classify + analyze + retry + keywords
 
     def test_analyze_parse_failure_retries(self, tmp_path):
         item = _make_item(item_type="book")
@@ -284,6 +299,7 @@ class TestAnalyzeItem:
         ai_client.chat.side_effect = [
             "这是一段没有 JSON 的输出",
             _sections_json(12),
+            _short_note_json(),
         ]
 
         with patch(
@@ -294,7 +310,7 @@ class TestAnalyzeItem:
 
         assert result["status"] == "ok"
         assert result["sections"] == 12
-        assert ai_client.chat.call_count == 2  # book 无分类调用：analyze + retry
+        assert ai_client.chat.call_count == 3  # book：analyze + retry + keywords
         writer.add_note.assert_called_once()
 
     def test_analyze_parse_failure_twice_raises(self, tmp_path):
@@ -318,6 +334,163 @@ class TestAnalyzeItem:
         assert exc.value.code == "runtime_error"
         assert "两次都无法解析" in str(exc.value)
         writer.add_note.assert_not_called()
+
+
+    def test_analyze_no_short_note_flag(self, tmp_path):
+        item = _make_item()
+        att = _make_attachment(tmp_path)
+        reader = MagicMock()
+        reader.get_item.return_value = item
+        reader.get_pdf_attachments.return_value = [att]
+        writer = MagicMock()
+        writer.add_note.return_value = "NOTE1"
+        ai_client = MagicMock()
+        ai_client.config = _make_ai_config()
+        ai_client.chat.side_effect = [
+            '{"paper_type":"research_article","confidence":0.9,"evidence":["e"],"reason":"r"}',
+            _sections_json(12),
+        ]
+
+        with patch(
+            "zotero_cli_agent.core.note_analysis.convert_pdfs_to_text",
+            return_value={att.path: "Introduction text."},
+        ):
+            result = analyze_item(reader, writer, ai_client, "ABC123", no_short_note=True)
+
+        assert result["status"] == "ok"
+        assert result["short_note"] == "skipped"
+        assert ai_client.chat.call_count == 2  # classify + analyze only
+        writer.update_short_note.assert_not_called()
+        writer.add_tags.assert_any_call("ABC123", [ANALYZED_TAG])
+        assert not any(
+            call.args[1] in ([KEYWORDS_TAG], [NO_KEYWORDS_TAG]) for call in writer.add_tags.call_args_list
+        )
+
+    def test_analyze_keyword_failure_tags_no_keywords(self, tmp_path):
+        item = _make_item()
+        att = _make_attachment(tmp_path)
+        reader = MagicMock()
+        reader.get_item.return_value = item
+        reader.get_pdf_attachments.return_value = [att]
+        writer = MagicMock()
+        writer.add_note.return_value = "NOTE1"
+        ai_client = MagicMock()
+        ai_client.config = _make_ai_config()
+        ai_client.chat.side_effect = [
+            '{"paper_type":"research_article","confidence":0.9,"evidence":["e"],"reason":"r"}',
+            _sections_json(12),
+            "没有 JSON 的关键词输出",
+        ]
+
+        with patch(
+            "zotero_cli_agent.core.note_analysis.convert_pdfs_to_text",
+            return_value={att.path: "Introduction text."},
+        ):
+            result = analyze_item(reader, writer, ai_client, "ABC123")
+
+        assert result["status"] == "ok"  # note 仍然成功
+        assert result["short_note"] == "failed"
+        assert result["short_note_error"]
+        writer.add_note.assert_called_once()
+        writer.add_tags.assert_any_call("ABC123", [ANALYZED_TAG])
+        writer.add_tags.assert_any_call("ABC123", [NO_KEYWORDS_TAG])
+        writer.update_short_note.assert_not_called()
+
+    def test_analyze_short_note_only_backfill(self):
+        item = _make_item()
+        reader = MagicMock()
+        reader.get_item.return_value = item
+        reader.get_notes.return_value = [
+            Note(
+                key="N_OLD",
+                parent_key="ABC123",
+                content="AI条目分析 - Test Paper\n" + ("旧版工作流生成的更长的旧笔记内容。\n" * 40),
+            ),
+            Note(key="N1", parent_key="ABC123", content="AI条目分析 - Test Paper\n\n## 🧭 阅读协议\n- 文本可读性：完整"),
+            Note(key="N2", parent_key="ABC123", content="普通笔记"),
+        ]
+        writer = MagicMock()
+        ai_client = MagicMock()
+        ai_client.config = _make_ai_config()
+        ai_client.chat.return_value = _short_note_json()
+
+        result = analyze_item(reader, writer, ai_client, "ABC123", short_note_only=True)
+
+        assert result["status"] == "short_note_only"
+        assert result["note_key"] == "N1"  # 在含 "AI条目分析" 的笔记中选最新一条
+        assert result["short_note"] == "ok"
+        assert ai_client.chat.call_count == 1
+        writer.add_note.assert_not_called()
+        writer.update_short_note.assert_called_once_with("ABC123", "体系A | 机制B | 性能C | 疑问：未解问题")
+        writer.add_tags.assert_called_once_with("ABC123", [KEYWORDS_TAG])
+
+    def test_analyze_short_note_only_without_notes_raises(self):
+        item = _make_item()
+        reader = MagicMock()
+        reader.get_item.return_value = item
+        reader.get_notes.return_value = []
+        writer = MagicMock()
+        ai_client = MagicMock()
+
+        with pytest.raises(NoteAnalysisError) as exc:
+            analyze_item(reader, writer, ai_client, "ABC123", short_note_only=True)
+
+        assert exc.value.code == "validation_error"
+
+
+class TestValidateShortNote:
+    def test_valid(self):
+        assert validate_short_note("体系A | 机制B | 性能C | 疑问：未解问题") is None
+
+    def test_minimal_three_segments(self):
+        assert validate_short_note("体系A | 机制B | 疑问：未解问题") is None
+
+    def test_empty(self):
+        assert validate_short_note("") == "empty short_note"
+
+    def test_too_long(self):
+        assert "too long" in (validate_short_note("段 | " * 300) or "")
+
+    def test_fewer_than_three_segments(self):
+        assert "fewer than 3 segments" in (validate_short_note("体系A | 机制B") or "")
+
+    def test_last_segment_must_start_with_question(self):
+        assert "last segment must start with 疑问：" in (validate_short_note("体系A | 机制B | 性能C") or "")
+
+    def test_newline_rejected(self):
+        assert validate_short_note("体系A | 机制B\n性能C | 疑问：X") == "contains newline"
+
+    def test_brackets_rejected(self):
+        assert "forbidden bracket" in (validate_short_note("体系[A] | 机制B | 疑问：X") or "")
+
+    def test_empty_segment_rejected(self):
+        assert validate_short_note("体系A | | 机制B | 疑问：X") == "empty pipe segment"
+
+    def test_leading_pipe_rejected(self):
+        assert validate_short_note("| 体系A | 机制B | 疑问：X") == "leading/trailing pipe"
+
+
+class TestMergeShortNote:
+    def test_empty_extra(self):
+        assert merge_short_note_into_extra("", "短语") == "short-note: 短语"
+
+    def test_none_extra(self):
+        assert merge_short_note_into_extra(None, "短语") == "short-note: 短语"  # type: ignore[arg-type]
+
+    def test_appends_to_existing_lines(self):
+        extra = "Funder: NSF\ntranslated-title: 标题"
+        merged = merge_short_note_into_extra(extra, "短语")
+        assert merged == "Funder: NSF\ntranslated-title: 标题\nshort-note: 短语"
+
+    def test_replaces_existing_short_note(self):
+        extra = "Funder: NSF\nshort-note: 旧短语\ntranslated-title: 标题"
+        merged = merge_short_note_into_extra(extra, "新短语")
+        assert merged == "Funder: NSF\ntranslated-title: 标题\nshort-note: 新短语"
+
+    def test_replaces_case_insensitive(self):
+        extra = "Short-Note: 旧短语"
+        merged = merge_short_note_into_extra(extra, "新短语")
+        assert merged == "short-note: 新短语"
 
 
 class TestAiClient:
@@ -347,6 +520,17 @@ class TestAiClient:
         client.chat("hello")
         kwargs = client._client.chat.completions.create.call_args.kwargs
         assert kwargs["max_tokens"] == 16384
+
+    def test_chat_temperature_override(self):
+        config = _make_ai_config()
+        client = AiClient(config)
+        client._client.chat.completions.create = MagicMock(return_value=self._respond())
+        client.chat("hello", temperature=0.1)
+        kwargs = client._client.chat.completions.create.call_args.kwargs
+        assert kwargs["temperature"] == 0.1
+        client.chat("hello")
+        kwargs = client._client.chat.completions.create.call_args.kwargs
+        assert kwargs["temperature"] == 0.7  # 未覆盖时用 config 默认值
 
 
 class TestAiAnalyzeCLI:

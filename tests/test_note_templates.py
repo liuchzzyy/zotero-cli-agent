@@ -46,6 +46,13 @@ class TestNoteTemplates:
         for name in ("research", "review", "book"):
             assert "↓" not in load_template(name)
 
+    def test_short_note_template(self):
+        template = load_template("short-note")
+        assert "500" in template
+        assert "疑问：" in template
+        assert "{fulltext}" in template
+        assert "short_note" in template
+
     def test_book_template_enforces_json_output(self):
         template = load_template("book")
         assert "JSON 输出示例" in template

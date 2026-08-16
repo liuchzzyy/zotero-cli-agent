@@ -25,9 +25,15 @@ from zotero_cli_agent.formatter import envelope_ok
 @click.command("ai_analyze")
 @click.argument("key")
 @click.option("--dry-run", is_flag=True, help="只输出分类结果与将发给 AI 的输入，不调用 AI 分析、不写 note")
-@click.option("--force", is_flag=True, help="已打 ai_analyzed 也重跑")
+@click.option("--force", is_flag=True, help="已打 ai/noted 也重跑")
 @click.option("--extractor", default=None, help="PDF 文本抽取器，默认使用 [pdf].extractor（MinerU）")
-@click.option("--no-tag", is_flag=True, help="写 note 但不打 ai_analyzed tag")
+@click.option("--no-tag", is_flag=True, help="写 note 但不打 ai/noted tag")
+@click.option("--no-short-note", is_flag=True, help="不生成关键词（简记 short-note），只生成 note")
+@click.option(
+    "--short-note-only",
+    is_flag=True,
+    help="只根据已有 AI note 生成关键词并写入 Extra short-note（回填模式，不重新生成 note）",
+)
 @click.option("--progress-lines", is_flag=True, help="按行输出进度（适合日志）")
 @click.pass_context
 def ai_analyze_cmd(
@@ -37,6 +43,8 @@ def ai_analyze_cmd(
     force: bool,
     extractor: str | None,
     no_tag: bool,
+    no_short_note: bool,
+    short_note_only: bool,
     progress_lines: bool,
 ) -> None:
     """用 MinerU + AI 分析一个 Zotero 条目及其 PDF，生成 HTML note 并写回。"""
@@ -102,6 +110,8 @@ def ai_analyze_cmd(
             no_tag=no_tag,
             extractor=extractor,
             dry_run=dry_run,
+            no_short_note=no_short_note,
+            short_note_only=short_note_only,
             progress=progress,
         )
     except NoteAnalysisError as exc:
@@ -124,9 +134,9 @@ def _print_human(result: dict) -> None:
     status = result.get("status")
     key = result.get("item_key", "")
     if status == "already_analyzed":
-        click.echo(f"条目 {key} 已分析过（tag ai_analyzed）。用 --force 重跑。")
+        click.echo(f"条目 {key} 已分析过（tag ai/noted）。用 --force 重跑。")
     elif status == "uncertain":
-        click.echo(f"条目 {key} 类型无法判定，已打 tag ai_not_analyzed 并跳过。")
+        click.echo(f"条目 {key} 类型无法判定，已打 tag ai/uncertain 并跳过。")
     elif status == "dry_run":
         click.echo(f"[dry-run] 条目 {key}")
         click.echo(f"  类型：{result.get('paper_type')}")
@@ -139,5 +149,22 @@ def _print_human(result: dict) -> None:
             f"已生成 note {result.get('note_key')}：类型 {result.get('paper_type')}，"
             f"{result.get('sections')} 个 section"
         )
+        _print_short_note(result)
+    elif status == "short_note_only":
+        click.echo(f"已基于 note {result.get('note_key')} 生成简记")
+        _print_short_note(result)
     else:
         click.echo(f"完成：{result}")
+
+
+def _print_short_note(result: dict) -> None:
+    status = result.get("short_note", "skipped")
+    if status == "ok":
+        click.echo("  简记（short-note）：已写入 Extra，tag ai/keywords")
+    elif status == "failed":
+        click.echo(
+            f"  简记（short-note）：失败，tag ai/no_keywords"
+            f"（{result.get('short_note_error', '')}）"
+        )
+    else:
+        click.echo("  简记（short-note）：跳过")

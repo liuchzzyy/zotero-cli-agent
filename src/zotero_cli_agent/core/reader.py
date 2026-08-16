@@ -514,7 +514,8 @@ class ZoteroReader:
         if parent is None:
             return []
         rows = conn.execute(
-            "SELECT i.itemID, i.key, n.note FROM itemNotes n JOIN items i ON n.itemID = i.itemID WHERE n.parentItemID = ?",
+            "SELECT i.itemID, i.key, n.note FROM itemNotes n JOIN items i ON n.itemID = i.itemID "
+            "WHERE n.parentItemID = ? ORDER BY i.itemID",
             (parent["itemID"],),
         ).fetchall()
         if not rows:
