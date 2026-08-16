@@ -60,4 +60,4 @@ uv run pytest -q
 
 ## License
 
-[CC BY-NC 4.0](LICENSE)
+[MIT](LICENSE)

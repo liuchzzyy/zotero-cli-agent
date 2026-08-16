@@ -127,7 +127,7 @@ Current local config is expected at:
 - Type hints are required. `mypy` is enforced on `src/zotero_cli_agent`.
 - Ruff target is Python 3.10 with line length 120.
 - Keep changes surgical. Do not refactor unrelated areas.
-- Preserve the current license metadata (`CC-BY-NC-4.0`) unless explicitly asked to change it.
+- Preserve the current license metadata (`MIT`) unless explicitly asked to change it.
 - Do not run `git commit` or `git push` without explicit user instruction.
 
 ## Designing New Commands
