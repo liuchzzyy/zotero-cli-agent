@@ -240,35 +240,40 @@ $collections = 'KRI7W5QZ,8FAPWVJM,8J9NPUPR,PD6IDJ2R,PUR627E3,R7VCZW46,S67ZHINI,W
 pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 `
   -WorkspaceName 501-mno2-zn `
   -Collections $collections `
-  -EmbeddingDevice api `
   -KeepLog
 
 只补 embedding，不重新 PDF 抽取或 item index：
 pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-full-library.ps1 `
   -WorkspaceName 501-mno2-zn `
   -EmbedOnly `
-  -EmbeddingDevice api `
   -KeepLog
 
-完成后复核 SQLite 计数：
+完成后复核计数（chunks 在 SQLite，向量在 Qdrant local）：
 @'
 import sqlite3
 from pathlib import Path
+from zotero_cli_agent.config import load_vector_store_config
+from zotero_cli_agent.core.semantic_search import QdrantVectorStore, resolve_vector_store_path
+
 p = Path(".workspace/501-mno2-zn/rag.idx.sqlite")
 con = sqlite3.connect(p)
 cur = con.cursor()
-print("items", cur.execute("select count(distinct item_key) from chunks").fetchone()[0])
-print("chunks", cur.execute("select count(*) from chunks").fetchone()[0])
-print("with_embedding", cur.execute("select count(*) from chunks where embedding is not null").fetchone()[0])
-print("missing_embedding", cur.execute("select count(*) from chunks where embedding is null").fetchone()[0])
+items = cur.execute("select count(distinct item_key) from chunks").fetchone()[0]
+chunks = cur.execute("select count(*) from chunks").fetchone()[0]
 con.close()
+
+vs = QdrantVectorStore(resolve_vector_store_path(load_vector_store_config()), "ws_501-mno2-zn")
+with_embedding = vs.count()
+vs.close()
+
+print("items", items)
+print("chunks", chunks)
+print("with_embedding", with_embedding)
+print("missing_embedding", max(chunks - with_embedding, 0))
 '@ | uv run python -
 
-当前完成状态（2026-06-12）：
-- items: 407
-- chunks: 76566
-- with_embedding: 76566
-- missing_embedding: 0
+> 语义搜索已切换为 SQLite FTS5 + Qdrant local：向量不再存于 rag.idx.sqlite 的 embedding 列。
+> 旧索引需要重建一次：`zot workspace index 501-mno2-zn --force`，再 `zot workspace embed 501-mno2-zn` 写入 Qdrant。
 
 查证据。BM25 和 embedding 已完成时默认用 auto，也就是 hybrid；rerank 是查询时在线精排，不是离线构建步骤：
 pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-evidence-search.ps1 `
@@ -286,5 +291,5 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File tools\run-rag-evidence-search.ps1 
 - 可以删除 log\rag-full-library-* 和 log\rag-evidence-search-*。
 - 不删除 .workspace\501-mno2-zn。
 - 不删除 .zot\state\pdf_cache.sqlite。
-- 不删除 .workspace\_models，除非明确不再使用本地模型缓存。
+- 不删除 .workspace\_qdrant（本地 Qdrant 向量库）。
 ```

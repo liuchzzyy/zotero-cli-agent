@@ -9,16 +9,12 @@ param(
     [int]$EmbedMaxRetries = 8,
     [double]$EmbedRetrySleep = 10.0,
     [double]$EmbedHeartbeatSeconds = 15.0,
-    [string]$EmbeddingDevice = "",
-    [int]$GpuMinMemoryMiB = 6144,
     [string]$OutputDir = "",
     [switch]$DryRun,
     [switch]$NoIndex,
     [switch]$NoEmbed,
     [switch]$EmbedOnly,
     [switch]$ForceRebuild,
-    [switch]$AllowLowVramGpu,
-    [switch]$SkipGpuPreflight,
     [switch]$KeepInventory,
     [switch]$StopOnError,
     [switch]$KeepLog,
@@ -120,9 +116,6 @@ if ($EmbedRetrySleep -lt 0) {
 }
 if ($EmbedHeartbeatSeconds -lt 0) {
     throw "-EmbedHeartbeatSeconds must be 0 or greater."
-}
-if ($GpuMinMemoryMiB -lt 0) {
-    throw "-GpuMinMemoryMiB must be 0 or greater."
 }
 
 function Get-RepoRoot {
@@ -272,16 +265,9 @@ function Get-TomlSectionValue {
 function Get-EffectiveEmbeddingSetting {
     param(
         [string]$RepoRoot,
-        [string]$OverrideDevice,
         [string]$Name
     )
 
-    if (($Name -eq "device") -and $OverrideDevice) {
-        return $OverrideDevice
-    }
-    if (($Name -eq "device") -and $env:ZOT_EMBEDDING_DEVICE) {
-        return $env:ZOT_EMBEDDING_DEVICE
-    }
     if (($Name -eq "model") -and $env:ZOT_EMBEDDING_MODEL) {
         return $env:ZOT_EMBEDDING_MODEL
     }
@@ -305,85 +291,6 @@ function Get-EffectiveEmbeddingSetting {
     return Get-TomlSectionValue -Path $configPath -Section "embedding" -Name $Name
 }
 
-function Invoke-EmbeddingGpuPreflight {
-    param(
-        [string]$RepoRoot,
-        [string]$Device,
-        [string]$Provider,
-        [string]$Model,
-        [int]$MinMemoryMiB,
-        [switch]$AllowLowVramGpu,
-        [switch]$SkipGpuPreflight
-    )
-
-    if ($SkipGpuPreflight) {
-        Write-RunSetting "gpu_preflight" "skipped"
-        return
-    }
-    if ($Provider -and ($Provider -ne "sentence_transformers")) {
-        return
-    }
-    if (-not ($Device -match '^cuda($|:)')) {
-        return
-    }
-
-    Write-RunSection "GPU Preflight"
-    Write-RunSetting "embedding_device" $Device
-    if ($Provider) {
-        Write-RunSetting "embedding_provider" $Provider
-    }
-    if ($Model) {
-        Write-RunSetting "embedding_model" $Model
-    }
-
-    $smiOutput = & nvidia-smi --query-gpu=name,driver_version,memory.total,memory.free --format=csv,noheader,nounits 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        throw "nvidia-smi failed during GPU preflight: $smiOutput"
-    }
-    $gpuLine = @($smiOutput | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })[0]
-    $parts = @($gpuLine -split "," | ForEach-Object { $_.Trim() })
-    if ($parts.Count -ge 4) {
-        $gpuName = $parts[0]
-        $driverVersion = $parts[1]
-        $totalMiB = [int]$parts[2]
-        $freeMiB = [int]$parts[3]
-        Write-RunSetting "gpu" $gpuName
-        Write-RunSetting "driver" $driverVersion
-        Write-RunSetting "gpu_memory_total_mib" $totalMiB
-        Write-RunSetting "gpu_memory_free_mib" $freeMiB
-    }
-    else {
-        $totalMiB = 0
-        Write-RunSetting "nvidia_smi" $gpuLine
-    }
-
-    $python = Join-Path $RepoRoot ".venv\Scripts\python.exe"
-    if (Test-Path -LiteralPath $python) {
-        $torchOutput = & $python -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else '')" 2>&1
-    }
-    else {
-        $torchOutput = & uv run python -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else '')" 2>&1
-    }
-    if ($LASTEXITCODE -ne 0) {
-        throw "PyTorch CUDA check failed during GPU preflight: $torchOutput"
-    }
-    Write-RunSetting "torch_cuda" ($torchOutput -join " ")
-    if (($torchOutput -join " ") -notmatch "\bTrue\b") {
-        throw "PyTorch CUDA is not available; use -EmbeddingDevice cpu or repair the CUDA environment before GPU embedding."
-    }
-
-    if (($MinMemoryMiB -gt 0) -and ($totalMiB -gt 0) -and ($totalMiB -lt $MinMemoryMiB)) {
-        $message = (
-            "Detected GPU memory ({0} MiB) is below the safety floor ({1} MiB) for full-library local embedding. " +
-            "Use -EmbeddingDevice cpu for the safe path, or explicitly add -AllowLowVramGpu with -EmbedBatchSize 1 and a small -EmbedLimit for a smoke test."
-        ) -f $totalMiB, $MinMemoryMiB
-        if (-not $AllowLowVramGpu) {
-            throw $message
-        }
-        Write-Host ("WARNING: {0}" -f $message) -ForegroundColor Yellow
-    }
-}
-
 function Invoke-RagEmbeddingBackfill {
     param(
         [string]$RepoRoot,
@@ -393,48 +300,11 @@ function Invoke-RagEmbeddingBackfill {
         [int]$Limit,
         [int]$MaxRetries,
         [double]$RetrySleep,
-        [double]$HeartbeatSeconds,
-        [string]$Device,
-        [int]$GpuMinMemoryMiB,
-        [switch]$AllowLowVramGpu,
-        [switch]$SkipGpuPreflight
+        [double]$HeartbeatSeconds
     )
 
-    $effectiveProvider = Get-EffectiveEmbeddingSetting -RepoRoot $RepoRoot -OverrideDevice "" -Name "provider"
-    $effectiveModel = Get-EffectiveEmbeddingSetting -RepoRoot $RepoRoot -OverrideDevice "" -Name "model"
-    $deviceRequest = $Device.Trim().ToLowerInvariant()
-    $isLocalEmbeddingProvider = (-not $effectiveProvider) -or ($effectiveProvider -eq "sentence_transformers")
-    $cliDevice = ""
-
-    if ($isLocalEmbeddingProvider) {
-        if ($deviceRequest -eq "api") {
-            throw "-EmbeddingDevice api is only valid for API embedding providers; active provider is sentence_transformers."
-        }
-        elseif ($deviceRequest -eq "none") {
-            $cliDevice = ""
-        }
-        elseif ($deviceRequest -eq "gpu") {
-            $cliDevice = "cuda"
-        }
-        elseif ($Device) {
-            $cliDevice = $Device
-        }
-    }
-    else {
-        if ($deviceRequest -and ($deviceRequest -notin @("api", "none"))) {
-            throw "-EmbeddingDevice $Device is only valid for local sentence-transformers embeddings; active provider is $effectiveProvider. Use -EmbeddingDevice api or omit -EmbeddingDevice for API embeddings."
-        }
-    }
-
-    $effectiveDevice = Get-EffectiveEmbeddingSetting -RepoRoot $RepoRoot -OverrideDevice $cliDevice -Name "device"
-    Invoke-EmbeddingGpuPreflight `
-        -RepoRoot $RepoRoot `
-        -Device $effectiveDevice `
-        -Provider $effectiveProvider `
-        -Model $effectiveModel `
-        -MinMemoryMiB $GpuMinMemoryMiB `
-        -AllowLowVramGpu:$AllowLowVramGpu `
-        -SkipGpuPreflight:$SkipGpuPreflight
+    $effectiveProvider = Get-EffectiveEmbeddingSetting -RepoRoot $RepoRoot -Name "provider"
+    $effectiveModel = Get-EffectiveEmbeddingSetting -RepoRoot $RepoRoot -Name "model"
 
     $embedCmd = @(
         "uv", "run", "zot", "workspace", "embed", $WorkspaceName,
@@ -447,29 +317,11 @@ function Invoke-RagEmbeddingBackfill {
     if ($Limit -gt 0) {
         $embedCmd += @("--limit", "$Limit")
     }
-    if ($cliDevice) {
-        $embedCmd += @("--device", $cliDevice)
-    }
 
     Write-RunSection "Embedding Backfill"
     Write-RunSetting "progress log" $LogPath
     Write-RunSetting "embedding provider" $effectiveProvider
-    if ($isLocalEmbeddingProvider) {
-        Write-RunSetting "embedding runtime" "local"
-        Write-RunSetting "effective device" $effectiveDevice
-        if ($Device) {
-            Write-RunSetting "device request" $Device
-        }
-        if ($cliDevice -and ($cliDevice -ne $Device)) {
-            Write-RunSetting "device override" $cliDevice
-        }
-    }
-    else {
-        Write-RunSetting "embedding runtime" "api"
-        if ($Device) {
-            Write-RunSetting "device request" $Device
-        }
-    }
+    Write-RunSetting "embedding model" $effectiveModel
     Write-RunSetting "embed batch size" $BatchSize
     Write-RunSetting "provider batch size override" $BatchSize
     Write-RunSetting "heartbeat seconds" $HeartbeatSeconds
@@ -492,9 +344,10 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from zotero_cli_agent.config import get_data_dir, get_prefs_js_path, load_config, resolve_library_id
+from zotero_cli_agent.config import get_data_dir, get_prefs_js_path, load_config, load_vector_store_config, resolve_library_id
 from zotero_cli_agent.core.reader import ZoteroReader
 from zotero_cli_agent.core.rag_index import RagIndex
+from zotero_cli_agent.core.semantic_search import QdrantVectorStore, resolve_vector_store_path
 from zotero_cli_agent.core.workspace import Workspace, load_workspace, save_workspace, workspace_exists, workspace_index_path
 
 
@@ -614,26 +467,21 @@ def main() -> None:
             idx = RagIndex(idx_path)
             try:
                 indexed_keys = idx.get_indexed_keys()
-                row = idx._conn.execute(
-                    """
-                    SELECT
-                        COUNT(*) AS chunk_count,
-                        SUM(CASE WHEN embedding IS NOT NULL THEN 1 ELSE 0 END) AS with_embeddings,
-                        SUM(CASE WHEN embedding IS NULL THEN 1 ELSE 0 END) AS missing_embeddings
-                    FROM chunks
-                    """
-                ).fetchone()
-                indexed_chunk_count = int(row["chunk_count"] or 0)
-                chunks_with_embeddings = int(row["with_embeddings"] or 0)
-                chunks_missing_embeddings = int(row["missing_embeddings"] or 0)
-                embedding_meta = {
-                    str(meta_row["key"]): str(meta_row["value"] or "")
-                    for meta_row in idx._conn.execute(
-                        "SELECT key, value FROM index_meta WHERE key LIKE 'embedding_%' ORDER BY key"
-                    ).fetchall()
-                }
+                indexed_chunk_count = len(idx.get_all_chunks())
             finally:
                 idx.close()
+
+            vector_store_cfg = load_vector_store_config()
+            vector_store = QdrantVectorStore(resolve_vector_store_path(vector_store_cfg), f"ws_{args.workspace}")
+            try:
+                chunks_with_embeddings = vector_store.count()
+            finally:
+                vector_store.close()
+            chunks_missing_embeddings = max(indexed_chunk_count - chunks_with_embeddings, 0)
+            embedding_meta = {
+                "provider": vector_store_cfg.provider,
+                "collection": f"ws_{args.workspace}",
+            }
 
         pdf_keys = {str(row["key"]) for row in pdf_items}
         pending_index = sorted(pdf_keys - indexed_keys)
@@ -712,14 +560,8 @@ Write-RunSetting "index_stage_embed" "disabled; workspace embed runs after all i
 Write-RunSetting "embed_only" $EmbedOnly
 Write-RunSetting "force_rebuild" $ForceRebuild
 Write-RunSetting "keep_log" $KeepLog
-if ($EmbeddingDevice) {
-    Write-RunSetting "embedding_device_request" $EmbeddingDevice
-}
 Write-RunSetting "embed_batch_size" $EmbedBatchSize
 Write-RunSetting "embed_heartbeat_seconds" $EmbedHeartbeatSeconds
-Write-RunSetting "gpu_min_memory_mib" $GpuMinMemoryMiB
-Write-RunSetting "allow_low_vram_gpu" $AllowLowVramGpu
-Write-RunSetting "skip_gpu_preflight" $SkipGpuPreflight
 if (-not $HideProgressWatchCommands) {
     Write-ProgressWatchCommands -RunOutputDir $runOutputDir
 }
@@ -783,11 +625,7 @@ try {
                 -Limit $EmbedLimit `
                 -MaxRetries $EmbedMaxRetries `
                 -RetrySleep $EmbedRetrySleep `
-                -HeartbeatSeconds $EmbedHeartbeatSeconds `
-                -Device $EmbeddingDevice `
-                -GpuMinMemoryMiB $GpuMinMemoryMiB `
-                -AllowLowVramGpu:$AllowLowVramGpu `
-                -SkipGpuPreflight:$SkipGpuPreflight
+                -HeartbeatSeconds $EmbedHeartbeatSeconds
         }
         else {
             Write-Host "No missing embeddings found for workspace '$WorkspaceName'."
@@ -857,11 +695,7 @@ try {
             -Limit $EmbedLimit `
             -MaxRetries $EmbedMaxRetries `
             -RetrySleep $EmbedRetrySleep `
-            -HeartbeatSeconds $EmbedHeartbeatSeconds `
-            -Device $EmbeddingDevice `
-            -GpuMinMemoryMiB $GpuMinMemoryMiB `
-            -AllowLowVramGpu:$AllowLowVramGpu `
-            -SkipGpuPreflight:$SkipGpuPreflight
+            -HeartbeatSeconds $EmbedHeartbeatSeconds
     }
     else {
         Write-Host "RAG embeddings are already complete for workspace '$WorkspaceName'."
