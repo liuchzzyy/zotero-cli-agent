@@ -7,7 +7,7 @@
 推荐操作顺序：
 1. 在仓库根目录运行对应 wrapper，让它打开新的 PowerShell 窗口。
 2. 保留新窗口，进度以新窗口中的 wrapper 输出和 `run.log` / `progress.jsonl` 为主。
-3. 必要时再检查 `log\...`、`summary.json`、`import_summary.json`、batch 日志或 Web API postcheck 文件。
+3. 必要时再检查 `log\...` 运行目录里的 `run.log` / `progress.jsonl` / `inventory.json` 或 Web API postcheck 文件。
 4. 汇报进度必须基于 wrapper 输出、`run.log`、`progress.jsonl` 或实际产物变化；不要只说“已开始”。
 5. 所有 stdout/stderr 和中间日志都放在对应 `log\...` 运行目录；不要散落在仓库根目录、`tools\`、`tmp\` 或临时 `.workspace\...` 中。
 6. 仅限调试/CI 时使用 `-RunInCurrentWindow` 在当前 PowerShell 中运行实际流程。
@@ -16,12 +16,6 @@
 
 ### 推荐给代理的直接提示词
 ```text
-执行与日志规则：
-- 默认通过对应 wrapper 重新打开新的 PowerShell 7/pwsh 窗口运行；除非调试或 CI，不要追加 `-RunInCurrentWindow`。
-- 保留新窗口，进度以新窗口输出和运行目录中的 `run.log`、`progress.jsonl` 为主；不要把额外 watch 命令当作主进度来源。
-- 汇报进度必须基于 wrapper 输出、`run.log`、`progress.jsonl` 或实际产物变化，不要只说“已开始”。
-- 所有 stdout/stderr、中间文件和诊断日志都必须放在各自 `log\...` 运行目录；不要散落到仓库根目录、`tools\`、`tmp\` 或临时 `.workspace\...` 中。
-
 使用 skill zotero-cli-agent。
 在 F:\ChengL1u\10_资源库\代码\zotero-cli-agent 下执行 metadata cleanup。先建立本次运行目录：log\metadata-cleanup-YYYYMMDD-HHMM。
 本指令独立包含运行文件规则：metadata-export、cleaned jsonl、dry-run/apply 输出、batch 文件、续跑文件和诊断记录都只放在本次 log\metadata-cleanup-YYYYMMDD-HHMM 目录；不要放在仓库根目录散文件、tmp\ 或临时 .workspace\... 运行目录中。失败、中断、等待确认或需要排查时保留该目录；复核无误后删除本次目录，如果 log\ 已空也删除 log\。
@@ -32,7 +26,7 @@ uv run zot --json --detail full summarize-all --exclude-tag workflow/metadata --
 默认排除集合：
 - `20_ARCHIVE` (`RHBNIDLJ`) 及其子集合：归档/holding collections，不做日常 metadata cleanup。
 - 当前归档子集合 key：`4W3JSHVT` (`200_Zn`), `JDL5AMLK` (`2000_Zn_Inbox`), `AC9IN8II` (`201_Liuqid_Metal`), `X8KH35G2` (`2001_Liquid_Inbox`), `9J9BWP2K` (`202_Cellulose`), `LPVR4N2G` (`2002_Cellulose_Inbox`)。
-- `50_WORKSPACE` (`AFTJQCQA`) 默认不排除；只有明确不需要清理 workspace 条目时，才额外追加 `--exclude-collection-key AFTJQCQA`，或在总控 wrapper 中使用 `-ExcludeWorkspaceMetadata`。
+- `50_WORKSPACE` (`AFTJQCQA`) 默认不排除；只有明确不需要清理 workspace 条目时，才额外追加 `--exclude-collection-key AFTJQCQA`。
 
 导出后检查 metadata-export.json 的 meta：
 - `excluded_tags` 应包含 `workflow/metadata` 和 `update/metadata`。
@@ -55,7 +49,7 @@ uv run zot --json --detail full summarize-all --exclude-tag workflow/metadata --
 正式写入命令：
 uv run zot --json update --from-jsonl log\metadata-cleanup-YYYYMMDD-HHMM\cleaned-metadata-batch-001.jsonl --add-tag workflow/metadata > log\metadata-cleanup-YYYYMMDD-HHMM\metadata-cleanup-apply-batch-001.json 2> log\metadata-cleanup-YYYYMMDD-HHMM\metadata-cleanup-apply-batch-001.err.log
 
-不要静默等待长批次。`zot update --from-jsonl` 会在 stderr 输出结构化 progress；代理必须实时读取 stderr 或使用总控 wrapper，把进度转成类似：
+不要静默等待长批次。`zot update --from-jsonl` 会在 stderr 输出结构化 progress；代理必须实时读取 stderr，把进度转成类似：
 `[batch 3/13] item 41/50 | overall 141/630 | succeeded=... failed=...`
 每批结束后立即报告成功数、失败数、剩余批次数和日志路径。
 
