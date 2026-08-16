@@ -15,10 +15,8 @@ from zotero_cli_agent.commands.completions import completions_cmd
 from zotero_cli_agent.commands.config import config_group
 from zotero_cli_agent.commands.delete import delete_cmd
 from zotero_cli_agent.commands.duplicates import duplicates_cmd
-from zotero_cli_agent.commands.embedding import embedding_group
 from zotero_cli_agent.commands.export import export_cmd
 from zotero_cli_agent.commands.list_cmd import list_cmd
-from zotero_cli_agent.commands.mcp import mcp_group
 from zotero_cli_agent.commands.note import note_cmd
 from zotero_cli_agent.commands.open_cmd import open_cmd
 from zotero_cli_agent.commands.pdf import pdf_cmd
@@ -54,11 +52,9 @@ _READ_COMMANDS = {
     "summarize",
     "summarize-all",
     "duplicates",
-    "embedding",
     "collection",
     "config",
     "completions",
-    "mcp",
     "workspace",
     "schema",
     "trash",
@@ -265,7 +261,6 @@ main.add_command(summarize_cmd, "summarize")
 main.add_command(summarize_all_cmd, "summarize-all")
 main.add_command(pdf_cmd, "pdf")
 main.add_command(relate_cmd, "relate")
-main.add_command(mcp_group, "mcp")
 main.add_command(stats_cmd, "stats")
 main.add_command(open_cmd, "open")
 main.add_command(cite_cmd, "cite")
@@ -274,7 +269,6 @@ main.add_command(recent_cmd, "recent")
 main.add_command(update_cmd, "update")
 main.add_command(trash_group, "trash")
 main.add_command(duplicates_cmd, "duplicates")
-main.add_command(embedding_group, "embedding")
 main.add_command(attach_cmd, "attach")
 main.add_command(update_status_cmd, "update-status")
 main.add_command(workspace_group, "workspace")

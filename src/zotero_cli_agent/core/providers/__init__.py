@@ -1,5 +1,4 @@
 from zotero_cli_agent.core.embedding_provider import EmbeddingProvider
-from zotero_cli_agent.core.providers.jina import JinaProvider
-from zotero_cli_agent.core.providers.openai_compatible import OpenAICompatibleEmbeddingProvider
+from zotero_cli_agent.core.providers.gitee import GiteeEmbeddingProvider, GiteeRerankerProvider
 
-__all__ = ["EmbeddingProvider", "JinaProvider", "OpenAICompatibleEmbeddingProvider"]
+__all__ = ["EmbeddingProvider", "GiteeEmbeddingProvider", "GiteeRerankerProvider"]

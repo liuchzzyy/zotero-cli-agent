@@ -26,5 +26,6 @@ idea/TODO/
 .env.local
 .env.*
 .zot/config.toml
+.zot/config.toml.bak
 .zot/state/
 .workspace/

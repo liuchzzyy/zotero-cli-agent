@@ -1,41 +1,42 @@
 from __future__ import annotations
 
 import sys
-import threading
 import time
-from collections.abc import Callable
 from datetime import datetime, timezone
+from hashlib import sha1
 from pathlib import Path
 
 import click
 
 from zotero_cli_agent.config import (
+    EmbeddingConfig,
     get_data_dir,
     get_prefs_js_path,
     load_config,
     load_embedding_config,
     load_rerank_config,
+    load_semantic_search_config,
+    load_vector_store_config,
     resolve_library_id,
 )
 from zotero_cli_agent.core.rag import (
-    bm25_score_chunks,
     build_metadata_chunk,
     chunk_text,
-    compute_term_frequencies,
     convert_pdf_to_text,
     convert_pdfs_to_text,
     embed_texts,
     filter_ranked_results_by_pdf_kind,
     infer_pdf_kind,
-    reciprocal_rank_fusion,
-    semantic_score_chunks,
     tokenize,
+    weighted_reciprocal_rank_fusion,
 )
 from zotero_cli_agent.core.rag_index import RagIndex
 from zotero_cli_agent.core.reader import ZoteroReader
 from zotero_cli_agent.core.rerank import rerank_chunks
+from zotero_cli_agent.core.semantic_search import QdrantVectorStore, resolve_vector_store_path
 from zotero_cli_agent.core.workspace import (
     Workspace,
+    WorkspaceItem,
     delete_workspace,
     list_workspaces,
     load_workspace,
@@ -473,24 +474,45 @@ def _resolve_collection_key(reader: ZoteroReader, name_or_key: str) -> str | Non
     return _search(collections)
 
 
-@workspace_group.command("index")
-@click.argument("name")
-@click.option("--force", is_flag=True, help="Rebuild index from scratch")
-@click.option("--extractor", default=None, help="PDF text extractor to use. Defaults to the configured MinerU extractor.")
-@click.option("--progress-lines", is_flag=True, help="Write progress as newline records for log-friendly real-time output.")
-@click.option("--item-progress", is_flag=True, help="Index and commit one workspace item at a time with per-item progress.")
-@click.option("--no-embed", is_flag=True, help="Skip embedding generation during indexing; use workspace embed later.")
-@click.pass_context
-def workspace_index(
+def _collect_pdf_refs(reader: ZoteroReader, item_key: str) -> list[tuple[str, str, Path]]:
+    refs: list[tuple[str, str, Path]] = []
+    for att in reader.get_pdf_attachments(item_key):
+        if att.path is None or not att.path.exists():
+            continue
+        refs.append((att.key, att.filename or att.key, att.path))
+    return refs
+
+
+def _collect_note_refs(reader: ZoteroReader, item_key: str) -> list[tuple[str, str]]:
+    return [(note.key, note.content) for note in reader.get_notes(item_key) if note.content.strip()]
+
+
+def _compute_pdf_hash(pdf_refs: list[tuple[str, str, Path]]) -> str:
+    parts: list[str] = []
+    for _key, _name, path in sorted(pdf_refs, key=lambda ref: str(ref[2])):
+        try:
+            stat = path.stat()
+            parts.append(f"{path}:{stat.st_size}:{stat.st_mtime_ns}")
+        except OSError:
+            parts.append(f"{path}:missing")
+    return sha1("|".join(parts).encode("utf-8")).hexdigest()
+
+
+def _vector_store_for(name: str) -> QdrantVectorStore:
+    cfg = load_vector_store_config()
+    return QdrantVectorStore(resolve_vector_store_path(cfg), f"ws_{name}")
+
+
+def _index_workspace(
     ctx: click.Context,
     name: str,
+    *,
     force: bool,
     extractor: str | None,
     progress_lines: bool,
     item_progress: bool,
     no_embed: bool,
 ) -> None:
-    """Build RAG index for a workspace."""
     json_out = ctx.obj.get("json", False)
     if extractor is None:
         from zotero_cli_agent.config import load_pdf_config
@@ -516,15 +538,34 @@ def workspace_index(
     library_id = resolve_library_id(db_path, ctx.obj)
     reader = ZoteroReader(db_path, library_id=library_id, prefs_js_path=get_prefs_js_path(cfg))
 
-    idx_path = workspace_index_path(name)
-    idx = RagIndex(idx_path)
+    idx = RagIndex(workspace_index_path(name))
+    vector_store = _vector_store_for(name)
 
     try:
         if force:
             idx.clear()
+            vector_store.delete_all()
 
         already_indexed = idx.get_indexed_keys()
-        to_index = [item for item in ws.items if item.key not in already_indexed]
+        emb_cfg = None if no_embed else load_embedding_config(apply_env_overrides=True)
+
+        to_index: list[tuple[WorkspaceItem, Item, list[tuple[str, str, Path]], list[tuple[str, str]]]] = []
+        for ws_item in ws.items:
+            item = reader.get_item(ws_item.key)
+            if item is None:
+                click.echo(f"Warning: item '{ws_item.key}' not found in Zotero, skipped")
+                continue
+            pdf_refs = _collect_pdf_refs(reader, ws_item.key)
+            note_refs = _collect_note_refs(reader, ws_item.key)
+            pdf_hash = _compute_pdf_hash(pdf_refs)
+            stored_hash = idx.get_meta(f"pdf_hash:{ws_item.key}")
+            if ws_item.key in already_indexed and stored_hash == pdf_hash:
+                continue
+            if ws_item.key in already_indexed:
+                old_ids = idx.delete_chunks_for_item(ws_item.key)
+                if old_ids:
+                    vector_store.delete(old_ids)
+            to_index.append((ws_item, item, pdf_refs, note_refs))
 
         if not to_index:
             click.echo(f"Index for '{name}' is up to date ({len(already_indexed)} item(s) indexed).")
@@ -532,234 +573,51 @@ def workspace_index(
 
         t0 = time.monotonic()
 
-        def progress_message(phase: str, current: int, total: int, pages: int = 0) -> str:
+        def progress_message(phase: str, current: int, total: int) -> str:
             percent = (current / total * 100) if total else 0.0
-            page_text = f" pages={pages}" if pages else ""
-            elapsed = time.monotonic() - t0
-            return f"  [{phase}] {current}/{total} ({percent:.1f}%){page_text} elapsed={elapsed:.1f}s"
+            return f"  [{phase}] {current}/{total} ({percent:.1f}%) elapsed={time.monotonic() - t0:.1f}s"
 
-        def emit_progress_line(phase: str, current: int, total: int, pages: int = 0) -> None:
-            click.echo(progress_message(phase, current, total, pages))
-
-        def emit_progress_status(phase: str, current: int, total: int, pages: int = 0) -> None:
-            sys.stderr.write(f"\r{' ' * 100}\r{progress_message(phase, current, total, pages)}")
-            sys.stderr.flush()
-
-        def emit_progress(phase: str, current: int, total: int, pages: int = 0) -> None:
-            if progress_lines:
-                emit_progress_line(phase, current, total, pages)
+        def emit_progress(phase: str, current: int, total: int) -> None:
+            if progress_lines or item_progress:
+                click.echo(progress_message(phase, current, total))
             else:
-                emit_progress_status(phase, current, total, pages)
+                sys.stderr.write(f"\r{' ' * 100}\r{progress_message(phase, current, total)}")
+                sys.stderr.flush()
 
         def clear_progress_status() -> None:
-            if not progress_lines:
+            if not progress_lines and not item_progress:
                 sys.stderr.write(f"\r{' ' * 100}\r")
                 sys.stderr.flush()
 
-        def update_index_meta() -> None:
-            row = idx._conn.execute("SELECT COUNT(*), COALESCE(AVG(doc_len), 1.0) FROM chunks").fetchone()
-            total_docs = int(row[0] or 0)
-            avg_doc_len = float(row[1] or 1.0)
-            idx._conn.executemany(
-                "INSERT OR REPLACE INTO index_meta (key, value) VALUES (?, ?)",
-                [
-                    ("total_docs", str(total_docs)),
-                    ("avg_doc_len", str(avg_doc_len)),
-                    ("chunk_count", str(total_docs)),
-                    ("indexed_at", datetime.now(timezone.utc).isoformat()),
-                ],
-            )
-            idx.commit()
-
-        def compact_title(value: str, limit: int = 90) -> str:
-            cleaned = " ".join(value.split())
-            return cleaned if len(cleaned) <= limit else cleaned[: limit - 3] + "..."
-
-        if item_progress:
-            emb_cfg = None if no_embed else load_embedding_config(apply_env_overrides=True)
-            mode_label = "BM25 + embeddings" if emb_cfg and emb_cfg.is_configured else "BM25"
-            indexed_items = 0
-            total_chunks = 0
-            pdf_error_count = 0
-
-            click.echo(f"  Indexing {len(to_index)} item(s) one by one with {extractor}...")
-
-            for item_idx, ws_item in enumerate(to_index, 1):
-                item_t0 = time.monotonic()
-                item = reader.get_item(ws_item.key)
-                if item is None:
-                    click.echo(f"  [item:skip] {item_idx}/{len(to_index)} key={ws_item.key} reason=not_found")
-                    continue
-
-                click.echo(
-                    f"  [item:start] {item_idx}/{len(to_index)} key={ws_item.key} title=\"{compact_title(item.title)}\"",
-                )
-
-                local_pdf_refs: list[tuple[str, str, Path]] = []
-                for att in reader.get_pdf_attachments(ws_item.key):
-                    if att.path is None or not att.path.exists():
-                        continue
-                    local_pdf_refs.append((att.key, att.filename or att.key, att.path))
-
-                note_refs: list[tuple[str, str]] = []
-                for note in reader.get_notes(ws_item.key):
-                    if note.content.strip():
-                        note_refs.append((note.key, note.content))
-
-                pdf_texts: dict[Path, str | Exception] = {}
-                unique_paths = list(dict.fromkeys(path for _, _, path in local_pdf_refs))
-                if unique_paths:
-
-                    def item_pdf_progress(phase: str, current: int, total: int, pages: int) -> None:
-                        emit_progress(f"item:{item_idx}:extract:{phase}", current, total, pages)
-
-                    pdf_texts.update(convert_pdfs_to_text(unique_paths, extractor, item_pdf_progress))
-                    clear_progress_status()
-
-                item_chunks: list[tuple[str, str, str, int]] = []
-                authors = ", ".join(c.full_name for c in item.creators)
-                meta_text = build_metadata_chunk(item.title, authors, item.abstract, item.tags)
-                item_chunks.append((ws_item.key, "metadata", meta_text, len(tokenize(meta_text))))
-
-                for note_key, note_content in note_refs:
-                    note_text = f"Title: {item.title}\nNote Key: {note_key}\nContent:\n{note_content}"
-                    item_chunks.append((ws_item.key, f"note:{note_key}", note_text, len(tokenize(note_text))))
-
-                item_pdf_errors = 0
-                for att_key, pdf_name, pdf_path in local_pdf_refs:
-                    pdf_text_or_err = pdf_texts.get(pdf_path)
-                    if isinstance(pdf_text_or_err, Exception):
-                        pdf_error_count += 1
-                        item_pdf_errors += 1
-                        click.echo(f"  [item:pdf-error] key={ws_item.key} pdf=\"{pdf_name}\" error={pdf_text_or_err}")
-                        continue
-                    if not isinstance(pdf_text_or_err, str) or not pdf_text_or_err.strip():
-                        continue
-                    pdf_kind = infer_pdf_kind(pdf_text_or_err, pdf_name)
-                    labeled_title = f"{item.title} | PDF: {pdf_name} | Attachment: {att_key} | Kind: {pdf_kind}"
-                    for chunk_content in chunk_text(pdf_text_or_err, labeled_title):
-                        item_chunks.append(
-                            (
-                                ws_item.key,
-                                f"pdf:{pdf_kind}:{att_key}:{pdf_name}",
-                                chunk_content,
-                                len(tokenize(chunk_content)),
-                            )
-                        )
-
-                chunk_texts = [content for _, _, content, _ in item_chunks]
-                vectors: list[list[float]] = []
-                item_mode_label = "BM25"
-                if emb_cfg and emb_cfg.is_configured and chunk_texts:
-
-                    def item_emb_progress(done: int, total: int) -> None:
-                        emit_progress(f"item:{item_idx}:embed", done, total)
-
-                    try:
-                        vectors = embed_texts(chunk_texts, emb_cfg, item_emb_progress) or []
-                        if vectors:
-                            item_mode_label = "BM25 + embeddings"
-                    except Exception as e:
-                        click.echo(f"  [WARN] Embedding failed for {ws_item.key}: {e}", err=True)
-                    clear_progress_status()
-
-                chunk_ids: list[int] = []
-                for key, chunk_type, content, doc_len in item_chunks:
-                    chunk_id = idx.insert_chunk_no_commit(key, chunk_type, content, doc_len)
-                    idx.insert_bm25_terms_no_commit(chunk_id, compute_term_frequencies(tokenize(content)))
-                    chunk_ids.append(chunk_id)
-                if vectors:
-                    idx.set_embeddings_bulk_no_commit(chunk_ids, vectors)
-                idx.commit()
-                update_index_meta()
-
-                indexed_items += 1
-                total_chunks += len(item_chunks)
-                click.echo(
-                    "  [item:done] "
-                    f"{item_idx}/{len(to_index)} key={ws_item.key} chunks={len(item_chunks)} "
-                    f"pdfs={len(local_pdf_refs)} pdf_errors={item_pdf_errors} mode={item_mode_label} "
-                    f"item_elapsed={time.monotonic() - item_t0:.1f}s elapsed={time.monotonic() - t0:.1f}s",
-                )
-
-            elapsed = time.monotonic() - t0
-            click.echo(
-                f"Indexed {indexed_items} item(s) ({total_chunks} chunks, {pdf_error_count} PDF errors) "
-                f"in {elapsed:.1f}s [{mode_label}]"
-            )
-            return
-
-        item_map: dict[str, Item] = {}
-        pdf_refs: dict[str, list[tuple[str, str, Path]]] = {}
-        unique_pdf_paths: dict[Path, None] = {}
-        notes_map: dict[str, list[tuple[str, str]]] = {}
-
-        for ws_item in to_index:
-            item = reader.get_item(ws_item.key)
-            if item is None:
-                click.echo(f"Warning: item '{ws_item.key}' not found in Zotero, skipped")
-                continue
-            item_map[ws_item.key] = item
-            pdf_attachments = reader.get_pdf_attachments(ws_item.key)
-            if pdf_attachments:
-                refs: list[tuple[str, str, Path]] = []
-                for att in pdf_attachments:
-                    if att.path is None or not att.path.exists():
-                        continue
-                    refs.append((att.key, att.filename or att.key, att.path))
-                    unique_pdf_paths[att.path] = None
-                if refs:
-                    pdf_refs[ws_item.key] = refs
-
-            batch_note_refs: list[tuple[str, str]] = []
-            for note in reader.get_notes(ws_item.key):
-                if note.content.strip():
-                    batch_note_refs.append((note.key, note.content))
-            if batch_note_refs:
-                notes_map[ws_item.key] = batch_note_refs
-
+        # Phase 1 — extract PDFs with the configured extractor (MinerU by default).
+        unique_pdf_paths: list[Path] = list(
+            dict.fromkeys(path for _ws, _item, refs, _notes in to_index for _k, _n, path in refs)
+        )
         batch_pdf_texts: dict[Path, str | Exception] = {}
         pdf_errors: list[tuple[str, str, Exception]] = []
-
         if unique_pdf_paths:
-            unique_paths = list(unique_pdf_paths.keys())
-            click.echo(f"  Extracting {len(unique_paths)} PDF attachment(s) with {extractor}...")
+            click.echo(f"  Extracting {len(unique_pdf_paths)} PDF attachment(s) with {extractor}...")
 
             def batch_progress(phase: str, current: int, total: int, pages: int) -> None:
-                emit_progress(f"extract:{phase}", current, total, pages)
+                _ = pages
+                emit_progress(f"extract:{phase}", current, total)
 
-            if len(unique_paths) == 1:
-                single_path = unique_paths[0]
-                try:
-                    batch_pdf_texts[single_path] = convert_pdf_to_text(single_path, extractor, batch_progress)
-                except Exception as e:
-                    batch_pdf_texts[single_path] = e
-            else:
-                batch_results = convert_pdfs_to_text(unique_paths, extractor, batch_progress)
-                batch_pdf_texts.update(batch_results)
+            batch_pdf_texts = convert_pdfs_to_text(unique_pdf_paths, extractor, batch_progress)
             clear_progress_status()
 
-        # PHASE 2 — Chunk all texts
+        # Phase 2 — chunk all texts (markdown-structured; main/supplementary preserved).
         click.echo(f"  Chunking {len(to_index)} item(s)...")
-
-        all_chunks: list[tuple[str, str, str, int]] = []  # (key, type, content, doc_len)
-
-        for ws_item in to_index:
-            item = item_map.get(ws_item.key)
-            if item is None:
-                continue
-
+        all_chunks: list[tuple[str, str, str, int]] = []
+        for ws_item, item, pdf_refs, note_refs in to_index:
             authors = ", ".join(c.full_name for c in item.creators)
             meta_text = build_metadata_chunk(item.title, authors, item.abstract, item.tags)
-            meta_tokens = len(tokenize(meta_text))
-            all_chunks.append((ws_item.key, "metadata", meta_text, meta_tokens))
+            all_chunks.append((ws_item.key, "metadata", meta_text, len(tokenize(meta_text))))
 
-            for note_key, note_content in notes_map.get(ws_item.key, []):
+            for note_key, note_content in note_refs:
                 note_text = f"Title: {item.title}\nNote Key: {note_key}\nContent:\n{note_content}"
-                note_tokens = len(tokenize(note_text))
-                all_chunks.append((ws_item.key, f"note:{note_key}", note_text, note_tokens))
+                all_chunks.append((ws_item.key, f"note:{note_key}", note_text, len(tokenize(note_text))))
 
-            for att_key, pdf_name, pdf_path in pdf_refs.get(ws_item.key, []):
+            for att_key, pdf_name, pdf_path in pdf_refs:
                 pdf_text_or_err = batch_pdf_texts.get(pdf_path)
                 if isinstance(pdf_text_or_err, Exception):
                     pdf_errors.append((ws_item.key, pdf_name, pdf_text_or_err))
@@ -769,94 +627,155 @@ def workspace_index(
                 pdf_kind = infer_pdf_kind(pdf_text_or_err, pdf_name)
                 labeled_title = f"{item.title} | PDF: {pdf_name} | Attachment: {att_key} | Kind: {pdf_kind}"
                 for chunk_content in chunk_text(pdf_text_or_err, labeled_title):
-                    chunk_tokens = len(tokenize(chunk_content))
-                    all_chunks.append((ws_item.key, f"pdf:{pdf_kind}:{att_key}:{pdf_name}", chunk_content, chunk_tokens))
+                    all_chunks.append(
+                        (
+                            ws_item.key,
+                            f"pdf:{pdf_kind}:{att_key}:{pdf_name}",
+                            chunk_content,
+                            len(tokenize(chunk_content)),
+                        )
+                    )
 
-        # PHASE 3 — Index all chunks (bulk insert, single commit)
+        # Phase 3 — write term index (SQLite FTS5).
         click.echo(f"  Indexing {len(all_chunks)} chunk(s)...")
-
-        all_chunk_ids: list[int] = []
-        all_chunk_texts: list[str] = []
-
-        for i, (key, chunk_type, content, doc_len) in enumerate(all_chunks, 1):
-            if i % 500 == 0 or i == len(all_chunks):
-                emit_progress("index", i, len(all_chunks))
-
-            chunk_id = idx.insert_chunk_no_commit(key, chunk_type, content, doc_len)
-            tfs = compute_term_frequencies(tokenize(content))
-            idx.insert_bm25_terms_no_commit(chunk_id, tfs)
-            all_chunk_ids.append(chunk_id)
-            all_chunk_texts.append(content)
-
+        chunk_ids: list[int] = []
+        chunk_texts: list[str] = []
+        for chunk_i, (key, source, content, doc_len) in enumerate(all_chunks, 1):
+            if chunk_i % 500 == 0 or chunk_i == len(all_chunks):
+                emit_progress("index", chunk_i, len(all_chunks))
+            chunk_id = idx.insert_chunk_no_commit(key, source, content, doc_len)
+            chunk_ids.append(chunk_id)
+            chunk_texts.append(content)
         idx.commit()
         clear_progress_status()
 
-        # Report extraction errors at end
-        if pdf_errors:
-            click.echo(f"\nWarning: {len(pdf_errors)} PDF extraction(s) failed:")
-            for key, pdf_name, exc in pdf_errors:
-                click.echo(f"  - {key} ({pdf_name}): {exc}")
-
-        total_chunks = len(all_chunks)
-        all_indexed_chunks = idx.get_all_chunks()
-        total_docs = len(all_indexed_chunks)
-        if total_docs > 0:
-            total_len = sum(c.get("doc_len", 0) or len(tokenize(c["content"])) for c in all_indexed_chunks)
-            avg_doc_len = total_len / total_docs
-        else:
-            avg_doc_len = 1.0
-        idx.set_meta("total_docs", str(total_docs))
-        idx.set_meta("avg_doc_len", str(avg_doc_len))
-        idx.set_meta("chunk_count", str(total_docs))
-        idx.set_meta("indexed_at", datetime.now(timezone.utc).isoformat())
-
-        # Embeddings if configured
-        mode_label = "BM25"
-        emb_cfg = None if no_embed else load_embedding_config(apply_env_overrides=True)
-        if emb_cfg and emb_cfg.is_configured and all_chunk_texts:
+        # Phase 4 — embed with Gitee and write vectors to Qdrant local.
+        mode_label = "BM25 (FTS5)"
+        if emb_cfg and emb_cfg.is_configured and chunk_texts:
             click.echo("  Generating embeddings...")
-
-            def emb_progress(done: int, total: int) -> None:
-                emit_progress("embed", done, total)
-
             try:
-                bulk_vectors = embed_texts(all_chunk_texts, emb_cfg, emb_progress)
-                if bulk_vectors:
-                    idx.set_embeddings_bulk(all_chunk_ids, bulk_vectors)
+                vectors = embed_texts(chunk_texts, emb_cfg) or []
+                if vectors:
+                    payloads = [{"item_key": key, "source": source} for key, source, _c, _d in all_chunks]
+                    valid_ids: list[int] = []
+                    valid_vectors: list[list[float]] = []
+                    valid_payloads: list[dict] = []
+                    for chunk_id, vector, payload in zip(chunk_ids, vectors, payloads):
+                        if vector:
+                            valid_ids.append(chunk_id)
+                            valid_vectors.append(vector)
+                            valid_payloads.append(payload)
+                    if valid_ids:
+                        vector_store.upsert(valid_ids, valid_vectors, valid_payloads)
                     mode_label = "BM25 + embeddings"
             except Exception as e:
                 click.echo(f"  [WARN] Embedding failed: {e}", err=True)
             clear_progress_status()
 
+        total_chunks = len(all_chunks)
+        idx.set_meta("chunk_count", str(total_chunks))
+        idx.set_meta("indexed_at", datetime.now(timezone.utc).isoformat())
+        for ws_item, _item, pdf_refs, _notes in to_index:
+            idx.set_meta(f"pdf_hash:{ws_item.key}", _compute_pdf_hash(pdf_refs))
+
+        if pdf_errors:
+            click.echo(f"\nWarning: {len(pdf_errors)} PDF extraction(s) failed:")
+            for key, pdf_name, exc in pdf_errors:
+                click.echo(f"  - {key} ({pdf_name}): {exc}")
+
         elapsed = time.monotonic() - t0
         click.echo(f"Indexed {len(to_index)} item(s) ({total_chunks} chunks) in {elapsed:.1f}s [{mode_label}]")
     finally:
+        vector_store.close()
         idx.close()
         reader.close()
+
+
+@workspace_group.command("index")
+@click.argument("name")
+@click.option("--force", is_flag=True, help="Rebuild index from scratch")
+@click.option("--extractor", default=None, help="PDF text extractor to use. Defaults to the configured MinerU extractor.")
+@click.option("--progress-lines", is_flag=True, help="Write progress as newline records for log-friendly real-time output.")
+@click.option("--item-progress", is_flag=True, help="Index and commit one workspace item at a time with per-item progress.")
+@click.option("--no-embed", is_flag=True, help="Skip embedding generation during indexing; use workspace embed later.")
+@click.pass_context
+def workspace_index(
+    ctx: click.Context,
+    name: str,
+    force: bool,
+    extractor: str | None,
+    progress_lines: bool,
+    item_progress: bool,
+    no_embed: bool,
+) -> None:
+    """Build the workspace semantic index (MinerU PDF -> Gitee embeddings + SQLite FTS5)."""
+    _index_workspace(
+        ctx,
+        name,
+        force=force,
+        extractor=extractor,
+        progress_lines=progress_lines,
+        item_progress=item_progress,
+        no_embed=no_embed,
+    )
+
+
+@workspace_group.command("reindex")
+@click.argument("name")
+@click.option("--extractor", default=None, help="PDF text extractor to use. Defaults to the configured MinerU extractor.")
+@click.option("--progress-lines", is_flag=True, help="Write progress as newline records for log-friendly real-time output.")
+@click.pass_context
+def workspace_reindex(ctx: click.Context, name: str, extractor: str | None, progress_lines: bool) -> None:
+    """Force a full rebuild of a workspace index."""
+    _index_workspace(
+        ctx,
+        name,
+        force=True,
+        extractor=extractor,
+        progress_lines=progress_lines,
+        item_progress=False,
+        no_embed=False,
+    )
+
+
+def _embed_batch_with_retries(
+    texts: list[str],
+    emb_cfg: EmbeddingConfig,
+    max_retries: int,
+    retry_sleep: float,
+) -> list[list[float]]:
+    for _attempt in range(max_retries + 1):
+        vectors = embed_texts(texts, emb_cfg)
+        if vectors is not None and len(vectors) == len(texts):
+            return vectors
+        if retry_sleep > 0:
+            time.sleep(retry_sleep)
+
+    result: list[list[float]] = []
+    for text in texts:
+        single: list[list[float]] | None = None
+        for _attempt in range(max_retries + 1):
+            single = embed_texts([text], emb_cfg)
+            if single is not None and single and single[0]:
+                break
+            if retry_sleep > 0:
+                time.sleep(retry_sleep)
+        result.append(single[0] if single and single[0] else [])
+    return result
 
 
 @workspace_group.command("embed")
 @click.argument("name")
 @click.option(
     "--batch-size",
-    default=100,
+    default=50,
     show_default=True,
-    help="Number of missing chunks to send to the provider and attempt per commit.",
+    help="Number of missing chunks to send to the provider per request.",
 )
 @click.option("--limit", default=0, show_default=True, help="Maximum chunks to attempt in this run; 0 means all missing.")
 @click.option("--max-retries", default=5, show_default=True, help="Retry a failed provider batch this many times.")
-@click.option("--retry-sleep", default=10.0, show_default=True, help="Initial seconds to sleep between batch retries.")
-@click.option(
-    "--heartbeat-seconds",
-    default=15.0,
-    show_default=True,
-    help="Seconds between provider wait progress lines when --progress-lines is set; 0 disables wait heartbeats.",
-)
-@click.option(
-    "--device",
-    default="",
-    help="Override local sentence-transformers device, e.g. cpu, cuda, cuda:0, or auto.",
-)
+@click.option("--retry-sleep", default=10.0, show_default=True, help="Seconds to sleep between batch retries.")
+@click.option("--heartbeat-seconds", default=15.0, show_default=True, help="Seconds between progress lines when --progress-lines is set.")
 @click.option("--progress-lines", is_flag=True, help="Write progress as newline records for log-friendly real-time output.")
 @click.pass_context
 def workspace_embed(
@@ -867,10 +786,9 @@ def workspace_embed(
     max_retries: int,
     retry_sleep: float,
     heartbeat_seconds: float,
-    device: str,
     progress_lines: bool,
 ) -> None:
-    """Backfill embeddings for an existing workspace RAG index."""
+    """Backfill embeddings for an existing workspace index (writes vectors to Qdrant)."""
     json_out = ctx.obj.get("json", False)
     if not workspace_exists(name):
         emit_error(
@@ -880,7 +798,6 @@ def workspace_embed(
             hint="Use 'zot workspace list' to see available workspaces",
             context="workspace embed",
         )
-
     idx_path = workspace_index_path(name)
     if not idx_path.exists():
         emit_error(
@@ -890,303 +807,94 @@ def workspace_embed(
             hint=f"Run 'zot workspace index {name}' first",
             context="workspace embed",
         )
-
     if batch_size <= 0:
-        emit_error(
-            "validation_error",
-            "--batch-size must be greater than 0",
-            output_json=json_out,
-            context="workspace embed",
-        )
+        emit_error("validation_error", "--batch-size must be greater than 0", output_json=json_out, context="workspace embed")
     if limit < 0:
-        emit_error(
-            "validation_error",
-            "--limit must be 0 or greater",
-            output_json=json_out,
-            context="workspace embed",
-        )
+        emit_error("validation_error", "--limit must be 0 or greater", output_json=json_out, context="workspace embed")
     if max_retries < 0:
-        emit_error(
-            "validation_error",
-            "--max-retries must be 0 or greater",
-            output_json=json_out,
-            context="workspace embed",
-        )
+        emit_error("validation_error", "--max-retries must be 0 or greater", output_json=json_out, context="workspace embed")
     if retry_sleep < 0:
-        emit_error(
-            "validation_error",
-            "--retry-sleep must be 0 or greater",
-            output_json=json_out,
-            context="workspace embed",
-        )
+        emit_error("validation_error", "--retry-sleep must be 0 or greater", output_json=json_out, context="workspace embed")
     if heartbeat_seconds < 0:
-        emit_error(
-            "validation_error",
-            "--heartbeat-seconds must be 0 or greater",
-            output_json=json_out,
-            context="workspace embed",
-        )
+        emit_error("validation_error", "--heartbeat-seconds must be 0 or greater", output_json=json_out, context="workspace embed")
 
     emb_cfg = load_embedding_config(apply_env_overrides=True)
-    device_request = device.strip().lower()
-    if emb_cfg.provider == "sentence_transformers":
-        if device_request == "api":
-            emit_error(
-                "validation_error",
-                "--device api is only valid for API embedding providers",
-                output_json=json_out,
-                hint="Use --device cpu/cuda/gpu for local sentence-transformers embeddings",
-                context="workspace embed",
-            )
-        elif device_request == "none":
-            pass
-        elif device_request == "gpu":
-            emb_cfg.device = "cuda"
-        elif device:
-            emb_cfg.device = device
-    elif device and device_request not in {"api", "none"}:
-        emit_error(
-            "validation_error",
-            f"--device {device} is only valid for local sentence-transformers embeddings",
-            output_json=json_out,
-            hint="Use --device api or omit --device for API embedding providers",
-            context="workspace embed",
-        )
     if not emb_cfg.is_configured:
         emit_error(
             "configuration_error",
             "Embedding provider is not configured",
             output_json=json_out,
-            hint="Set [embedding].api_key in .zot/config.toml or ZOT_EMBEDDING_KEY",
+            hint="Set [embedding.api.gitee].api_key in .zot/config.toml or ZOT_EMBEDDING_KEY",
             context="workspace embed",
         )
 
     idx = RagIndex(idx_path)
+    vector_store = _vector_store_for(name)
     t0 = time.monotonic()
     try:
-        missing = idx.count_missing_embeddings()
-        if missing == 0:
+        existing = set(vector_store.list_ids())
+        all_ids = idx.get_chunk_ids()
+        missing = [cid for cid in all_ids if cid not in existing]
+        if not missing:
             click.echo(f"Embeddings for '{name}' are already complete.")
             return
 
-        target = min(missing, limit) if limit else missing
+        target = min(len(missing), limit) if limit else len(missing)
+        missing = missing[:target]
         attempted = 0
         stored = 0
         skipped = 0
-        after_id = 0
-        expected_dim: int | None = None
-
-        runtime = "local" if emb_cfg.provider == "sentence_transformers" else "api"
-        runtime_details = f"runtime={runtime}"
-        if runtime == "local":
-            runtime_details += f" device={emb_cfg.device}"
         click.echo(
-            f"Backfilling embeddings for '{name}': missing={missing} target={target} "
-            f"provider={emb_cfg.provider} model={emb_cfg.model} "
-            f"{runtime_details} provider_batch_size={emb_cfg.batch_size}"
+            f"Backfilling embeddings for '{name}': missing={len(missing)} "
+            f"provider={emb_cfg.provider} model={emb_cfg.model} batch_size={batch_size}"
         )
 
-        def emit_progress_line(message: str, *, err: bool = False) -> None:
-            click.echo(message, err=err)
-            (sys.stderr if err else sys.stdout).flush()
-
-        def emit_status(done: int, total: int, last_id: int) -> None:
-            elapsed = time.monotonic() - t0
-            rate = done / elapsed if elapsed > 0 else 0.0
-            remaining = max(total - done, 0)
-            eta = remaining / rate if rate > 0 else 0.0
-            message = (
-                f"  [embed] attempted={done}/{total} stored={stored} skipped={skipped} "
-                f"last_id={last_id} rate={rate:.2f}/s eta={eta:.1f}s"
-            )
-            if progress_lines:
-                emit_progress_line(message)
-            else:
-                sys.stderr.write(f"\r{' ' * 140}\r{message}")
-                sys.stderr.flush()
-
-        def run_with_wait_heartbeat(
-            call: Callable[[], list[list[float]] | None],
-            *,
-            event: str,
-            chunk_ids: list[int],
-            count: int,
-            attempt_no: int,
-            attempt_total: int,
-        ) -> tuple[list[list[float]] | None, float]:
-            first_id = chunk_ids[0]
-            last_id = chunk_ids[-1]
-            started = time.monotonic()
-            if progress_lines:
-                emit_progress_line(
-                    f"  [{event}:start] attempted={attempted}/{target} stored={stored} skipped={skipped} "
-                    f"first_chunk_id={first_id} last_chunk_id={last_id} count={count} "
-                    f"attempt={attempt_no}/{attempt_total}"
-                )
-
-            result_holder: dict[str, list[list[float]] | None] = {}
-            exception_holder: dict[str, BaseException] = {}
-
-            def worker() -> None:
-                try:
-                    result_holder["result"] = call()
-                except BaseException as exc:
-                    exception_holder["exception"] = exc
-
-            worker_thread = threading.Thread(
-                target=worker,
-                name=f"zot-{event}-provider",
-                daemon=True,
-            )
-            worker_thread.start()
-
-            if progress_lines and heartbeat_seconds > 0:
-                while worker_thread.is_alive():
-                    worker_thread.join(timeout=heartbeat_seconds)
-                    if worker_thread.is_alive():
-                        elapsed = time.monotonic() - started
-                        emit_progress_line(
-                            f"  [{event}:wait] attempted={attempted}/{target} stored={stored} skipped={skipped} "
-                            f"first_chunk_id={first_id} last_chunk_id={last_id} count={count} "
-                            f"attempt={attempt_no}/{attempt_total} provider_elapsed={elapsed:.1f}s"
-                        )
-            else:
-                worker_thread.join()
-
-            if "exception" in exception_holder:
-                raise exception_holder["exception"]
-
-            elapsed = time.monotonic() - started
-            return result_holder.get("result"), elapsed
-
-        def embed_batch_with_retries(texts: list[str], chunk_ids: list[int]) -> list[list[float]]:
-            for attempt_no in range(max_retries + 1):
-                provider_attempt = attempt_no + 1
-
-                def provider_progress(done: int, provider_total: int) -> None:
-                    if progress_lines:
-                        emit_progress_line(
-                            f"  [embed:provider] attempted={attempted}/{target} stored={stored} skipped={skipped} "
-                            f"first_chunk_id={chunk_ids[0]} provider_done={done}/{provider_total} "
-                            f"attempt={provider_attempt}/{max_retries + 1}"
-                        )
-
-                vectors_or_none, provider_elapsed = run_with_wait_heartbeat(
-                    lambda: embed_texts(texts, emb_cfg, provider_progress),
-                    event="embed",
-                    chunk_ids=chunk_ids,
-                    count=len(texts),
-                    attempt_no=provider_attempt,
-                    attempt_total=max_retries + 1,
-                )
-                if vectors_or_none is not None:
-                    if len(vectors_or_none) < len(texts):
-                        vectors_or_none.extend([[] for _ in range(len(texts) - len(vectors_or_none))])
-                    if progress_lines:
-                        emit_progress_line(
-                            f"  [embed:done] first_chunk_id={chunk_ids[0]} last_chunk_id={chunk_ids[-1]} "
-                            f"count={len(texts)} returned={len(vectors_or_none)} elapsed={provider_elapsed:.1f}s "
-                            f"attempt={provider_attempt}/{max_retries + 1}"
-                        )
-                    return vectors_or_none[: len(texts)]
-                if attempt_no < max_retries:
-                    delay = retry_sleep * (attempt_no + 1)
-                    click.echo(
-                        f"  [embed:retry] first_chunk_id={chunk_ids[0]} "
-                        f"attempt={attempt_no + 1}/{max_retries} sleep={delay:.1f}s",
-                        err=True,
-                    )
-                    time.sleep(delay)
-
-            if len(texts) == 1:
-                return [[]]
-
-            click.echo(
-                f"  [embed:fallback] first_chunk_id={chunk_ids[0]} count={len(texts)} trying individual chunks",
-                err=True,
-            )
-            vectors: list[list[float]] = []
-            for chunk_id, text in zip(chunk_ids, texts):
-                single_vectors: list[list[float]] | None = None
-                for attempt_no in range(max_retries + 1):
-                    provider_attempt = attempt_no + 1
-                    single_vectors, _provider_elapsed = run_with_wait_heartbeat(
-                        lambda: embed_texts([text], emb_cfg),
-                        event="embed:single",
-                        chunk_ids=[chunk_id],
-                        count=1,
-                        attempt_no=provider_attempt,
-                        attempt_total=max_retries + 1,
-                    )
-                    if single_vectors is not None:
-                        break
-                    if attempt_no < max_retries and retry_sleep > 0:
-                        time.sleep(retry_sleep)
-                if single_vectors and single_vectors[0]:
-                    vectors.append(single_vectors[0])
-                else:
-                    click.echo(f"  [embed:skip] chunk_id={chunk_id} reason=provider_failed", err=True)
-                    vectors.append([])
-            return vectors
-
-        while attempted < target:
-            rows = idx.get_chunks_missing_embeddings(after_id=after_id, limit=min(batch_size, target - attempted))
-            if not rows:
-                break
-
-            chunk_ids = [int(row["id"]) for row in rows]
-            texts = [str(row["content"]) for row in rows]
-            vectors = embed_batch_with_retries(texts, chunk_ids)
+        for i in range(0, len(missing), batch_size):
+            batch_ids = missing[i : i + batch_size]
+            chunks = idx.get_chunks_by_ids(batch_ids)
+            texts = [chunks[cid]["content"] for cid in batch_ids if cid in chunks]
+            vectors = _embed_batch_with_retries(texts, emb_cfg, max_retries, retry_sleep)
 
             valid_ids: list[int] = []
             valid_vectors: list[list[float]] = []
-            for chunk_id, vector in zip(chunk_ids, vectors):
-                if not vector:
+            valid_payloads: list[dict] = []
+            for cid, vector in zip(batch_ids, vectors):
+                chunk = chunks.get(cid)
+                if vector and chunk is not None:
+                    valid_ids.append(cid)
+                    valid_vectors.append(vector)
+                    valid_payloads.append({"item_key": chunk["item_key"], "source": chunk["source"]})
+                else:
                     skipped += 1
-                    continue
-                if expected_dim is None:
-                    expected_dim = len(vector)
-                if len(vector) != expected_dim:
-                    skipped += 1
-                    continue
-                valid_ids.append(chunk_id)
-                valid_vectors.append(vector)
-
             if valid_ids:
-                idx.set_embeddings_bulk_no_commit(valid_ids, valid_vectors)
+                vector_store.upsert(valid_ids, valid_vectors, valid_payloads)
                 stored += len(valid_ids)
+            attempted += len(batch_ids)
 
-            attempted += len(rows)
-            after_id = chunk_ids[-1]
-            idx._conn.executemany(
-                "INSERT OR REPLACE INTO index_meta (key, value) VALUES (?, ?)",
-                [
-                    ("embedding_provider", emb_cfg.provider),
-                    ("embedding_model", emb_cfg.model),
-                    ("embedding_dim", str(expected_dim or "")),
-                    ("embedding_backfilled_at", datetime.now(timezone.utc).isoformat()),
-                ],
-            )
-            idx.commit()
-            emit_status(attempted, target, after_id)
+            status = f"  [embed] attempted={attempted}/{len(missing)} stored={stored} skipped={skipped}"
+            if progress_lines:
+                click.echo(status)
+            else:
+                sys.stderr.write(f"\r{' ' * 100}\r{status}")
+                sys.stderr.flush()
 
         if not progress_lines:
-            sys.stderr.write(f"\r{' ' * 140}\r")
+            sys.stderr.write(f"\r{' ' * 100}\r")
             sys.stderr.flush()
-        elapsed = time.monotonic() - t0
-        remaining_missing = idx.count_missing_embeddings()
+        remaining = sum(1 for cid in idx.get_chunk_ids() if cid not in set(vector_store.list_ids()))
         click.echo(
             f"Backfilled embeddings for '{name}': attempted={attempted}, stored={stored}, "
-            f"skipped={skipped}, remaining_missing={remaining_missing}, elapsed={elapsed:.1f}s"
+            f"skipped={skipped}, remaining_missing={remaining}, elapsed={time.monotonic() - t0:.1f}s"
         )
     finally:
+        vector_store.close()
         idx.close()
 
 
 @workspace_group.command("query")
 @click.argument("question")
 @click.option("--workspace", "ws_name", required=True, help="Workspace to query")
-@click.option("--top-k", default=5, help="Number of results (default: 5)")
+@click.option("--top-k", default=None, type=int, help="Number of results (default: from [semantic_search].top_k).")
 @click.option(
     "--mode",
     type=click.Choice(["auto", "bm25", "semantic", "hybrid"]),
@@ -1212,13 +920,13 @@ def workspace_query(
     ctx: click.Context,
     question: str,
     ws_name: str,
-    top_k: int,
+    top_k: int | None,
     mode: str,
     pdf_kind: str,
     rerank: bool,
     rerank_top_n: int,
 ) -> None:
-    """Query workspace papers with natural language."""
+    """Query workspace papers with natural language (FTS5 + Qdrant hybrid retrieval)."""
     json_out = ctx.obj.get("json", False)
     if not workspace_exists(ws_name):
         emit_error(
@@ -1228,7 +936,6 @@ def workspace_query(
             hint="Use 'zot workspace list' to see available workspaces",
             context="workspace query",
         )
-
     idx_path = workspace_index_path(ws_name)
     if not idx_path.exists():
         emit_error(
@@ -1239,16 +946,18 @@ def workspace_query(
             context="workspace query",
         )
 
+    ss_cfg = load_semantic_search_config()
     idx = RagIndex(idx_path)
-    if not json_out:
-        sys.stderr.write("\r    [loading index]")
-        sys.stderr.flush()
+    vector_store = _vector_store_for(ws_name)
     try:
-        # Determine effective mode (cheap check instead of loading all embeddings)
-        row = idx._conn.execute("SELECT 1 FROM chunks WHERE embedding IS NOT NULL LIMIT 1").fetchone()
-        has_embeddings = row is not None
+        if top_k is None or top_k <= 0:
+            top_k = ss_cfg.top_k
+        candidate_k = ss_cfg.candidate_k
+        rrf_k = ss_cfg.rrf_k
+
+        has_vectors = vector_store.count() > 0
         if mode == "auto":
-            effective_mode = "hybrid" if has_embeddings else "bm25"
+            effective_mode = "hybrid" if has_vectors else "bm25"
         else:
             effective_mode = mode
 
@@ -1256,41 +965,29 @@ def workspace_query(
         semantic_results: list[tuple[int, float, dict]] = []
 
         if effective_mode in ("bm25", "hybrid"):
-            if json_out:
-                bm25_results = bm25_score_chunks(idx, question, None)
-            else:
+            bm25_results = idx.search_bm25(question, limit=candidate_k)
 
-                def bm25_progress(done: int, total: int) -> None:
-                    sys.stderr.write(f"\r{' ' * 60}\r    [bm25] [{done}/{total}]")
-                    sys.stdout.flush()
-
-                bm25_results = bm25_score_chunks(idx, question, bm25_progress)
-
-        if effective_mode in ("semantic", "hybrid") and has_embeddings:
+        if effective_mode in ("semantic", "hybrid") and has_vectors:
             emb_cfg = load_embedding_config(apply_env_overrides=True)
             if emb_cfg.is_configured:
                 try:
                     q_vecs = embed_texts([question], emb_cfg, input_type="query")
-                    if q_vecs:
-                        if json_out:
-                            semantic_results = semantic_score_chunks(idx, q_vecs[0], None)
-                        else:
-
-                            def sem_progress(done: int, total: int) -> None:
-                                sys.stderr.write(f"\r{' ' * 60}\r    [semantic] [{done}/{total}]")
-                                sys.stdout.flush()
-
-                            semantic_results = semantic_score_chunks(idx, q_vecs[0], sem_progress)
+                    if q_vecs and q_vecs[0]:
+                        hits = vector_store.search(q_vecs[0], limit=candidate_k)
+                        hit_ids = [cid for cid, _score, _payload in hits]
+                        chunks_by_id = idx.get_chunks_by_ids(hit_ids)
+                        semantic_results = [
+                            (cid, score, chunks_by_id[cid]) for cid, score, _payload in hits if cid in chunks_by_id
+                        ]
                 except Exception:
                     pass
 
-        if not json_out:
-            sys.stderr.write(f"\r{' ' * 60}\r")
-            sys.stdout.flush()
-
-        # Merge results
         if effective_mode == "hybrid" and bm25_results and semantic_results:
-            merged = reciprocal_rank_fusion(bm25_results, semantic_results)
+            merged = weighted_reciprocal_rank_fusion(
+                [bm25_results, semantic_results],
+                weights=[ss_cfg.bm25_weight, ss_cfg.semantic_weight],
+                k=rrf_k,
+            )
         elif semantic_results and effective_mode in ("semantic", "hybrid"):
             merged = semantic_results
         else:
@@ -1304,40 +1001,22 @@ def workspace_query(
                     "configuration_error",
                     "Reranker provider is not configured",
                     output_json=json_out,
-                    hint="Set [rerank].provider and [rerank].model in .zot/config.toml",
+                    hint="Set [rerank.api.gitee] in .zot/config.toml",
                     context="workspace query",
                 )
-            if not json_out:
-                sys.stderr.write("\r    [rerank]")
-                sys.stderr.flush()
-
-            def rerank_progress(done: int, total: int) -> None:
-                if not json_out:
-                    sys.stderr.write(f"\r{' ' * 60}\r    [rerank] [{done}/{total}]")
-                    sys.stderr.flush()
-
-            reranked = rerank_chunks(
-                question,
-                filtered,
-                rerank_cfg,
-                top_n=rerank_top_n,
-                progress_callback=rerank_progress if not json_out else None,
-            )
+            reranked = rerank_chunks(question, filtered, rerank_cfg, top_n=rerank_top_n)
             if reranked:
                 filtered = reranked
                 effective_mode = f"{effective_mode}+rerank"
-            if not json_out:
-                sys.stderr.write(f"\r{' ' * 60}\r")
-                sys.stderr.flush()
-        top = filtered[:top_k]
 
+        top = filtered[:top_k]
         if not top:
             if json_out:
                 click.echo("[]")
             else:
                 click.echo("No results found.")
             return
-
         click.echo(format_workspace_query(top, mode=effective_mode, output_json=json_out))
     finally:
+        vector_store.close()
         idx.close()

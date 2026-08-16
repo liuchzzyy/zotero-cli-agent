@@ -1,16 +1,13 @@
 from __future__ import annotations
 
-import math
 import re
 import sys
-from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from zotero_cli_agent.config import EmbeddingConfig
-from zotero_cli_agent.core.embedding_router import EmbeddingRouter
 from zotero_cli_agent.core.pdf_extractor import get_extractor
-from zotero_cli_agent.core.rag_index import RagIndex
+from zotero_cli_agent.core.providers.gitee import GiteeEmbeddingProvider
 
 _SUPPLEMENTARY_HINTS = (
     "electronic supplementary material",
@@ -42,14 +39,6 @@ def tokenize(text: str) -> list[str]:
         if word:
             tokens.append(word)
     return tokens
-
-
-def compute_term_frequencies(tokens: list[str]) -> dict[str, float]:
-    counts = Counter(tokens)
-    total = len(tokens)
-    if total == 0:
-        return {}
-    return {term: count / total for term, count in counts.items()}
 
 
 def build_metadata_chunk(title: str, authors: str, abstract: str | None, tags: list[str]) -> str:
@@ -338,109 +327,23 @@ def convert_pdfs_to_text(
     return results
 
 
-def bm25_score_chunks(
-    index: RagIndex,
-    query: str,
-    progress_callback: Callable[[int, int], None] | None = None,
-    k1: float = 1.5,
-    b: float = 0.75,
-) -> list[tuple[int, float, dict]]:
-    query_terms = tokenize(query)
-    if not query_terms:
-        return []
-    total_docs = int(index.get_meta("total_docs") or "0")
-    avg_dl = float(index.get_meta("avg_doc_len") or "1")
-    if total_docs == 0:
-        return []
-    chunks = index.get_all_chunks()
-    total_chunks = len(chunks)
-
-    # Bulk fetch df for query terms (1 query instead of N queries)
-    conn = index._conn
-    placeholders = ",".join("?" * len(query_terms))
-    df_rows = conn.execute(
-        f"SELECT term, COUNT(DISTINCT chunk_id) as cnt FROM bm25_terms WHERE term IN ({placeholders}) GROUP BY term",
-        query_terms,
-    ).fetchall()
-    df: dict[str, int] = {r["term"]: r["cnt"] for r in df_rows}
-
-    # Pre-compute IDF for each query term (avoid re-computing per chunk)
-    idf: dict[str, float] = {}
-    for term in query_terms:
-        dft = df.get(term, 0)
-        idf[term] = math.log((total_docs - dft + 0.5) / (dft + 0.5) + 1)
-
-    # Fetch only postings for the query terms. This avoids sending every
-    # chunk id as a SQLite placeholder, which breaks on large indexes.
-    tf_rows = conn.execute(
-        f"SELECT chunk_id, term, tf FROM bm25_terms WHERE term IN ({placeholders})",
-        query_terms,
-    ).fetchall()
-    all_term_tfs: dict[int, dict[str, float]] = {}
-    for row in tf_rows:
-        chunk_tfs = all_term_tfs.setdefault(int(row["chunk_id"]), {})
-        chunk_tfs[str(row["term"])] = float(row["tf"])
-
-    results: list[tuple[int, float, dict]] = []
-    report_every = max(1, total_chunks // 50)
-    for i, chunk in enumerate(chunks):
-        chunk_id = chunk["id"]
-        term_tfs = all_term_tfs.get(chunk_id, {})
-        doc_len = chunk.get("doc_len", 0) or len(tokenize(chunk["content"]))
-        score = 0.0
-        for term in query_terms:
-            dft = df.get(term, 0)
-            if dft == 0:
-                continue
-            tf = term_tfs.get(term, 0.0)
-            idf_val = idf[term]
-            numerator = tf * (k1 + 1)
-            denominator = tf + k1 * (1 - b + b * doc_len / avg_dl)
-            score += idf_val * numerator / denominator
-        if score > 0:
-            results.append((chunk_id, score, chunk))
-        if progress_callback and (i + 1) % report_every == 0:
-            progress_callback(i + 1, total_chunks)
-    if progress_callback:
-        progress_callback(total_chunks, total_chunks)
-    results.sort(key=lambda x: x[1], reverse=True)
-    return results
-
-
-def cosine_similarity(a: list[float], b: list[float]) -> float:
-    dot = sum(x * y for x, y in zip(a, b))
-    norm_a = math.sqrt(sum(x * x for x in a))
-    norm_b = math.sqrt(sum(x * x for x in b))
-    if norm_a == 0 or norm_b == 0:
-        return 0.0
-    return dot / (norm_a * norm_b)
-
-
-def semantic_score_chunks(
-    index: RagIndex,
-    query_embedding: list[float],
-    progress_callback: Callable[[int, int], None] | None = None,
-) -> list[tuple[int, float, dict]]:
-    embeddings = index.get_all_embeddings()
-    total_emb = len(embeddings)
-    chunks_by_id = {c["id"]: c for c in index.get_all_chunks()}
-    results: list[tuple[int, float, dict]] = []
-    for i, (chunk_id, vec) in enumerate(embeddings):
-        score = cosine_similarity(query_embedding, vec)
-        if chunk_id in chunks_by_id:
-            results.append((chunk_id, score, chunks_by_id[chunk_id]))
-        if progress_callback:
-            progress_callback(i + 1, total_emb)
-    results.sort(key=lambda x: x[1], reverse=True)
-    return results
-
-
 def reciprocal_rank_fusion(*rankings: list[tuple[int, float, dict]], k: int = 60) -> list[tuple[int, float, dict]]:
+    return weighted_reciprocal_rank_fusion(rankings, weights=None, k=k)
+
+
+def weighted_reciprocal_rank_fusion(
+    rankings: Sequence[list[tuple[int, float, dict]]],
+    *,
+    weights: Sequence[float] | None = None,
+    k: int = 60,
+) -> list[tuple[int, float, dict]]:
     scores: dict[int, float] = {}
     chunk_map: dict[int, dict] = {}
-    for ranking in rankings:
+    if weights is None:
+        weights = [1.0] * len(rankings)
+    for ranking, weight in zip(rankings, weights):
         for rank, (chunk_id, _score, chunk) in enumerate(ranking):
-            scores[chunk_id] = scores.get(chunk_id, 0.0) + 1.0 / (k + rank + 1)
+            scores[chunk_id] = scores.get(chunk_id, 0.0) + weight * (1.0 / (k + rank + 1))
             chunk_map[chunk_id] = chunk
     results = [(cid, score, chunk_map[cid]) for cid, score in scores.items()]
     results.sort(key=lambda x: x[1], reverse=True)
@@ -456,12 +359,15 @@ def embed_texts(
 ) -> list[list[float]] | None:
     if not config.is_configured:
         return None
-    router = EmbeddingRouter(config)
+    provider = GiteeEmbeddingProvider(
+        api_key=config.api_key,
+        url=config.url,
+        model=config.model,
+        batch_size=config.batch_size,
+    )
     try:
-        return router.embed(texts, progress_callback, input_type=input_type)
+        return provider.embed(texts, progress_callback, input_type=input_type)
     except Exception as e:
-        # Configured-but-failed: surface the reason so callers don't silently
-        # degrade to BM25-only without telling the user. See issue #28.
         sys.stderr.write(
             f"\r{' ' * 60}\r"
             f"  [WARN] Embedding provider '{config.provider}' failed: "

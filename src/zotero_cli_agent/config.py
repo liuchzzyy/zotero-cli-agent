@@ -107,37 +107,44 @@ class AppConfig:
 @dataclass
 class EmbeddingConfig:
     active: str = ""
-    url: str = "https://api.jina.ai/v1/embeddings"
+    provider: str = "gitee"
+    url: str = "https://ai.gitee.com/v1"
     api_key: str = ""
-    model: str = "jina-embeddings-v3"
-    provider: str = "jina"
-    hf_token: str = ""
-    device: str = "cpu"
-    batch_size: int = 8
+    model: str = "bge-m3"
+    batch_size: int = 50
 
     @property
     def is_configured(self) -> bool:
-        if self.provider == "sentence_transformers":
-            return bool(self.model)
-        return bool(self.url and self.api_key)
+        return bool(self.url and self.api_key and self.model)
 
 
 @dataclass
 class RerankConfig:
     active: str = ""
-    provider: str = ""
-    url: str = ""
+    provider: str = "gitee"
+    url: str = "https://ai.gitee.com/v1/rerank"
     api_key: str = ""
-    model: str = "BAAI/bge-reranker-v2-m3"
-    hf_token: str = ""
-    batch_size: int = 4
-    max_length: int = 512
+    model: str = "bge-reranker-v2-m3"
+    batch_size: int = 16
 
     @property
     def is_configured(self) -> bool:
-        if self.provider == "gitee":
-            return bool(self.url and self.api_key and self.model)
-        return bool(self.provider and self.model)
+        return bool(self.url and self.api_key and self.model)
+
+
+@dataclass
+class VectorStoreConfig:
+    provider: str = "qdrant_local"
+    path: str = ".workspace/_qdrant"
+
+
+@dataclass
+class SemanticSearchConfig:
+    candidate_k: int = 150
+    top_k: int = 20
+    rrf_k: int = 60
+    semantic_weight: float = 0.8
+    bm25_weight: float = 0.2
 
 
 @dataclass
@@ -211,22 +218,18 @@ def load_embedding_config(path: Path | None = None, *, apply_env_overrides: bool
         )
         defaults = EmbeddingConfig(
             active=emb.get("active", defaults.active),
+            provider=emb.get("provider", defaults.provider),
             url=emb.get("url", defaults.url),
             api_key=emb.get("api_key", defaults.api_key),
             model=emb.get("model", defaults.model),
-            provider=emb.get("provider", defaults.provider),
-            hf_token=emb.get("hf_token", defaults.hf_token),
-            device=emb.get("device", defaults.device),
             batch_size=int(emb.get("batch_size", defaults.batch_size)),
         )
     if apply_env_overrides:
         defaults.active = os.environ.get("ZOT_EMBEDDING_ACTIVE", defaults.active)
+        defaults.provider = os.environ.get("ZOT_EMBEDDING_PROVIDER", defaults.provider)
         defaults.url = os.environ.get("ZOT_EMBEDDING_URL", defaults.url)
         defaults.api_key = os.environ.get("ZOT_EMBEDDING_KEY", defaults.api_key)
         defaults.model = os.environ.get("ZOT_EMBEDDING_MODEL", defaults.model)
-        defaults.provider = os.environ.get("ZOT_EMBEDDING_PROVIDER", defaults.provider)
-        defaults.hf_token = os.environ.get("ZOT_EMBEDDING_HF_TOKEN", defaults.hf_token)
-        defaults.device = os.environ.get("ZOT_EMBEDDING_DEVICE", defaults.device)
         defaults.batch_size = int(os.environ.get("ZOT_EMBEDDING_BATCH_SIZE", defaults.batch_size))
     return defaults
 
@@ -235,10 +238,6 @@ def load_rerank_config(path: Path | None = None, *, apply_env_overrides: bool = 
     defaults = RerankConfig()
     data = _load_toml_data(path)
     if data:
-        emb = _select_provider_config(
-            data.get("embedding", {}),
-            env_active="ZOT_EMBEDDING_ACTIVE" if apply_env_overrides else "",
-        )
         rerank = _select_provider_config(
             data.get("rerank", {}),
             env_active="ZOT_RERANK_ACTIVE" if apply_env_overrides else "",
@@ -249,9 +248,7 @@ def load_rerank_config(path: Path | None = None, *, apply_env_overrides: bool = 
             url=rerank.get("url", defaults.url),
             api_key=rerank.get("api_key", defaults.api_key),
             model=rerank.get("model", defaults.model),
-            hf_token=rerank.get("hf_token", emb.get("hf_token", defaults.hf_token)),
             batch_size=int(rerank.get("batch_size", defaults.batch_size)),
-            max_length=int(rerank.get("max_length", defaults.max_length)),
         )
     if apply_env_overrides:
         defaults.active = os.environ.get("ZOT_RERANK_ACTIVE", defaults.active)
@@ -259,9 +256,7 @@ def load_rerank_config(path: Path | None = None, *, apply_env_overrides: bool = 
         defaults.url = os.environ.get("ZOT_RERANK_URL", defaults.url)
         defaults.api_key = os.environ.get("ZOT_RERANK_KEY", defaults.api_key)
         defaults.model = os.environ.get("ZOT_RERANK_MODEL", defaults.model)
-        defaults.hf_token = os.environ.get("ZOT_RERANK_HF_TOKEN", defaults.hf_token)
         defaults.batch_size = int(os.environ.get("ZOT_RERANK_BATCH_SIZE", defaults.batch_size))
-        defaults.max_length = int(os.environ.get("ZOT_RERANK_MAX_LENGTH", defaults.max_length))
     return defaults
 
 
@@ -299,6 +294,33 @@ def load_pdf_config(path: Path | None = None) -> PdfConfig:
     return PdfConfig(
         extractor=pdf.get("extractor", defaults.extractor),
         mineru_token=pdf.get("mineru_token", defaults.mineru_token),
+    )
+
+
+def load_vector_store_config(path: Path | None = None) -> VectorStoreConfig:
+    defaults = VectorStoreConfig()
+    data = _load_toml_data(path)
+    if not data:
+        return defaults
+    vs = data.get("vector_store", {})
+    return VectorStoreConfig(
+        provider=vs.get("provider", defaults.provider),
+        path=vs.get("path", defaults.path),
+    )
+
+
+def load_semantic_search_config(path: Path | None = None) -> SemanticSearchConfig:
+    defaults = SemanticSearchConfig()
+    data = _load_toml_data(path)
+    if not data:
+        return defaults
+    ss = data.get("semantic_search", {})
+    return SemanticSearchConfig(
+        candidate_k=int(ss.get("candidate_k", defaults.candidate_k)),
+        top_k=int(ss.get("top_k", defaults.top_k)),
+        rrf_k=int(ss.get("rrf_k", defaults.rrf_k)),
+        semantic_weight=float(ss.get("semantic_weight", defaults.semantic_weight)),
+        bm25_weight=float(ss.get("bm25_weight", defaults.bm25_weight)),
     )
 
 

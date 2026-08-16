@@ -4,7 +4,7 @@ This file provides guidance to coding agents working with code in this repositor
 
 ## Project
 
-`zotero-cli-agent` (binary: `zot`) is a Zotero CLI built for Claude Code / agent use. It combines **direct local SQLite reads** with **Zotero Web API writes**, and exposes the same surface via an MCP server.
+`zotero-cli-agent` (binary: `zot`) is a Zotero CLI built for Claude Code / agent use. It combines **direct local SQLite reads** with **Zotero Web API writes**. The `zot` CLI is the single entry point.
 
 The CLI follows an agent-native contract enforced by the Click tree, `zot schema`,
 `formatter.py`, `exit_codes.py`, and the agent-interface tests:
@@ -22,7 +22,7 @@ Uses `uv` as the package manager. `uv.lock` is authoritative.
 
 ```powershell
 # Install dev environment
-uv sync --dev --extra mcp
+uv sync --dev
 
 # Lint / type-check / test
 uv run ruff check src tests
@@ -72,19 +72,14 @@ When adding a command, register it in `cli.py` and place it in the correct safet
 
 - `src/zotero_cli_agent/core/reader.py`: SQLite read layer.
 - `src/zotero_cli_agent/core/writer.py`: Web API write layer.
-- `src/zotero_cli_agent/core/pdf_extractor.py` and `pdf_cache.py`: PDF extraction and caching.
+- `src/zotero_cli_agent/core/pdf_extractor.py` and `pdf_cache.py`: PDF extraction (MinerU API / PyMuPDF) and caching.
 - `src/zotero_cli_agent/core/workspace.py`: repo-local workspaces under `.workspace/`.
-- `src/zotero_cli_agent/core/rag.py` and `rag_index.py`: workspace retrieval / indexing.
-- `src/zotero_cli_agent/core/embedding_router.py`: embedding provider routing.
+- `src/zotero_cli_agent/core/rag.py` and `rag_index.py`: chunking, SQLite FTS5 term retrieval, and Gitee embedding helpers.
+- `src/zotero_cli_agent/core/semantic_search/vector_store.py`: local Qdrant vector store.
+- `src/zotero_cli_agent/core/providers/gitee.py`: Gitee AI embedding / rerank provider.
 - `src/zotero_cli_agent/core/idempotency.py`: retry-safe mutation support.
 - `src/zotero_cli_agent/core/semantic_scholar.py`: preprint-to-published lookups for `update-status`.
 - `src/zotero_cli_agent/core/version_check.py`: version notice logic.
-
-### MCP server
-
-`src/zotero_cli_agent/mcp_server.py` exposes CLI functionality as MCP tools through `zot mcp serve`.
-
-If a CLI command should also be available to MCP clients, mirror it here.
 
 ### Agent Contract and Skill
 
@@ -164,7 +159,7 @@ Before closing substantial changes, run the smallest relevant checks first, then
 For this repository on this machine, the environment has already been initialized successfully with:
 
 ```powershell
-uv sync --dev --extra mcp
+uv sync --dev
 uv run zot --help
 uv run pytest -q
 ```

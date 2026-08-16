@@ -49,7 +49,7 @@ For repository workflows, prefer the maintained PowerShell wrappers and the cano
 | Bulk import to workspace | `zot workspace import name --collection/--tag/--search` | From collection, tag, or search |
 | Search within workspace | `zot workspace search "query" --workspace name` | Fast metadata match |
 | Export workspace for AI | `zot workspace export name` | Markdown/JSON/BibTeX |
-| Deep content search (RAG) | `zot workspace query "question" --workspace name` | BM25 + optional semantic |
+| Deep content search (RAG) | `zot workspace query "question" --workspace name` | FTS5 keyword + Qdrant semantic (Gitee) |
 
 **Rule of thumb**: Use `zot search` for quick metadata lookups. Use `zot workspace query` for deep content search over a curated set of papers (indexes metadata + PDF fulltext).
 
@@ -206,22 +206,25 @@ zot workspace export llm-safety                       # Markdown (default)
 zot workspace export llm-safety --format json         # JSON
 zot workspace export llm-safety --format bibtex       # BibTeX
 
-# Build RAG index (BM25 over metadata + PDF text)
-zot workspace index llm-safety             # Incremental index
-zot workspace index llm-safety --force     # Full rebuild
-zot workspace index llm-safety --no-embed  # BM25 only; backfill embeddings later
-zot workspace embed llm-safety --device cpu
-zot workspace embed llm-safety --device cuda --limit 100
+# Build RAG index (SQLite FTS5 + Qdrant vectors over metadata + PDF text)
+zot workspace index llm-safety                 # Incremental index
+zot workspace index llm-safety --force         # Full rebuild
+zot workspace reindex llm-safety               # Force full rebuild (alias)
+zot workspace index llm-safety --no-embed      # FTS5 only; backfill embeddings later
+zot workspace embed llm-safety                 # Backfill Gitee embeddings into Qdrant
+zot workspace embed llm-safety --limit 100
 
 # Query workspace with natural language
 zot workspace query "reward hacking" --workspace llm-safety
 zot workspace query "RLHF methods" --workspace llm-safety --top-k 10
 zot --json workspace query "attention" --workspace llm-safety
 
-# Retrieval modes (auto selects hybrid if embeddings available)
-zot workspace query "query" --workspace name --mode bm25      # Keyword only
-zot workspace query "query" --workspace name --mode semantic   # Embeddings only
-zot workspace query "query" --workspace name --mode hybrid     # BM25 + semantic fusion
+# Retrieval modes (auto selects hybrid if vectors available)
+zot workspace query "query" --workspace name --mode bm25      # FTS5 keyword only
+zot workspace query "query" --workspace name --mode semantic  # Qdrant vector only
+zot workspace query "query" --workspace name --mode hybrid    # FTS5 + vector weighted RRF
+zot workspace query "query" --workspace name --rerank         # Rerank fused candidates (Gitee)
+zot workspace query "query" --workspace name --pdf-kind main  # Only main-paper PDF chunks
 ```
 
 The format of chunks is:
@@ -337,6 +340,6 @@ zot --json workspace query "AlphaFold architecture" --workspace protein-folding 
 - **Item keys** are 8-character alphanumeric strings like `K853PGUG`
 - **Group libraries** — use `--library group:<id>` with any command
 - **Workspaces** — pure local TOML files, no API needed for basic operations; `workspace index` reads PDFs from Zotero storage
-- **Workspace RAG** — BM25 always available; optional semantic search via the `[embedding]` section in `.zot/config.toml`
-- **Local embeddings** — install `local-embeddings-cpu` for the default CPU path or `local-embeddings-gpu` for CUDA; select runtime device with `[embedding].device`, `ZOT_EMBEDDING_DEVICE`, or `zot workspace embed --device`
+- **Workspace RAG** — PDF text via MinerU, term retrieval via SQLite FTS5, vectors via Qdrant local, embeddings/rerank via Gitee AI (`[embedding]`, `[rerank]` in `.zot/config.toml`)
+- **Vector store** — local Qdrant under `.workspace/_qdrant` (`[vector_store]`), no server or account needed
 

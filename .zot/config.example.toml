@@ -25,52 +25,15 @@ mineru_token = ""
 [embedding]
 active = "api.gitee"
 
-[embedding.local.cpu]
-provider = "sentence_transformers"
-url = ""
-model = "BAAI/bge-m3"
-device = "cpu"
-batch_size = 8
-hf_token = ""
-
-[embedding.local.gpu]
-provider = "sentence_transformers"
-url = ""
-model = "BAAI/bge-m3"
-device = "cuda"
-batch_size = 1
-hf_token = ""
-
 [embedding.api.gitee]
 provider = "gitee"
 url = "https://ai.gitee.com/v1"
 api_key = ""
 model = "bge-m3"
-batch_size = 10
-
-[embedding.api.jina]
-provider = "jina"
-url = "https://api.jina.ai/v1/embeddings"
-api_key = ""
-model = "jina-embeddings-v3"
-batch_size = 10
-
-[embedding.api.aliyun]
-provider = "aliyun"
-url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-api_key = ""
-model = "text-embedding-v4"
-batch_size = 10
+batch_size = 50
 
 [rerank]
 active = "api.gitee"
-
-[rerank.local.bge]
-provider = "bge_reranker"
-model = "BAAI/bge-reranker-v2-m3"
-hf_token = ""
-batch_size = 4
-max_length = 512
 
 [rerank.api.gitee]
 provider = "gitee"
@@ -78,7 +41,17 @@ url = "https://ai.gitee.com/v1/rerank"
 api_key = ""
 model = "bge-reranker-v2-m3"
 batch_size = 16
-max_length = 512
+
+[vector_store]
+provider = "qdrant_local"
+path = ".workspace/_qdrant"
+
+[semantic_search]
+candidate_k = 150
+top_k = 20
+rrf_k = 60
+semantic_weight = 0.8
+bm25_weight = 0.2
 
 [ai_notes]
 api_key = ""

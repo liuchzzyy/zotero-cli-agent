@@ -5,8 +5,76 @@ from typing import Any
 
 import requests  # type: ignore[import-untyped]
 
+from zotero_cli_agent.core.embedding_provider import EmbeddingProvider
+
+FAILOVER_HEADER = "X-Failover-Enabled"
+
+
+def _auth_headers(api_key: str) -> dict[str, str]:
+    """Unified request headers for every Gitee AI call."""
+    return {"Authorization": f"Bearer {api_key}", FAILOVER_HEADER: "true"}
+
+
+class GiteeEmbeddingProvider(EmbeddingProvider):
+    """Embed text via Gitee AI's OpenAI-compatible /embeddings endpoint."""
+
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        url: str = "https://ai.gitee.com/v1",
+        model: str = "bge-m3",
+        batch_size: int = 50,
+        timeout: float = 120.0,
+    ) -> None:
+        self.api_key = api_key
+        self.base_url = url.rstrip("/")
+        self.model = model
+        self.batch_size = max(int(batch_size), 1)
+        self.timeout = timeout
+
+    @property
+    def name(self) -> str:
+        return "gitee"
+
+    def embed(
+        self,
+        texts: list[str],
+        progress_callback: Callable[[int, int], None] | None = None,
+        *,
+        input_type: str = "document",
+    ) -> list[list[float]]:
+        _ = input_type
+        if not texts:
+            return []
+        all_embeddings: list[list[float]] = []
+        total = len(texts)
+        for i in range(0, total, self.batch_size):
+            batch = texts[i : i + self.batch_size]
+            all_embeddings.extend(self._embed_batch(batch))
+            if progress_callback:
+                progress_callback(min(i + self.batch_size, total), total)
+        return all_embeddings
+
+    def _embed_batch(self, batch: list[str]) -> list[list[float]]:
+        response = requests.post(
+            f"{self.base_url}/embeddings",
+            headers=_auth_headers(self.api_key),
+            json={"model": self.model, "input": batch},
+            timeout=self.timeout,
+        )
+        if not response.ok:
+            raise RuntimeError(
+                f"Gitee embedding request failed: HTTP {response.status_code}: {response.text[:500]}"
+            )
+        data = response.json()
+        embeddings_data = data.get("data") or []
+        return [item["embedding"] for item in embeddings_data]
+
 
 class GiteeRerankerProvider:
+    """Rerank documents against a query via Gitee AI's /rerank endpoint."""
+
     def __init__(
         self,
         *,
@@ -19,7 +87,7 @@ class GiteeRerankerProvider:
         self.api_key = api_key
         self.url = url
         self.model = model
-        self.batch_size = batch_size
+        self.batch_size = max(int(batch_size), 1)
         self.timeout = timeout
 
     def score(
@@ -32,18 +100,10 @@ class GiteeRerankerProvider:
         total = len(documents)
         for start in range(0, total, self.batch_size):
             batch = documents[start : start + self.batch_size]
-            payload = {
-                "query": query,
-                "documents": batch,
-                "model": self.model,
-            }
             response = requests.post(
                 self.url,
-                headers={
-                    "X-Failover-Enabled": "true",
-                    "Authorization": f"Bearer {self.api_key}",
-                },
-                json=payload,
+                headers=_auth_headers(self.api_key),
+                json={"query": query, "documents": batch, "model": self.model},
                 timeout=self.timeout,
             )
             if not response.ok:

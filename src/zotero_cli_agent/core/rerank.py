@@ -4,8 +4,7 @@ import sys
 from collections.abc import Callable
 
 from zotero_cli_agent.config import RerankConfig
-from zotero_cli_agent.core.providers.bge_reranker import BgeRerankerProvider
-from zotero_cli_agent.core.providers.gitee_reranker import GiteeRerankerProvider
+from zotero_cli_agent.core.providers.gitee import GiteeRerankerProvider
 
 RankedChunk = tuple[int, float, dict]
 
@@ -22,28 +21,20 @@ def rerank_chunks(
         return None
 
     selected = candidates[:top_n]
-    if config.provider == "bge_reranker":
-        provider: BgeRerankerProvider | GiteeRerankerProvider = BgeRerankerProvider(
-            model=config.model,
-            hf_token=config.hf_token,
-            batch_size=config.batch_size,
-            max_length=config.max_length,
-        )
-    elif config.provider == "gitee":
-        provider = GiteeRerankerProvider(
-            api_key=config.api_key,
-            url=config.url,
-            model=config.model,
-            batch_size=config.batch_size,
-        )
-    else:
+    if config.provider != "gitee":
         raise RuntimeError(f"Unsupported reranker provider: {config.provider}")
 
+    provider = GiteeRerankerProvider(
+        api_key=config.api_key,
+        url=config.url,
+        model=config.model,
+        batch_size=config.batch_size,
+    )
     try:
         scores = provider.score(query, [str(chunk["content"]) for _cid, _score, chunk in selected], progress_callback)
     except Exception as e:
         sys.stderr.write(
-            f"\r{' ' * 60}\r"
+            "\r" + (" " * 60) + "\r"
             f"  [WARN] Reranker provider '{config.provider}' failed: "
             f"{type(e).__name__}: {e}. Returning retrieval ranking.\n"
         )
